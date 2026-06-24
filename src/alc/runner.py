@@ -27,6 +27,63 @@ class PolicyViolationError(RuntimeError):
     """Raised when the Policy Gate finds error-level violations, blocking the run."""
 
 
+def execute_mandate(
+    manifest: Manifest,
+    blueprint: Blueprint,
+    directive: str,
+    engine_override: str | None = None,
+    workdir: Path | None = None,
+) -> RunReport:
+    """Resolve the engine, build the EngineRequest, and run the Assurance Loop.
+
+    This is the shared engine+assurance helper used by both MandateRunner and
+    FlowRunner. It does NOT run the Policy Gate — that is the caller's responsibility.
+
+    Args:
+        manifest: The loaded Manifest (provides engines config and compute tiers).
+        blueprint: The Blueprint that declares checks, compute tier, and report schema.
+        directive: The fully composed Single-Mandate directive string.
+        engine_override: If set, use this engine name instead of manifest.default_engine.
+        workdir: Directory to run checks in. Defaults to Path.cwd().
+            NOTE: Per-stage worktree isolation (one worktree per Flow stage) is deferred
+            to the Detached maturity stage. All stages share cwd for the MVP.
+
+    Returns:
+        RunReport with blueprint=blueprint.name and full Scorecard.
+    """
+    # Resolve engine.
+    engine_name = engine_override or manifest.default_engine
+    engine: Engine = resolve_engine(engine_name, manifest.engines)
+
+    # Resolve model from Compute Tier.
+    model: str | None = None
+    tier = manifest.compute_tiers.get(blueprint.compute_tier)
+    if tier:
+        model = tier.get(engine_name)
+
+    # Build the EngineRequest.
+    request = EngineRequest(
+        directive=directive,
+        workdir=workdir or Path.cwd(),
+        model=model,
+    )
+
+    # Run the Assurance Loop.
+    verifier = Verifier()
+    loop = AssuranceLoop(engine=engine, verifier=verifier)
+    report = loop.run(request=request, checks=blueprint.checks)
+
+    # Patch the report's blueprint field to the real name (not the truncated directive).
+    return RunReport(
+        blueprint=blueprint.name,
+        engine=report.engine,
+        success=report.success,
+        attempts=report.attempts,
+        scorecard=report.scorecard,
+        output_text=report.output_text,
+    )
+
+
 class MandateRunner:
     """Composes and executes one Single-Mandate directive end to end.
 
@@ -66,40 +123,10 @@ class MandateRunner:
                 "Policy Gate blocked this run:\n" + "\n".join(f"  - {m}" for m in error_msgs)
             )
 
-        # Resolve engine.
-        engine_name = engine_override or self._manifest.default_engine
-        engine: Engine = resolve_engine(engine_name, self._manifest.engines)
-
-        # Resolve model from Compute Tier.
-        model: str | None = None
-        tier = self._manifest.compute_tiers.get(blueprint.compute_tier)
-        if tier:
-            model = tier.get(engine_name)
-
         # Compose the Single-Mandate directive.
         directive = self._compose_directive(blueprint, task)
 
-        # Build the EngineRequest (workdir = cwd for MVP; worktree isolation is deferred).
-        request = EngineRequest(
-            directive=directive,
-            workdir=Path.cwd(),
-            model=model,
-        )
-
-        # Run the Assurance Loop.
-        verifier = Verifier()
-        loop = AssuranceLoop(engine=engine, verifier=verifier)
-        report = loop.run(request=request, checks=blueprint.checks)
-
-        # Patch the report's blueprint field to the real name (not truncated directive).
-        return RunReport(
-            blueprint=blueprint.name,
-            engine=report.engine,
-            success=report.success,
-            attempts=report.attempts,
-            scorecard=report.scorecard,
-            output_text=report.output_text,
-        )
+        return execute_mandate(self._manifest, blueprint, directive, engine_override)
 
     def _compose_directive(self, blueprint: Blueprint, task: str) -> str:
         """Compose the full Single-Mandate directive from the Blueprint and task."""

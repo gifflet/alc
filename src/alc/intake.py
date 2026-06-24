@@ -1,4 +1,4 @@
-# intake.py — Loads and parses the Operator Layer (manifest + blueprints).
+# intake.py — Loads and parses the Operator Layer (manifest + blueprints + flows).
 # Single responsibility: read YAML/Markdown from disk and return typed models.
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from alc.models import Blueprint, Check, Manifest, ReportSpec
+from alc.models import Blueprint, Check, FlowDefinition, Manifest, ReportSpec
 
 
 def load_manifest(operator_layer: Path) -> Manifest:
@@ -105,3 +105,41 @@ def load_all_blueprints(manifest: Manifest, operator_layer: Path) -> list[Bluepr
     for md_file in sorted(blueprints_dir.glob("*.md")):
         blueprints.append(load_blueprint(blueprints_dir, md_file.stem))
     return blueprints
+
+
+def load_flow(flows_dir: Path, name: str) -> FlowDefinition:
+    """Load a FlowDefinition by name from the flows directory.
+
+    Flows are plain YAML files (not Markdown with front-matter) because they are
+    configuration, not prompts.
+
+    Args:
+        flows_dir: Directory containing flow YAML files.
+        name: Flow name (used as the filename stem).
+
+    Returns:
+        Parsed FlowDefinition.
+
+    Raises:
+        FileNotFoundError: If the flow file does not exist.
+    """
+    flow_path = flows_dir / f"{name}.yaml"
+    with flow_path.open() as fh:
+        data = yaml.safe_load(fh)
+    return FlowDefinition.model_validate(data)
+
+
+def load_all_flows(manifest: Manifest, operator_layer: Path) -> list[FlowDefinition]:
+    """Load every .yaml file from the flows directory.
+
+    `manifest.flows_dir` is relative to the project root (the parent of the
+    Operator Layer), e.g. ".alc/flows".
+    """
+    flows_dir = operator_layer.parent / manifest.flows_dir
+    if not flows_dir.exists():
+        return []
+
+    flows = []
+    for yaml_file in sorted(flows_dir.glob("*.yaml")):
+        flows.append(load_flow(flows_dir, yaml_file.stem))
+    return flows

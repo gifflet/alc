@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from alc.models import Blueprint, Manifest
+from alc.models import Blueprint, FlowDefinition, Manifest
 
 
 @dataclass
@@ -103,3 +103,51 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
 def has_errors(violations: list[Violation]) -> bool:
     """Return True if any violation has severity 'error'."""
     return any(v.severity == "error" for v in violations)
+
+
+def lint_flow(flow: FlowDefinition, available_blueprints: set[str]) -> list[Violation]:
+    """Run Policy Gate rules specific to a FlowDefinition.
+
+    Rules:
+    1. Flow must declare at least one stage             (error) — no Assurance Loop otherwise.
+    2. Every stage's blueprint must exist in the layer  (error) — resolvable execution.
+
+    Args:
+        flow: The FlowDefinition to validate.
+        available_blueprints: Set of blueprint names present in the Operator Layer.
+
+    Returns:
+        List of Violations (may be empty).
+    """
+    violations: list[Violation] = []
+
+    # Rule 1: flow must have at least one stage.
+    if not flow.stages:
+        violations.append(
+            Violation(
+                rule="flow-has-stages",
+                severity="error",
+                message=(
+                    f"Flow '{flow.name}' declares no stages — "
+                    "a Flow without stages provides no pipeline."
+                ),
+            )
+        )
+        return violations  # no point checking stage blueprints if there are none
+
+    # Rule 2: every stage's blueprint must be available.
+    for stage in flow.stages:
+        if stage.blueprint not in available_blueprints:
+            violations.append(
+                Violation(
+                    rule="flow-blueprint-exists",
+                    severity="error",
+                    message=(
+                        f"Flow '{flow.name}', stage '{stage.name}': blueprint "
+                        f"'{stage.blueprint}' does not exist in the Operator Layer "
+                        f"(available: {sorted(available_blueprints)})."
+                    ),
+                )
+            )
+
+    return violations

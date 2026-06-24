@@ -70,7 +70,8 @@ workflow, variables, report, …). Use only the blocks a given prompt needs.
 ### Flow
 A deterministic pipeline that composes multiple agent invocations
 (e.g. plan → build → verify → review → document). A Flow is plain orchestration code
-that calls engines through the contract. *(Deferred past the MVP.)*
+that calls engines through the contract. Each stage is a separate Single Mandate;
+the output of one stage becomes upstream context for the next.
 
 ### Compute Tier
 A named compute level (`standard`, `deep`) mapped, per engine, to a concrete model id.

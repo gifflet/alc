@@ -54,10 +54,15 @@ MVP in design + initial implementation. Scope and roadmap:
 
 ## Quickstart (MVP)
 
+ALC operates on a project's **Operator Layer** (`.alc/`). A runnable example lives under
+`examples/demo/`; your own project would carry its own `.alc/`.
+
 ```bash
 uv sync
+cd examples/demo
 uv run alc lint                       # check the .alc/ Operator Layer for violations
 uv run alc run chore "remove the unused export endpoint" --engine mock
+uv run alc flow ship "tidy up the changelog" --engine mock
 ```
 
 The `mock` engine runs the full control plane without calling any real model — use it

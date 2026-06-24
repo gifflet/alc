@@ -22,3 +22,4 @@ engines:
     binary: gemini
 
 blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows

@@ -40,6 +40,7 @@ class Manifest(BaseModel):
     compute_tiers: dict[str, dict[str, str]]  # tier -> {engine_name: model_id}
     engines: dict[str, dict]                  # engine_name -> {type, ...}
     blueprints_dir: str = ".alc/blueprints"
+    flows_dir: str = ".alc/flows"
 
 
 class AttemptRecord(BaseModel):
@@ -68,3 +69,29 @@ class RunReport(BaseModel):
     attempts: list[AttemptRecord]
     scorecard: Scorecard
     output_text: str
+
+
+class FlowStage(BaseModel):
+    """One stage in a Flow — references a Blueprint by name."""
+
+    name: str
+    blueprint: str             # name of an existing Blueprint
+    compute_tier: str | None = None  # optional override of the Blueprint's tier
+
+
+class FlowDefinition(BaseModel):
+    """Declares an ordered pipeline of Single-Mandate stages."""
+
+    name: str
+    description: str = ""
+    stages: list[FlowStage]
+
+
+class FlowReport(BaseModel):
+    """Full record of one alc flow invocation."""
+
+    flow: str
+    engine: str
+    success: bool
+    stages: list[RunReport]    # one RunReport per executed stage
+    scorecard: Scorecard       # aggregate across all stages

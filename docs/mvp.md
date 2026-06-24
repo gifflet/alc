@@ -32,7 +32,6 @@ Running one task end to end shows, with no real model required (via the Mock eng
 
 | Deferred feature | Ladder stage |
 |---|---|
-| Flows (multi-step pipelines), `plan → build → verify → review → document` | Attended |
 | Specialists + Knowledge File (`Apply → Learn → Recall`) | Attended |
 | Context Budget automation (Primer generation, bundle replay) | Attended |
 | Compile to native artifacts (`.claude/commands`, Cursor rules) | Attended |
@@ -48,10 +47,10 @@ Deferring these is deliberate (KISS). The MVP's interfaces are the seams they pl
 ```
 alc/
   pyproject.toml
-  .alc/
+  examples/demo/.alc/          # runnable example Operator Layer (the tool repo has no root .alc/)
     manifest.yaml
-    blueprints/
-      chore.md                 # front-matter (name, tier, checks, report) + workflow body
+    blueprints/                # chore.md, plan.md — front-matter + workflow body
+    flows/ship.yaml            # plan -> build pipeline
   src/alc/
     __init__.py
     models.py                  # pydantic: Manifest, Blueprint, Check, RunReport, Scorecard
@@ -68,6 +67,7 @@ alc/
     runner.py                  # MandateRunner: ties it together for one task
     cli.py                     # argparse entrypoint: `lint`, `run`
   tests/
+    conftest.py                # hermetic Operator Layer fixture (tmp_path); no committed .alc/ needed
     test_policy.py
     test_assurance.py
     test_runner.py

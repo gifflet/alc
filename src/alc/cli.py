@@ -82,6 +82,53 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if report.success else 1
 
 
+def cmd_flow(args: argparse.Namespace) -> int:
+    """Run `alc flow <flow_name> "<task>" [--engine NAME]`."""
+    from alc.flow import FlowRunner
+    from alc.intake import load_flow, load_manifest
+    from alc.runner import PolicyViolationError
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    flows_dir = operator_layer.parent / manifest.flows_dir
+    flow = load_flow(flows_dir, args.flow_name)
+
+    runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+
+    try:
+        report = runner.run(
+            flow=flow,
+            task=args.task,
+            engine_override=args.engine,
+        )
+    except PolicyViolationError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    # Print concise human-readable summary.
+    status = "SUCCESS" if report.success else "FAILED"
+    print(f"Flow:     {report.flow}")
+    print(f"Status:   {status}")
+    print(f"Engine:   {report.engine}")
+    print(
+        f"Scorecard: span={report.scorecard.span} passes={report.scorecard.passes} "
+        f"streak={report.scorecard.streak} touch={report.scorecard.touch}"
+    )
+    print()
+    for stage_report in report.stages:
+        stage_status = "SUCCESS" if stage_report.success else "FAILED"
+        print(
+            f"  {stage_report.blueprint} -> {stage_status} "
+            f"(passes={stage_report.scorecard.passes})"
+        )
+    print()
+    # Print the full FlowReport as JSON.
+    print(report.model_dump_json(indent=2))
+
+    return 0 if report.success else 1
+
+
 def main() -> None:
     """Console-script entrypoint."""
     parser = argparse.ArgumentParser(
@@ -99,12 +146,22 @@ def main() -> None:
     run_parser.add_argument("task", help="Free-text task description.")
     run_parser.add_argument("--engine", default=None, help="Override the default engine.")
 
+    # alc flow <flow_name> "<task>" [--engine NAME]
+    flow_parser = subparsers.add_parser(
+        "flow", help="Run a Flow (multi-stage pipeline) against a task."
+    )
+    flow_parser.add_argument("flow_name", help="Flow name (e.g. 'ship').")
+    flow_parser.add_argument("task", help="Free-text task description.")
+    flow_parser.add_argument("--engine", default=None, help="Override the default engine.")
+
     args = parser.parse_args()
 
     if args.command == "lint":
         sys.exit(cmd_lint(args))
     elif args.command == "run":
         sys.exit(cmd_run(args))
+    elif args.command == "flow":
+        sys.exit(cmd_flow(args))
     else:
         parser.print_help()
         sys.exit(1)
