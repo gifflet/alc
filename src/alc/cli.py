@@ -164,12 +164,24 @@ def cmd_tick(args: argparse.Namespace) -> int:
     outcomes live in the Gate reports under done/.
     """
     from alc.intake import load_manifest
+    from alc.lock import tick_lock
     from alc.queue import process_queue
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
 
-    results = process_queue(manifest, operator_layer)
+    queue_dir = operator_layer.parent / manifest.queue_dir
+    if not queue_dir.exists():
+        print("No pending tasks.")
+        return 0
+
+    # Serialise overlapping ticks (e.g. cron firing again before the prior run
+    # finished) so a task is never processed twice.
+    with tick_lock(queue_dir / ".lock") as acquired:
+        if not acquired:
+            print("Another tick is already in progress; skipping.")
+            return 0
+        results = process_queue(manifest, operator_layer)
 
     if not results:
         print("No pending tasks.")
