@@ -35,7 +35,7 @@ Running one task end to end shows, with no real model required (via the Mock eng
 | Specialists + Knowledge File (`Apply → Learn → Recall`) | Attended |
 | Context Budget automation (Primer generation, bundle replay) | Attended |
 | Compile to native artifacts (`.claude/commands`, Cursor rules) | Attended |
-| Worktree/sandbox isolation per run | Detached |
+| Worktree/sandbox isolation per run (done: opt-in `--isolate`) | Detached |
 | Unattended Mode: Source / Trigger (webhook, cron) / Sandbox / Gate | Detached |
 | Observability dashboard, screenshots/e2e evidence | Detached |
 | Conductor (orchestrator) + agent CRUD | Conducted |

@@ -83,6 +83,7 @@ class FlowRunner:
         flow: FlowDefinition,
         task: str,
         engine_override: str | None = None,
+        workdir: Path | None = None,
     ) -> FlowReport:
         """Execute every stage in the Flow and return an aggregate FlowReport.
 
@@ -90,6 +91,9 @@ class FlowRunner:
             flow: The FlowDefinition declaring the ordered pipeline of stages.
             task: The free-text task description provided by the operator.
             engine_override: If set, use this engine name instead of manifest.default_engine.
+            workdir: Shared directory for all stages. Defaults to Path.cwd() when None.
+                     Pass an IsolatedWorktree path so every stage shares one worktree
+                     (preserving the plan→build file hand-off).
 
         Returns:
             FlowReport with per-stage RunReports and an aggregate Scorecard.
@@ -143,6 +147,7 @@ class FlowRunner:
                 blueprint=blueprint,
                 directive=directive,
                 engine_override=engine_override,
+                workdir=workdir,
             )
             stage_reports.append(report)
 

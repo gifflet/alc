@@ -100,6 +100,7 @@ class MandateRunner:
         blueprint: Blueprint,
         task: str,
         engine_override: str | None = None,
+        workdir: Path | None = None,
     ) -> RunReport:
         """Execute one task against the given Blueprint.
 
@@ -107,6 +108,8 @@ class MandateRunner:
             blueprint: The loaded Blueprint describing workflow, checks, and Compute Tier.
             task: The free-text task description provided by the operator.
             engine_override: If set, use this engine name instead of manifest.default_engine.
+            workdir: Directory to run checks in. Defaults to Path.cwd() when None.
+                     Pass an IsolatedWorktree path to confine agent edits to that tree.
 
         Returns:
             RunReport with full attempt history and Scorecard.
@@ -126,7 +129,7 @@ class MandateRunner:
         # Compose the Single-Mandate directive.
         directive = self._compose_directive(blueprint, task)
 
-        return execute_mandate(self._manifest, blueprint, directive, engine_override)
+        return execute_mandate(self._manifest, blueprint, directive, engine_override, workdir)
 
     def _compose_directive(self, blueprint: Blueprint, task: str) -> str:
         """Compose the full Single-Mandate directive from the Blueprint and task."""
