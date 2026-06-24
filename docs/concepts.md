@@ -82,7 +82,8 @@ hard-coding model names.
 - **Attended Mode** — a human is present and iterating.
 - **Unattended Mode** — Flows run without a human, via four elements: **Source**
   (where the task comes from), **Trigger** (what starts it), **Sandbox** (isolated
-  environment), **Gate** (how the result is reviewed). *(Deferred past the MVP.)*
+  environment), **Gate** (how the result is reviewed). The cron Trigger path is
+  available via `alc tick` over a YAML task queue; webhook triggering is future work.
 
 ### Specialist & Knowledge File
 A **Specialist** is an agent that keeps a **Knowledge File** (a working model of one

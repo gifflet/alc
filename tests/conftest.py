@@ -22,6 +22,7 @@ engines:
     type: mock
 blueprints_dir: .alc/blueprints
 flows_dir: .alc/flows
+queue_dir: .alc/queue
 """
 
 _CHORE = """\

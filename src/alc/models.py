@@ -41,6 +41,7 @@ class Manifest(BaseModel):
     engines: dict[str, dict]                  # engine_name -> {type, ...}
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
+    queue_dir: str = ".alc/queue"
 
 
 class AttemptRecord(BaseModel):
@@ -95,3 +96,31 @@ class FlowReport(BaseModel):
     success: bool
     stages: list[RunReport]    # one RunReport per executed stage
     scorecard: Scorecard       # aggregate across all stages
+
+
+# ---------------------------------------------------------------------------
+# Unattended Mode (Source / Trigger / Sandbox / Gate)
+# ---------------------------------------------------------------------------
+
+
+class QueueTask(BaseModel):
+    """One entry in the task queue (the Source for Unattended Mode).
+
+    Stored as a YAML file under queue_dir. The Trigger (``alc tick``) reads
+    and drains these files; each is archived to done/ after processing.
+    """
+
+    flow: str
+    task: str
+    engine: str | None = None
+    isolate: bool = True
+
+
+class TickResult(BaseModel):
+    """Gate record produced for one queued task after ``alc tick`` processes it."""
+
+    task_file: str          # original filename stem (e.g. "job1")
+    flow: str
+    success: bool
+    branch: str | None = None   # set when IsolatedWorktree committed changes
+    report: FlowReport

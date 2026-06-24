@@ -155,6 +155,36 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if report.success else 1
 
 
+def cmd_tick(args: argparse.Namespace) -> int:
+    """Run `alc tick`: drain the task queue (Unattended Mode Trigger).
+
+    Processes every pending *.yaml file in queue_dir once and exits. Designed
+    to be called by cron or launchd — cron provides the cadence; this command
+    provides one drain pass. Exit code is always 0 (cron-friendly); per-task
+    outcomes live in the Gate reports under done/.
+    """
+    from alc.intake import load_manifest
+    from alc.queue import process_queue
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    results = process_queue(manifest, operator_layer)
+
+    if not results:
+        print("No pending tasks.")
+        return 0
+
+    for result in results:
+        status = "SUCCESS" if result.success else "FAILED"
+        line = f"{result.task_file}: {result.flow} -> {status}"
+        if result.branch:
+            line += f" (branch {result.branch})"
+        print(line)
+
+    return 0
+
+
 def cmd_flow(args: argparse.Namespace) -> int:
     """Run `alc flow <flow_name> "<task>" [--engine NAME] [--isolate]`."""
     from alc.flow import FlowRunner
@@ -247,6 +277,15 @@ def main() -> None:
         ),
     )
 
+    # alc tick
+    subparsers.add_parser(
+        "tick",
+        help=(
+            "Drain the task queue (Unattended Mode Trigger). "
+            "Processes all pending tasks once and exits — call via cron."
+        ),
+    )
+
     # alc flow <flow_name> "<task>" [--engine NAME] [--isolate]
     flow_parser = subparsers.add_parser(
         "flow", help="Run a Flow (multi-stage pipeline) against a task."
@@ -272,6 +311,8 @@ def main() -> None:
         sys.exit(cmd_run(args))
     elif args.command == "flow":
         sys.exit(cmd_flow(args))
+    elif args.command == "tick":
+        sys.exit(cmd_tick(args))
     else:
         parser.print_help()
         sys.exit(1)
