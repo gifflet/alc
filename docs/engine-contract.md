@@ -119,6 +119,13 @@ Indicative native support; gaps are emulated by the control plane.
 | Subagents | ✅ | ⚠️ | ❌ | ❌ |
 | MCP | ✅ | ✅ | ⚠️ | ❌ |
 
+The table is *indicative native support*. An adapter's own `capabilities()` may
+deliberately declare a **subset** — claiming only what is stable across CLI versions and
+leaving the rest to control-plane emulation. The `GeminiEngine` adapter does this: it
+reports `native_mcp=True` but `native_system_append=False` / `native_structured_output=False`,
+so ALC folds the system prompt into the directive and validates output itself, giving
+uniform behavior regardless of the installed `gemini` version.
+
 The **Mock** engine declares no capabilities on purpose: it exercises the full control
 plane (loop, gate, scorecard) with no model call, so the practices can be tested for
 free and hermetically.

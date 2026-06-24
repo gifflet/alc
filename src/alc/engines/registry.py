@@ -16,10 +16,12 @@ _FACTORIES: dict[str, type] = {}
 def _register_defaults() -> None:
     """Lazy import so control-plane modules never import adapters directly."""
     from alc.engines.claude_code import ClaudeCodeEngine
+    from alc.engines.gemini import GeminiEngine
     from alc.engines.mock import MockEngine
 
     _FACTORIES["mock"] = MockEngine
     _FACTORIES["claude-code"] = ClaudeCodeEngine
+    _FACTORIES["gemini"] = GeminiEngine
 
 
 def resolve_engine(engine_name: str, engines_config: dict[str, dict]) -> "Engine":
