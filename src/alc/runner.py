@@ -1,0 +1,111 @@
+# runner.py — MandateRunner: ties the control plane together for one alc run.
+# Composes the Single-Mandate directive, resolves the engine and Compute Tier,
+# enforces the Policy Gate, and drives the Assurance Loop.
+from __future__ import annotations
+
+from pathlib import Path
+
+from alc.assurance import AssuranceLoop
+from alc.engine import Engine, EngineRequest
+from alc.engines.registry import resolve_engine
+from alc.models import Blueprint, Manifest, RunReport
+from alc.policy import has_errors, lint
+from alc.verifier import Verifier
+
+# Brief context header prepended to the directive to satisfy the Context Budget.
+_CONTEXT_HEADER_TEMPLATE = """\
+# ALC Single-Mandate Run
+Blueprint: {blueprint_name}
+Purpose:   {purpose}
+Task:      {task}
+
+---
+"""
+
+
+class PolicyViolationError(RuntimeError):
+    """Raised when the Policy Gate finds error-level violations, blocking the run."""
+
+
+class MandateRunner:
+    """Composes and executes one Single-Mandate directive end to end.
+
+    Resolves the engine and model, enforces the Policy Gate, then runs the
+    Assurance Loop (Act -> Verify -> Repair).
+    """
+
+    def __init__(self, manifest: Manifest, operator_layer: Path) -> None:
+        self._manifest = manifest
+        self._operator_layer = operator_layer
+
+    def run(
+        self,
+        blueprint: Blueprint,
+        task: str,
+        engine_override: str | None = None,
+    ) -> RunReport:
+        """Execute one task against the given Blueprint.
+
+        Args:
+            blueprint: The loaded Blueprint describing workflow, checks, and Compute Tier.
+            task: The free-text task description provided by the operator.
+            engine_override: If set, use this engine name instead of manifest.default_engine.
+
+        Returns:
+            RunReport with full attempt history and Scorecard.
+
+        Raises:
+            PolicyViolationError: If the Policy Gate finds error-level violations.
+            KeyError: If the engine or model cannot be resolved.
+        """
+        # Policy Gate: lint and refuse on error violations.
+        violations = lint(self._manifest, [blueprint])
+        if has_errors(violations):
+            error_msgs = [v.message for v in violations if v.severity == "error"]
+            raise PolicyViolationError(
+                "Policy Gate blocked this run:\n" + "\n".join(f"  - {m}" for m in error_msgs)
+            )
+
+        # Resolve engine.
+        engine_name = engine_override or self._manifest.default_engine
+        engine: Engine = resolve_engine(engine_name, self._manifest.engines)
+
+        # Resolve model from Compute Tier.
+        model: str | None = None
+        tier = self._manifest.compute_tiers.get(blueprint.compute_tier)
+        if tier:
+            model = tier.get(engine_name)
+
+        # Compose the Single-Mandate directive.
+        directive = self._compose_directive(blueprint, task)
+
+        # Build the EngineRequest (workdir = cwd for MVP; worktree isolation is deferred).
+        request = EngineRequest(
+            directive=directive,
+            workdir=Path.cwd(),
+            model=model,
+        )
+
+        # Run the Assurance Loop.
+        verifier = Verifier()
+        loop = AssuranceLoop(engine=engine, verifier=verifier)
+        report = loop.run(request=request, checks=blueprint.checks)
+
+        # Patch the report's blueprint field to the real name (not truncated directive).
+        return RunReport(
+            blueprint=blueprint.name,
+            engine=report.engine,
+            success=report.success,
+            attempts=report.attempts,
+            scorecard=report.scorecard,
+            output_text=report.output_text,
+        )
+
+    def _compose_directive(self, blueprint: Blueprint, task: str) -> str:
+        """Compose the full Single-Mandate directive from the Blueprint and task."""
+        header = _CONTEXT_HEADER_TEMPLATE.format(
+            blueprint_name=blueprint.name,
+            purpose=blueprint.purpose,
+            task=task,
+        )
+        return header + blueprint.workflow

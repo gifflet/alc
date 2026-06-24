@@ -1,0 +1,19 @@
+version: 1
+default_engine: mock
+
+compute_tiers:
+  standard:
+    mock: "mock-small"
+    claude-code: "claude-sonnet-4-6"
+  deep:
+    mock: "mock-large"
+    claude-code: "claude-opus-4-8"
+
+engines:
+  mock:
+    type: mock
+  claude-code:
+    type: claude-code
+    binary: claude
+
+blueprints_dir: .alc/blueprints

@@ -1,0 +1,105 @@
+# policy.py — Policy Gate: conformance rules for the Operator Layer.
+# Lints a Manifest + its Blueprints and returns Violations with severity error/warn.
+# An error violation blocks alc run; a warn is advisory only.
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from alc.models import Blueprint, Manifest
+
+
+@dataclass
+class Violation:
+    """A single Policy Gate finding."""
+
+    rule: str
+    severity: str   # "error" or "warn"
+    message: str
+
+
+def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
+    """Run all Policy Gate rules and return every Violation found.
+
+    Rules (from mvp.md):
+    1. Blueprint declares >= 1 check            (error) — no Assurance Loop otherwise.
+    2. Blueprint has exactly one name/purpose   (error) — Single Mandate.
+    3. Blueprint declares a report spec         (warn)  — structured output.
+    4. manifest.default_engine in manifest.engines  (error) — resolvable execution plane.
+    5. Every Compute Tier maps the referenced engine  (error) — model resolvable.
+    """
+    violations: list[Violation] = []
+
+    # Rule 4: default_engine must be declared in manifest.engines.
+    if manifest.default_engine not in manifest.engines:
+        violations.append(
+            Violation(
+                rule="default_engine_resolvable",
+                severity="error",
+                message=(
+                    f"manifest.default_engine '{manifest.default_engine}' is not declared "
+                    f"in manifest.engines (available: {list(manifest.engines)})"
+                ),
+            )
+        )
+
+    # Rule 5: every compute tier must map every engine referenced in blueprints.
+    # For the MVP we check that all tiers map the default_engine at minimum.
+    for tier_name, tier_map in manifest.compute_tiers.items():
+        if manifest.default_engine not in tier_map:
+            violations.append(
+                Violation(
+                    rule="compute_tier_maps_engine",
+                    severity="error",
+                    message=(
+                        f"Compute Tier '{tier_name}' does not map engine "
+                        f"'{manifest.default_engine}'."
+                    ),
+                )
+            )
+
+    for bp in blueprints:
+        # Rule 1: blueprint must declare at least one check.
+        if not bp.checks:
+            violations.append(
+                Violation(
+                    rule="blueprint_has_checks",
+                    severity="error",
+                    message=(
+                        f"Blueprint '{bp.name}' declares no checks — "
+                        "an Assurance Loop without checks provides no guarantee."
+                    ),
+                )
+            )
+
+        # Rule 2: blueprint must have a non-empty name and purpose (Single Mandate).
+        if not bp.name or not bp.purpose:
+            violations.append(
+                Violation(
+                    rule="blueprint_single_mandate",
+                    severity="error",
+                    message=(
+                        f"Blueprint '{bp.name}' is missing a name or purpose — "
+                        "every Blueprint must declare exactly one mandate."
+                    ),
+                )
+            )
+
+        # Rule 3: blueprint should declare a report spec.
+        if bp.report is None:
+            violations.append(
+                Violation(
+                    rule="blueprint_has_report",
+                    severity="warn",
+                    message=(
+                        f"Blueprint '{bp.name}' does not declare a report spec — "
+                        "structured output aids parsing and traceability."
+                    ),
+                )
+            )
+
+    return violations
+
+
+def has_errors(violations: list[Violation]) -> bool:
+    """Return True if any violation has severity 'error'."""
+    return any(v.severity == "error" for v in violations)

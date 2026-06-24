@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alc"
+version = "0.1.0"
+description = "ALC — Agentic Layer Compiler & Runtime: a control plane for agentic coding."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+alc = "alc.cli:main"
+
+[tool.hatchling.build.targets.wheel]
+packages = ["src/alc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
