@@ -1,6 +1,6 @@
 # cli.py — argparse entrypoint for ALC.
-# Provides subcommands: `alc init`, `alc lint`, `alc run`, `alc flow`,
-# `alc tick`, `alc conduct`, `alc specialist`.
+# Provides subcommands: `alc init` (supports --setup), `alc lint`, `alc run`,
+# `alc flow`, `alc tick`, `alc conduct`, `alc specialist`, `alc setup`.
 from __future__ import annotations
 
 import argparse
@@ -65,8 +65,30 @@ def _print_isolation_result(wt) -> None:
         print("No changes were made; nothing to isolate.")
 
 
+def _print_skill_result(path: "Path", changed: bool, version: str) -> None:
+    """Print the outcome of an install_skill() call to stdout."""
+    if changed:
+        print(f"Installed/updated the ALC skill at {path} (alc {version})")
+    else:
+        print(f"ALC skill already up to date at {path} (alc {version})")
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    """Run `alc setup`: install or update the user-level Claude Code skill."""
+    from alc.setup_skill import _resolve_version, install_skill
+
+    try:
+        path, changed = install_skill()
+    except Exception as exc:
+        print(f"[ERROR] could not install the ALC skill: {exc}", file=sys.stderr)
+        return 1
+
+    _print_skill_result(path, changed, _resolve_version())
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
-    """Run `alc init [--force]`: scaffold a default Operator Layer into cwd."""
+    """Run `alc init [--force] [--setup]`: scaffold a default Operator Layer into cwd."""
     from alc.scaffold import scaffold
 
     try:
@@ -78,6 +100,17 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("Initialised Operator Layer:")
     for path in created:
         print(f"  {path}")
+
+    if args.setup:
+        from alc.setup_skill import _resolve_version, install_skill
+
+        try:
+            skill_path, changed = install_skill()
+        except Exception as exc:
+            print(f"[ERROR] could not install the ALC skill: {exc}", file=sys.stderr)
+            return 1
+        _print_skill_result(skill_path, changed, _resolve_version())
+
     return 0
 
 
@@ -368,7 +401,7 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # alc init [--force]
+    # alc init [--force] [--setup]
     init_parser = subparsers.add_parser(
         "init",
         help="Scaffold a default Operator Layer (.alc/) into the current directory.",
@@ -378,6 +411,18 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Overwrite an existing .alc/ directory.",
+    )
+    init_parser.add_argument(
+        "--setup",
+        action="store_true",
+        default=False,
+        help="Also install/update the user-level Claude Code skill after scaffolding.",
+    )
+
+    # alc setup
+    subparsers.add_parser(
+        "setup",
+        help="Install or update the user-level Claude Code skill (~/.claude/skills/alc/SKILL.md).",
     )
 
     # alc lint
@@ -459,6 +504,8 @@ def main() -> None:
 
     if args.command == "init":
         sys.exit(cmd_init(args))
+    elif args.command == "setup":
+        sys.exit(cmd_setup(args))
     elif args.command == "lint":
         sys.exit(cmd_lint(args))
     elif args.command == "run":

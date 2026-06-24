@@ -34,7 +34,7 @@ Running one task end to end shows, with no real model required (via the Mock eng
 |---|---|
 | Specialists + Knowledge File (`Apply → Learn → Recall`) (done: `alc specialist`, Recall→Act→Learn) | Attended |
 | Context Budget automation (Primer generation, bundle replay) | Attended |
-| Compile to native artifacts (`.claude/commands`, Cursor rules) | Attended |
+| Native integration | done differently: `alc setup` installs a user-level Claude Code skill that drives the `alc` CLI (no per-Blueprint transpile) |
 | Worktree/sandbox isolation per run (done: opt-in `--isolate`) | Detached |
 | Unattended Mode: Source / Trigger (webhook, cron) / Sandbox / Gate | Detached (done: cron via `alc tick` over a task queue; webhook future) |
 | Observability dashboard, screenshots/e2e evidence | Detached |
