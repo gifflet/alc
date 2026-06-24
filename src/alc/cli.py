@@ -1,5 +1,6 @@
 # cli.py — argparse entrypoint for ALC.
-# Provides subcommands: `alc lint`, `alc run`, and `alc flow`.
+# Provides subcommands: `alc init`, `alc lint`, `alc run`, `alc flow`,
+# `alc tick`, `alc conduct`, `alc specialist`.
 from __future__ import annotations
 
 import argparse
@@ -62,6 +63,22 @@ def _print_isolation_result(wt) -> None:
         )
     else:
         print("No changes were made; nothing to isolate.")
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """Run `alc init [--force]`: scaffold a default Operator Layer into cwd."""
+    from alc.scaffold import scaffold
+
+    try:
+        created = scaffold(Path.cwd(), force=args.force)
+    except FileExistsError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    print("Initialised Operator Layer:")
+    for path in created:
+        print(f"  {path}")
+    return 0
 
 
 def cmd_lint(args: argparse.Namespace) -> int:
@@ -351,6 +368,18 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # alc init [--force]
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Scaffold a default Operator Layer (.alc/) into the current directory.",
+    )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite an existing .alc/ directory.",
+    )
+
     # alc lint
     subparsers.add_parser("lint", help="Check the Operator Layer for Policy Gate violations.")
 
@@ -428,7 +457,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "lint":
+    if args.command == "init":
+        sys.exit(cmd_init(args))
+    elif args.command == "lint":
         sys.exit(cmd_lint(args))
     elif args.command == "run":
         sys.exit(cmd_run(args))
