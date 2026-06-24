@@ -38,7 +38,7 @@ Running one task end to end shows, with no real model required (via the Mock eng
 | Worktree/sandbox isolation per run (done: opt-in `--isolate`) | Detached |
 | Unattended Mode: Source / Trigger (webhook, cron) / Sandbox / Gate | Detached (done: cron via `alc tick` over a task queue; webhook future) |
 | Observability dashboard, screenshots/e2e evidence | Detached |
-| Conductor (orchestrator) + agent CRUD | Conducted |
+| Conductor (orchestrator) + agent CRUD | Conducted (done: `alc conduct` dispatches/enqueues flows; agent CRUD future) |
 
 Deferring these is deliberate (KISS). The MVP's interfaces are the seams they plug into.
 

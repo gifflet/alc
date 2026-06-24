@@ -124,3 +124,31 @@ class TickResult(BaseModel):
     success: bool
     branch: str | None = None   # set when IsolatedWorktree committed changes
     report: FlowReport
+
+
+# ---------------------------------------------------------------------------
+# Conductor (single-interface orchestrator)
+# ---------------------------------------------------------------------------
+
+
+class PlannedFlow(BaseModel):
+    """One (flow, task) pair produced by the Conductor's planning turn."""
+
+    flow: str
+    task: str
+
+
+class ConductorPlan(BaseModel):
+    """Structured plan returned by the Conductor: an ordered list of PlannedFlow items."""
+
+    items: list[PlannedFlow]
+
+
+class ConductReport(BaseModel):
+    """Full record of one ``alc conduct`` invocation."""
+
+    goal: str
+    mode: str                           # "run" or "enqueue"
+    plan: ConductorPlan
+    flow_reports: list[FlowReport] = []  # populated in run mode
+    enqueued_files: list[str] = []       # populated in enqueue mode

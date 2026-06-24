@@ -92,7 +92,9 @@ Knowledge File is a working model, not a source of truth — the code is. *(Defe
 
 ### Conductor
 A single-interface agent that creates, commands, and retires other agents, so you talk
-to one agent instead of a fleet. *(Deferred.)*
+to one agent instead of a fleet. Invoked via `alc conduct "<goal>"`; the Conductor
+plans the required Flows and either runs them immediately or enqueues them for
+`alc tick`.
 
 ### Scorecard
 Four health metrics, recorded per run:

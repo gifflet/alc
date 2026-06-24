@@ -25,8 +25,10 @@ class MockEngine:
     def __init__(
         self,
         behaviors: list[Callable[[Path], None]] | None = None,
+        output: str | None = None,
     ) -> None:
         self._behaviors = behaviors
+        self._output = output
         self._call_index = 0
 
     def capabilities(self) -> Capabilities:
@@ -38,9 +40,15 @@ class MockEngine:
         return True
 
     def run(self, request: EngineRequest) -> EngineResult:
-        """Apply the current behavior (if any) then return ok=True."""
+        """Apply the current behavior (if any) then return ok=True.
+
+        If ``output`` was supplied at construction, use it as ``output_text``;
+        otherwise fall back to the default "[mock] applied directive" string.
+        Behaviors (side-effect callables) are still invoked regardless.
+        """
         if self._behaviors is not None:
             idx = min(self._call_index, len(self._behaviors) - 1)
             self._behaviors[idx](request.workdir)
         self._call_index += 1
-        return EngineResult(ok=True, output_text="[mock] applied directive")
+        text = self._output if self._output is not None else "[mock] applied directive"
+        return EngineResult(ok=True, output_text=text)

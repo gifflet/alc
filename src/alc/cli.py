@@ -197,6 +197,56 @@ def cmd_tick(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_conduct(args: argparse.Namespace) -> int:
+    """Run `alc conduct "<goal>" [--engine NAME] [--enqueue]`."""
+    import sys
+
+    from alc.conduct import conduct
+    from alc.intake import load_manifest
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    try:
+        report = conduct(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            goal=args.goal,
+            engine_override=args.engine,
+            enqueue=args.enqueue,
+        )
+    except ValueError as exc:
+        print(f"[ERROR] Conductor could not produce a valid plan: {exc}", file=sys.stderr)
+        return 1
+
+    # Summary header.
+    print(f"Goal: {report.goal}")
+    print()
+    print("Plan:")
+    for item in report.plan.items:
+        print(f"  -> {item.flow}: {item.task}")
+    print()
+
+    if report.mode == "run":
+        all_ok = True
+        for flow_report in report.flow_reports:
+            status = "SUCCESS" if flow_report.success else "FAILED"
+            print(f"  {flow_report.flow} -> {status}")
+            if not flow_report.success:
+                all_ok = False
+        print()
+        print(report.model_dump_json(indent=2))
+        return 0 if all_ok else 1
+
+    # Enqueue mode.
+    n = len(report.enqueued_files)
+    files_str = ", ".join(report.enqueued_files)
+    print(f"Enqueued {n} task(s): {files_str}")
+    print()
+    print(report.model_dump_json(indent=2))
+    return 0
+
+
 def cmd_flow(args: argparse.Namespace) -> int:
     """Run `alc flow <flow_name> "<task>" [--engine NAME] [--isolate]`."""
     from alc.flow import FlowRunner
@@ -298,6 +348,23 @@ def main() -> None:
         ),
     )
 
+    # alc conduct "<goal>" [--engine NAME] [--enqueue]
+    conduct_parser = subparsers.add_parser(
+        "conduct",
+        help=(
+            "Conduct a goal: the Conductor agent plans the required Flows and "
+            "either runs them now (default) or enqueues them for alc tick."
+        ),
+    )
+    conduct_parser.add_argument("goal", help="High-level goal for the Conductor.")
+    conduct_parser.add_argument("--engine", default=None, help="Override the default engine.")
+    conduct_parser.add_argument(
+        "--enqueue",
+        action="store_true",
+        default=False,
+        help="Write queue task files instead of running Flows immediately.",
+    )
+
     # alc flow <flow_name> "<task>" [--engine NAME] [--isolate]
     flow_parser = subparsers.add_parser(
         "flow", help="Run a Flow (multi-stage pipeline) against a task."
@@ -325,6 +392,8 @@ def main() -> None:
         sys.exit(cmd_flow(args))
     elif args.command == "tick":
         sys.exit(cmd_tick(args))
+    elif args.command == "conduct":
+        sys.exit(cmd_conduct(args))
     else:
         parser.print_help()
         sys.exit(1)
