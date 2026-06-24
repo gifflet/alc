@@ -1,4 +1,4 @@
-# intake.py — Loads and parses the Operator Layer (manifest + blueprints + flows).
+# intake.py — Loads and parses the Operator Layer (manifest + blueprints + flows + specialists).
 # Single responsibility: read YAML/Markdown from disk and return typed models.
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from alc.models import Blueprint, Check, FlowDefinition, Manifest, ReportSpec
+from alc.models import Blueprint, Check, FlowDefinition, Manifest, ReportSpec, Specialist
 
 
 def load_manifest(operator_layer: Path) -> Manifest:
@@ -143,3 +143,25 @@ def load_all_flows(manifest: Manifest, operator_layer: Path) -> list[FlowDefinit
     for yaml_file in sorted(flows_dir.glob("*.yaml")):
         flows.append(load_flow(flows_dir, yaml_file.stem))
     return flows
+
+
+def load_specialist(specialists_dir: Path, name: str) -> Specialist:
+    """Load a Specialist definition by name from the specialists directory.
+
+    Specialists are plain YAML files (not Markdown with front-matter) because
+    they are configuration, not prompts.
+
+    Args:
+        specialists_dir: Directory containing specialist YAML files.
+        name: Specialist name (used as the filename stem).
+
+    Returns:
+        Parsed Specialist.
+
+    Raises:
+        FileNotFoundError: If the specialist file does not exist.
+    """
+    specialist_path = specialists_dir / f"{name}.yaml"
+    with specialist_path.open() as fh:
+        data = yaml.safe_load(fh)
+    return Specialist.model_validate(data)

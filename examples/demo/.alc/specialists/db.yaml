@@ -1,0 +1,4 @@
+name: db
+area: "the database access layer"
+blueprint: chore
+knowledge_path: .alc/specialists/db.knowledge.md

@@ -247,6 +247,36 @@ def cmd_conduct(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_specialist(args: argparse.Namespace) -> int:
+    """Run `alc specialist <name> "<task>" [--engine NAME]`."""
+    from alc.intake import load_manifest, load_specialist
+    from alc.specialist import run_specialist
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    specialists_dir = operator_layer.parent / manifest.specialists_dir
+    specialist = load_specialist(specialists_dir, args.name)
+
+    report = run_specialist(
+        manifest=manifest,
+        operator_layer=operator_layer,
+        specialist=specialist,
+        task=args.task,
+        engine_override=args.engine,
+    )
+
+    act_status = "SUCCESS" if report.act.success else "FAILED"
+    knowledge_status = "yes" if report.knowledge_updated else "no"
+    print(f"Specialist: {report.specialist}")
+    print(f"Act: {act_status}")
+    print(f"Knowledge updated: {knowledge_status}")
+    print()
+    print(report.model_dump_json(indent=2))
+
+    return 0 if report.act.success else 1
+
+
 def cmd_flow(args: argparse.Namespace) -> int:
     """Run `alc flow <flow_name> "<task>" [--engine NAME] [--isolate]`."""
     from alc.flow import FlowRunner
@@ -365,6 +395,20 @@ def main() -> None:
         help="Write queue task files instead of running Flows immediately.",
     )
 
+    # alc specialist <name> "<task>" [--engine NAME]
+    specialist_parser = subparsers.add_parser(
+        "specialist",
+        help=(
+            "Run a Specialist (Recall -> Act -> Learn): read the Knowledge File, "
+            "act on the task, then update the Knowledge File."
+        ),
+    )
+    specialist_parser.add_argument("name", help="Specialist name (e.g. 'db').")
+    specialist_parser.add_argument("task", help="Free-text task description.")
+    specialist_parser.add_argument(
+        "--engine", default=None, help="Override the default engine."
+    )
+
     # alc flow <flow_name> "<task>" [--engine NAME] [--isolate]
     flow_parser = subparsers.add_parser(
         "flow", help="Run a Flow (multi-stage pipeline) against a task."
@@ -394,6 +438,8 @@ def main() -> None:
         sys.exit(cmd_tick(args))
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
+    elif args.command == "specialist":
+        sys.exit(cmd_specialist(args))
     else:
         parser.print_help()
         sys.exit(1)

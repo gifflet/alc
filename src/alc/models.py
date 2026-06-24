@@ -42,6 +42,7 @@ class Manifest(BaseModel):
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"
+    specialists_dir: str = ".alc/specialists"
 
 
 class AttemptRecord(BaseModel):
@@ -152,3 +153,29 @@ class ConductReport(BaseModel):
     plan: ConductorPlan
     flow_reports: list[FlowReport] = []  # populated in run mode
     enqueued_files: list[str] = []       # populated in enqueue mode
+
+
+# ---------------------------------------------------------------------------
+# Specialists (Recall -> Act -> Learn)
+# ---------------------------------------------------------------------------
+
+
+class Specialist(BaseModel):
+    """Declares an agent tied to one area of the codebase.
+
+    The Specialist keeps a Knowledge File (a working model of its area) and
+    self-tunes it via the Recall -> Act -> Learn cycle.
+    """
+
+    name: str
+    area: str = ""                  # human description of the area this Specialist covers
+    blueprint: str                  # name of the Blueprint used for the Act step
+    knowledge_path: str             # path to the Knowledge File, relative to the project root
+
+
+class SpecialistReport(BaseModel):
+    """Full record of one ``alc specialist`` invocation."""
+
+    specialist: str
+    act: RunReport
+    knowledge_updated: bool

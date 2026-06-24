@@ -88,7 +88,7 @@ hard-coding model names.
 ### Specialist & Knowledge File
 A **Specialist** is an agent that keeps a **Knowledge File** (a working model of one
 area of the codebase) and self-tunes it via an `Apply → Learn → Recall` cycle. The
-Knowledge File is a working model, not a source of truth — the code is. *(Deferred.)*
+Knowledge File is a working model, not a source of truth — the code is.
 
 ### Conductor
 A single-interface agent that creates, commands, and retires other agents, so you talk
