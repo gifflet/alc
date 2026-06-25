@@ -471,6 +471,11 @@ def main() -> None:
         prog="alc",
         description="ALC — Agentic Layer Compiler & Runtime",
     )
+    from alc.setup_skill import _resolve_version
+
+    parser.add_argument(
+        "--version", action="version", version=f"alc {_resolve_version()}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # alc init [--force] [--setup]

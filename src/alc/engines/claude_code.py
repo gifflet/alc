@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
+import threading
+import time
 
 from alc.engine import Capabilities, EngineRequest, EngineResult, Usage
 
@@ -38,8 +42,13 @@ class ClaudeCodeEngine:
             return False
 
     def run(self, request: EngineRequest) -> EngineResult:
-        """Shell out to `claude --print --output-format stream-json --verbose` and
-        return the result. Does NOT retry — that is the Assurance Loop's job."""
+        """Stream `claude --print --output-format stream-json` and return the result.
+
+        Reads the engine's stream-json output line by line and surfaces live
+        progress (tool calls) to stderr, so the operator can see the turn is
+        working instead of facing a frozen terminal. Does NOT retry — that is the
+        Assurance Loop's job.
+        """
         cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose"]
 
         # Headless edits need a non-interactive permission mode. The control plane
@@ -61,58 +70,126 @@ class ClaudeCodeEngine:
             if request.denied_tools:
                 cmd += ["--disallowedTools", ",".join(request.denied_tools)]
 
-        import os
-
         merged_env = {**os.environ, **request.env}
 
+        print(
+            f"  → claude-code working (model={request.model or 'default'})…",
+            file=sys.stderr,
+            flush=True,
+        )
+        start = time.monotonic()
+
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
-                input=request.directive,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 cwd=request.workdir,
-                timeout=request.timeout_s,
                 env=merged_env,
             )
-        except subprocess.TimeoutExpired:
-            return EngineResult(ok=False, output_text="[claude-code] timed out")
         except FileNotFoundError:
             return EngineResult(ok=False, output_text="[claude-code] binary not found")
         except Exception as exc:  # noqa: BLE001
             return EngineResult(ok=False, output_text=f"[claude-code] error: {exc}")
 
-        if proc.returncode != 0:
-            return EngineResult(
-                ok=False,
-                output_text=proc.stderr or proc.stdout or "[claude-code] non-zero exit",
-            )
+        # Drain stderr in a background thread so a full stderr pipe can never
+        # deadlock the stdout read loop.
+        stderr_buf: list[str] = []
+        stderr_thread = threading.Thread(
+            target=lambda: stderr_buf.extend(proc.stderr), daemon=True
+        )
+        stderr_thread.start()
 
-        # Parse the final result line from stream-json output.
+        # Enforce the timeout by killing the process; the stdout loop unblocks.
+        timed_out = {"v": False}
+
+        def _on_timeout() -> None:
+            timed_out["v"] = True
+            proc.kill()
+
+        timer = threading.Timer(request.timeout_s, _on_timeout)
+        timer.start()
+
         output_text = ""
         usage = Usage()
         raw: dict = {}
-        for line in proc.stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        try:
             try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict) and event.get("type") == "result":
-                output_text = event.get("result", "")
-                # Usage is best-effort: token counts live under "usage" and the
-                # rolled-up cost under "total_cost_usd" at the top level.
-                u = event.get("usage", {})
-                usage = Usage(
-                    input_tokens=u.get("input_tokens"),
-                    output_tokens=u.get("output_tokens"),
-                    cost_usd=event.get("total_cost_usd"),
-                )
-                raw = event
+                proc.stdin.write(request.directive)
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass
+
+            # iter(readline, "") yields each line as it arrives — `for line in
+            # proc.stdout` would read-ahead and delay live progress.
+            for line in iter(proc.stdout.readline, ""):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                if event.get("type") == "assistant":
+                    for note in self._progress_notes(event):
+                        print(f"    • {note}", file=sys.stderr, flush=True)
+                elif event.get("type") == "result":
+                    output_text = event.get("result", "")
+                    # Usage is best-effort: token counts live under "usage" and the
+                    # rolled-up cost under "total_cost_usd" at the top level.
+                    u = event.get("usage", {}) or {}
+                    usage = Usage(
+                        input_tokens=u.get("input_tokens"),
+                        output_tokens=u.get("output_tokens"),
+                        cost_usd=event.get("total_cost_usd"),
+                    )
+                    raw = event
+            proc.wait()
+        finally:
+            timer.cancel()
+
+        elapsed = int(time.monotonic() - start)
+
+        if timed_out["v"]:
+            return EngineResult(ok=False, output_text="[claude-code] timed out")
+
+        if proc.returncode != 0:
+            err = "".join(stderr_buf).strip()
+            return EngineResult(ok=False, output_text=err or "[claude-code] non-zero exit")
+
+        cost = f", ${usage.cost_usd:.3f}" if usage.cost_usd is not None else ""
+        print(f"  → claude-code done ({elapsed}s{cost})", file=sys.stderr, flush=True)
 
         if not output_text:
-            output_text = proc.stdout
+            output_text = "[claude-code] completed"
 
         return EngineResult(ok=True, output_text=output_text, usage=usage, raw=raw)
+
+    @staticmethod
+    def _progress_notes(event: dict) -> list[str]:
+        """Extract short progress notes (tool uses) from an assistant stream event."""
+        notes: list[str] = []
+        content = event.get("message", {}).get("content", [])
+        if not isinstance(content, list):
+            return notes
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            name = block.get("name", "tool")
+            inp = block.get("input", {}) or {}
+            hint = (
+                inp.get("file_path")
+                or inp.get("path")
+                or inp.get("command")
+                or inp.get("pattern")
+                or ""
+            )
+            if isinstance(hint, str) and hint.strip():
+                notes.append(f"{name}: {hint.strip().splitlines()[0][:60]}")
+            else:
+                notes.append(name)
+        return notes

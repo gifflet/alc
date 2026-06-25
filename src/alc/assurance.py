@@ -3,6 +3,8 @@
 # This is the core enforcement mechanism: checks are law.
 from __future__ import annotations
 
+import sys
+
 from alc.engine import Engine, EngineRequest
 from alc.models import AttemptRecord, Blueprint, Check, RunReport, Scorecard
 from alc.verifier import Verifier
@@ -43,10 +45,37 @@ class AssuranceLoop:
 
         for attempt_index in range(self._max_repairs + 1):
             # --- Act ---
+            print(
+                f"→ Act (attempt {attempt_index + 1}/{self._max_repairs + 1})…",
+                file=sys.stderr,
+                flush=True,
+            )
             result = self._engine.run(current_request)
             last_output = result.output_text
 
+            # The engine itself failed to run (bad invocation, missing binary,
+            # auth error, timeout). Repairing is futile — surface the error and
+            # stop, instead of looping silently and burying the failure.
+            if not result.ok:
+                print(
+                    f"  ✗ engine failed to run: {result.output_text.strip()[:500]}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                attempts.append(
+                    AttemptRecord(index=attempt_index, engine_ok=False, failed_checks=[])
+                )
+                return RunReport(
+                    blueprint=request.directive[:40],
+                    engine=self._engine.name,
+                    success=False,
+                    attempts=attempts,
+                    scorecard=Scorecard(span=0, passes=attempt_index + 1, streak=0, touch=0),
+                    output_text=result.output_text,
+                )
+
             # --- Verify ---
+            print(f"→ Verify ({len(checks)} check(s))…", file=sys.stderr, flush=True)
             check_results = self._verifier.run(checks, request.workdir)
             failed = [cr for cr in check_results if not cr.passed]
             passed_names = [cr.name for cr in check_results if cr.passed]
@@ -61,6 +90,7 @@ class AssuranceLoop:
 
             if not failed:
                 # All checks pass — success.
+                print("  ✓ all checks passed", file=sys.stderr, flush=True)
                 scorecard = Scorecard(
                     span=len(check_results),
                     passes=attempt_index + 1,
@@ -76,10 +106,17 @@ class AssuranceLoop:
                     output_text=last_output,
                 )
 
+            print(
+                f"  ✗ checks failed: {', '.join(cr.name for cr in failed)}",
+                file=sys.stderr,
+                flush=True,
+            )
+
             # Repair budget exhausted?
             if attempt_index >= self._max_repairs:
                 break
 
+            print("  → repairing…", file=sys.stderr, flush=True)
             # --- Repair: compose a new directive with failure context ---
             failure_section = self._build_failure_section(failed)
             repair_directive = current_request.directive + failure_section

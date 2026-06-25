@@ -8,10 +8,25 @@ from pathlib import Path
 import pytest
 
 from alc.assurance import AssuranceLoop
-from alc.engine import EngineRequest
+from alc.engine import Capabilities, EngineRequest, EngineResult
 from alc.engines.mock import MockEngine
 from alc.models import Check
 from alc.verifier import Verifier
+
+
+class _FailingEngine:
+    """An engine whose turn always fails to run (e.g. bad flag / missing binary)."""
+
+    name = "failing"
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities()
+
+    def health_check(self) -> bool:
+        return True
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        return EngineResult(ok=False, output_text="boom: error: unknown option")
 
 
 def _make_request(workdir: Path) -> EngineRequest:
@@ -24,6 +39,22 @@ def _make_request(workdir: Path) -> EngineRequest:
 def _marker_checks() -> list[Check]:
     """A single check that passes when done.txt exists in the workdir."""
     return [Check(name="marker", command=["test", "-f", "done.txt"])]
+
+
+class TestAssuranceLoopEngineFailure:
+    """A failing engine short-circuits: fail fast, surface the error, no wasted repairs."""
+
+    def test_short_circuits_and_surfaces_error(self, tmp_path: Path) -> None:
+        # The check would PASS (file already present), but the engine failed to run —
+        # the loop must still fail and not mask the engine error.
+        (tmp_path / "done.txt").write_text("ok")
+        loop = AssuranceLoop(engine=_FailingEngine(), verifier=Verifier(), max_repairs=3)
+        report = loop.run(_make_request(tmp_path), checks=_marker_checks())
+
+        assert report.success is False
+        assert len(report.attempts) == 1  # did NOT waste the repair budget
+        assert report.attempts[0].engine_ok is False
+        assert "unknown option" in report.output_text
 
 
 class TestAssuranceLoopRepair:
