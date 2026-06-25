@@ -70,17 +70,19 @@ def load_blueprint(blueprints_dir: Path, name: str) -> Blueprint:
     content = blueprint_path.read_text()
     fm, body = _parse_front_matter(content)
 
-    # Build Check objects from front-matter.
-    raw_checks = fm.get("checks", [])
+    # Build Check objects from front-matter. `or []` handles a present-but-null
+    # `checks:` key (e.g. every check commented out) the same as an absent one,
+    # so the Policy Gate reports it cleanly instead of crashing.
+    raw_checks = fm.get("checks") or []
     checks = [
         Check(name=c["name"], command=c["command"]) if isinstance(c, dict) else c
         for c in raw_checks
     ]
 
-    # Build ReportSpec if present.
+    # Build ReportSpec if present (and non-null).
     report: ReportSpec | None = None
-    if "report" in fm:
-        r = fm["report"]
+    r = fm.get("report")
+    if r:
         report = ReportSpec.model_validate(r)
 
     return Blueprint(
