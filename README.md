@@ -30,6 +30,8 @@ The point: best practices stop being discipline you have to remember, and become
 
 ## 🚀 Quick Start
 
+> New to ALC? The [first-run guide](docs/first-run.md) walks you from install to a verified change, with the rough edges flagged.
+>
 > If you set up with `uv sync`, prefix the commands below with `uv run` (e.g. `uv run alc lint`).
 
 **Install**
@@ -65,7 +67,7 @@ alc conduct "the README is stale, refresh the docs" --engine claude-code
 | Command | What it does |
 |---|---|
 | `alc init [--setup]` | Scaffold a default `.alc/` Operator Layer (and install the editor skill) |
-| `alc lint` | Validate the Operator Layer against the Policy Gate |
+| `alc lint` | Validate the Operator Layer (your `.alc/`, not your source code) against the Policy Gate |
 | `alc run <blueprint> "<task>"` | Run one Blueprint as a verified Single Mandate |
 | `alc flow <flow> "<task>"` | Run a multi-stage pipeline (e.g. plan → build) |
 | `alc conduct "<goal>"` | Let ALC pick which Flow(s) to run; `--enqueue` to queue them instead |
