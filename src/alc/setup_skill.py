@@ -98,25 +98,51 @@ def render_skill(version: str) -> str:
     return SKILL_BODY_TEMPLATE.format(version=version)
 
 
+# User-level agent-skill directory per engine. Both Claude Code and Gemini CLI
+# use the same SKILL.md format; only the install location differs.
+_SKILLS_DIRS: dict[str, tuple[str, ...]] = {
+    "claude-code": (".claude", "skills"),
+    "gemini": (".gemini", "skills"),
+}
+
+
+def supported_engines() -> list[str]:
+    """Return the engines that have a user-level editor skill integration."""
+    return sorted(_SKILLS_DIRS)
+
+
 def install_skill(
+    engine: str = "claude-code",
     skills_root: Path | None = None,
     version: str | None = None,
 ) -> tuple[Path, bool]:
     """Write the ALC skill to skills_root/alc/SKILL.md.
 
     Args:
-        skills_root: Parent directory for skill namespaces.  Defaults to
-            ``~/.claude/skills``.
-        version: Version string to embed in the skill.  Defaults to the
-            installed distribution version (``importlib.metadata``).
+        engine: Which engine's editor to install for. Selects the user-level
+            skills directory (claude-code -> ~/.claude/skills,
+            gemini -> ~/.gemini/skills). Ignored when ``skills_root`` is given.
+        skills_root: Parent directory for skill namespaces. When omitted, it is
+            resolved from ``engine``.
+        version: Version string to embed in the skill. Defaults to the installed
+            distribution version (``importlib.metadata``).
 
     Returns:
         A ``(path, changed)`` tuple where *path* is the target file and
         *changed* is ``True`` when the file was written (created or updated)
         or ``False`` when the existing content was already identical.
+
+    Raises:
+        ValueError: If ``skills_root`` is omitted and ``engine`` has no known
+            editor skill integration (e.g. the mock engine).
     """
     if skills_root is None:
-        skills_root = Path.home() / ".claude" / "skills"
+        if engine not in _SKILLS_DIRS:
+            raise ValueError(
+                f"no editor skill integration for engine '{engine}'; "
+                f"supported: {supported_engines()}"
+            )
+        skills_root = Path.home().joinpath(*_SKILLS_DIRS[engine])
     if version is None:
         version = _resolve_version()
 

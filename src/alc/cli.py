@@ -65,25 +65,28 @@ def _print_isolation_result(wt) -> None:
         print("No changes were made; nothing to isolate.")
 
 
-def _print_skill_result(path: "Path", changed: bool, version: str) -> None:
+def _print_skill_result(path: "Path", changed: bool, version: str, engine: str) -> None:
     """Print the outcome of an install_skill() call to stdout."""
     if changed:
-        print(f"Installed/updated the ALC skill at {path} (alc {version})")
+        print(f"Installed/updated the ALC skill for {engine} at {path} (alc {version})")
     else:
-        print(f"ALC skill already up to date at {path} (alc {version})")
+        print(f"ALC skill for {engine} already up to date at {path} (alc {version})")
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    """Run `alc setup`: install or update the user-level Claude Code skill."""
+    """Run `alc setup [--engine NAME]`: install/update the user-level editor skill."""
     from alc.setup_skill import _resolve_version, install_skill
 
     try:
-        path, changed = install_skill()
+        path, changed = install_skill(engine=args.engine)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"[ERROR] could not install the ALC skill: {exc}", file=sys.stderr)
         return 1
 
-    _print_skill_result(path, changed, _resolve_version())
+    _print_skill_result(path, changed, _resolve_version(), args.engine)
     return 0
 
 
@@ -105,11 +108,14 @@ def cmd_init(args: argparse.Namespace) -> int:
         from alc.setup_skill import _resolve_version, install_skill
 
         try:
-            skill_path, changed = install_skill()
+            skill_path, changed = install_skill(engine=args.engine)
+        except ValueError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
         except Exception as exc:
             print(f"[ERROR] could not install the ALC skill: {exc}", file=sys.stderr)
             return 1
-        _print_skill_result(skill_path, changed, _resolve_version())
+        _print_skill_result(skill_path, changed, _resolve_version(), args.engine)
 
     return 0
 
@@ -416,13 +422,23 @@ def main() -> None:
         "--setup",
         action="store_true",
         default=False,
-        help="Also install/update the user-level Claude Code skill after scaffolding.",
+        help="Also install/update the user-level editor skill after scaffolding.",
+    )
+    init_parser.add_argument(
+        "--engine",
+        default="claude-code",
+        help="Engine whose editor skill to install with --setup (default: claude-code).",
     )
 
-    # alc setup
-    subparsers.add_parser(
+    # alc setup [--engine NAME]
+    setup_parser = subparsers.add_parser(
         "setup",
-        help="Install or update the user-level Claude Code skill (~/.claude/skills/alc/SKILL.md).",
+        help="Install or update the user-level editor skill for an engine.",
+    )
+    setup_parser.add_argument(
+        "--engine",
+        default="claude-code",
+        help="Engine whose editor skill to install: claude-code or gemini (default: claude-code).",
     )
 
     # alc lint

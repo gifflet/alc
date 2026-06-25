@@ -67,3 +67,35 @@ class TestRenderSkillContainsCliSurface:
         assert "alc conduct" in text
         assert "alc specialist" in text
         assert "alc tick" in text
+
+
+class TestEngineSelection:
+    def test_gemini_engine_uses_gemini_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """engine='gemini' installs under <home>/.gemini/skills."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
+        path, changed = install_skill(engine="gemini", version="2.0.0")
+
+        expected = tmp_path / ".gemini" / "skills" / "alc" / "SKILL.md"
+        assert path == expected
+        assert changed is True
+        assert expected.is_file()
+
+    def test_claude_engine_uses_claude_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """engine='claude-code' (the default) installs under <home>/.claude/skills."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
+        path, _ = install_skill(engine="claude-code", version="2.0.0")
+
+        assert path == tmp_path / ".claude" / "skills" / "alc" / "SKILL.md"
+
+    def test_unsupported_engine_raises(self) -> None:
+        """An engine without an editor integration (e.g. mock) raises ValueError."""
+        with pytest.raises(ValueError):
+            install_skill(engine="mock")
+        with pytest.raises(ValueError):
+            install_skill(engine="bogus")
