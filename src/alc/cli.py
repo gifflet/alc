@@ -145,7 +145,9 @@ def cmd_lint(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run `alc run <blueprint> "<task>" [--engine NAME] [--isolate]`."""
+    from alc.bundle import summarize_bundle, write_bundle
     from alc.intake import load_blueprint, load_manifest
+    from alc.primer import load_primer
     from alc.runner import MandateRunner, PolicyViolationError
     from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
 
@@ -156,6 +158,27 @@ def cmd_run(args: argparse.Namespace) -> int:
     blueprint = load_blueprint(blueprints_dir, args.blueprint)
 
     runner = MandateRunner(manifest=manifest, operator_layer=operator_layer)
+
+    # Build extra_context from --primer and/or --from-bundle before branching.
+    parts: list[str] = []
+    if args.primer:
+        primers_dir = operator_layer.parent / manifest.primers_dir
+        try:
+            parts.append(f"### Primer: {args.primer}\n" + load_primer(primers_dir, args.primer))
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+    if args.from_bundle:
+        bundles_dir = operator_layer.parent / manifest.bundles_dir
+        ref = Path(args.from_bundle)
+        if not ref.exists():
+            ref = bundles_dir / f"{args.from_bundle}.jsonl"
+        try:
+            parts.append("### Prior run (bundle)\n" + summarize_bundle(ref))
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+    extra_context: str | None = "\n\n".join(parts) if parts else None
 
     use_isolate = args.isolate
     if use_isolate and not is_git_repo(Path.cwd()):
@@ -175,6 +198,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 task=args.task,
                 engine_override=args.engine,
                 workdir=wt_path,
+                extra_context=extra_context,
             )
         except PolicyViolationError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
@@ -194,6 +218,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         _print_run_report(report)
         _print_isolation_result(wt)
+        if args.bundle:
+            bundles_dir = operator_layer.parent / manifest.bundles_dir
+            path = write_bundle(bundles_dir, args.blueprint, args.task, report)
+            print(f"Bundle written: {path}")
         return 0 if report.success else 1
 
     # Non-isolated path (default).
@@ -202,12 +230,17 @@ def cmd_run(args: argparse.Namespace) -> int:
             blueprint=blueprint,
             task=args.task,
             engine_override=args.engine,
+            extra_context=extra_context,
         )
     except PolicyViolationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
     _print_run_report(report)
+    if args.bundle:
+        bundles_dir = operator_layer.parent / manifest.bundles_dir
+        path = write_bundle(bundles_dir, args.blueprint, args.task, report)
+        print(f"Bundle written: {path}")
     return 0 if report.success else 1
 
 
@@ -335,8 +368,10 @@ def cmd_specialist(args: argparse.Namespace) -> int:
 
 def cmd_flow(args: argparse.Namespace) -> int:
     """Run `alc flow <flow_name> "<task>" [--engine NAME] [--isolate]`."""
+    from alc.bundle import summarize_bundle, write_bundle
     from alc.flow import FlowRunner
     from alc.intake import load_flow, load_manifest
+    from alc.primer import load_primer
     from alc.runner import PolicyViolationError
     from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
 
@@ -347,6 +382,27 @@ def cmd_flow(args: argparse.Namespace) -> int:
     flow = load_flow(flows_dir, args.flow_name)
 
     runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+
+    # Build extra_context from --primer and/or --from-bundle before branching.
+    parts: list[str] = []
+    if args.primer:
+        primers_dir = operator_layer.parent / manifest.primers_dir
+        try:
+            parts.append(f"### Primer: {args.primer}\n" + load_primer(primers_dir, args.primer))
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+    if args.from_bundle:
+        bundles_dir = operator_layer.parent / manifest.bundles_dir
+        ref = Path(args.from_bundle)
+        if not ref.exists():
+            ref = bundles_dir / f"{args.from_bundle}.jsonl"
+        try:
+            parts.append("### Prior run (bundle)\n" + summarize_bundle(ref))
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+    extra_context: str | None = "\n\n".join(parts) if parts else None
 
     use_isolate = args.isolate
     if use_isolate and not is_git_repo(Path.cwd()):
@@ -365,6 +421,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
                 task=args.task,
                 engine_override=args.engine,
                 workdir=wt_path,
+                extra_context=extra_context,
             )
         except PolicyViolationError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
@@ -382,6 +439,10 @@ def cmd_flow(args: argparse.Namespace) -> int:
 
         _print_flow_report(report)
         _print_isolation_result(wt)
+        if args.bundle:
+            bundles_dir = operator_layer.parent / manifest.bundles_dir
+            path = write_bundle(bundles_dir, args.flow_name, args.task, report)
+            print(f"Bundle written: {path}")
         return 0 if report.success else 1
 
     # Non-isolated path (default).
@@ -390,12 +451,17 @@ def cmd_flow(args: argparse.Namespace) -> int:
             flow=flow,
             task=args.task,
             engine_override=args.engine,
+            extra_context=extra_context,
         )
     except PolicyViolationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
     _print_flow_report(report)
+    if args.bundle:
+        bundles_dir = operator_layer.parent / manifest.bundles_dir
+        path = write_bundle(bundles_dir, args.flow_name, args.task, report)
+        print(f"Bundle written: {path}")
     return 0 if report.success else 1
 
 
@@ -444,7 +510,8 @@ def main() -> None:
     # alc lint
     subparsers.add_parser("lint", help="Check the Operator Layer for Policy Gate violations.")
 
-    # alc run <blueprint> "<task>" [--engine NAME] [--isolate]
+    # alc run <blueprint> "<task>" [--engine NAME] [--isolate] [--primer NAME]
+    #          [--bundle] [--from-bundle REF]
     run_parser = subparsers.add_parser("run", help="Run a Blueprint against a task.")
     run_parser.add_argument("blueprint", help="Blueprint name (e.g. 'chore').")
     run_parser.add_argument("task", help="Free-text task description.")
@@ -456,6 +523,30 @@ def main() -> None:
         help=(
             "Run inside an isolated git worktree on a temporary branch. "
             "Agent edits are committed there instead of mutating the working tree."
+        ),
+    )
+    run_parser.add_argument(
+        "--primer",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Inject a named Primer (curated context block from .alc/primers/<NAME>.md) "
+            "into the directive. Context Budget Trim move."
+        ),
+    )
+    run_parser.add_argument(
+        "--bundle",
+        action="store_true",
+        default=False,
+        help="Write an append-only bundle file recording this run's result for later replay.",
+    )
+    run_parser.add_argument(
+        "--from-bundle",
+        default=None,
+        metavar="REF",
+        help=(
+            "Replay a prior bundle into the directive. REF is a bundle file path or stem "
+            "(looked up in bundles_dir). Context Budget Offload move."
         ),
     )
 
@@ -499,7 +590,8 @@ def main() -> None:
         "--engine", default=None, help="Override the default engine."
     )
 
-    # alc flow <flow_name> "<task>" [--engine NAME] [--isolate]
+    # alc flow <flow_name> "<task>" [--engine NAME] [--isolate] [--primer NAME]
+    #           [--bundle] [--from-bundle REF]
     flow_parser = subparsers.add_parser(
         "flow", help="Run a Flow (multi-stage pipeline) against a task."
     )
@@ -513,6 +605,30 @@ def main() -> None:
         help=(
             "Run all Flow stages inside one shared isolated git worktree. "
             "The plan→build file hand-off is preserved within the worktree."
+        ),
+    )
+    flow_parser.add_argument(
+        "--primer",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Inject a named Primer (curated context block from .alc/primers/<NAME>.md) "
+            "into every stage's directive. Context Budget Trim move."
+        ),
+    )
+    flow_parser.add_argument(
+        "--bundle",
+        action="store_true",
+        default=False,
+        help="Write an append-only bundle file recording this flow's result for later replay.",
+    )
+    flow_parser.add_argument(
+        "--from-bundle",
+        default=None,
+        metavar="REF",
+        help=(
+            "Replay a prior bundle into every stage's directive. REF is a bundle file path "
+            "or stem (looked up in bundles_dir). Context Budget Offload move."
         ),
     )
 

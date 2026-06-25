@@ -43,6 +43,8 @@ class Manifest(BaseModel):
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"
     specialists_dir: str = ".alc/specialists"
+    primers_dir: str = ".alc/primers"
+    bundles_dir: str = ".alc/bundles"
 
 
 class AttemptRecord(BaseModel):

@@ -33,7 +33,7 @@ Running one task end to end shows, with no real model required (via the Mock eng
 | Deferred feature | Ladder stage |
 |---|---|
 | Specialists + Knowledge File (`Apply → Learn → Recall`) (done: `alc specialist`, Recall→Act→Learn) | Attended |
-| Context Budget automation (Primer generation, bundle replay) | Attended |
+| Context Budget automation (Primer generation, bundle replay) (done: `--primer` injects curated context; `--bundle`/`--from-bundle` record and replay) | Attended |
 | Native integration | done differently: `alc setup --engine` installs a user-level editor skill (Claude Code or Gemini) that drives the `alc` CLI (no per-Blueprint transpile) |
 | Worktree/sandbox isolation per run (done: opt-in `--isolate`) | Detached |
 | Unattended Mode: Source / Trigger (webhook, cron) / Sandbox / Gate | Detached (done: cron via `alc tick` over a task queue; webhook future) |

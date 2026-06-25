@@ -25,11 +25,13 @@ def _compose_stage_directive(
     blueprint: Blueprint,
     task: str,
     upstream_outputs: list[str],
+    extra_context: str | None = None,
 ) -> str:
     """Compose the Single-Mandate directive for one Flow stage.
 
-    Includes a flow/stage/task header, optional upstream context from previous
-    stages, and the Blueprint workflow body.
+    Includes a flow/stage/task header, optional primed context (Context Budget
+    Trim move), optional upstream context from previous stages, and the Blueprint
+    workflow body.
 
     This is a pure module-level function so it can be unit-tested in isolation.
 
@@ -40,6 +42,9 @@ def _compose_stage_directive(
         task: The original task string passed to the Flow.
         upstream_outputs: Labeled output blocks from all preceding stages.
             Each entry is already formatted as "## <stage> output\\n<text>".
+        extra_context: Optional primed context string (Primer text, bundle summary,
+            or both joined). Injected after the header and before the upstream
+            section when truthy. Default None leaves behavior unchanged.
 
     Returns:
         The fully composed directive string.
@@ -53,6 +58,10 @@ def _compose_stage_directive(
         "\n---\n"
     )
 
+    primed_section = ""
+    if extra_context:
+        primed_section = "## Primed context\n\n" + extra_context + "\n\n---\n"
+
     upstream_section = ""
     if upstream_outputs:
         upstream_section = (
@@ -61,7 +70,7 @@ def _compose_stage_directive(
             + "\n\n---\n"
         )
 
-    return header + upstream_section + blueprint.workflow
+    return header + primed_section + upstream_section + blueprint.workflow
 
 
 class FlowRunner:
@@ -84,6 +93,7 @@ class FlowRunner:
         task: str,
         engine_override: str | None = None,
         workdir: Path | None = None,
+        extra_context: str | None = None,
     ) -> FlowReport:
         """Execute every stage in the Flow and return an aggregate FlowReport.
 
@@ -94,6 +104,9 @@ class FlowRunner:
             workdir: Shared directory for all stages. Defaults to Path.cwd() when None.
                      Pass an IsolatedWorktree path so every stage shares one worktree
                      (preserving the plan→build file hand-off).
+            extra_context: Optional primed context string (Primer text, bundle summary,
+                or both joined). Passed to every stage's directive unchanged (Context
+                Budget Trim move). Default None leaves behavior unchanged.
 
         Returns:
             FlowReport with per-stage RunReports and an aggregate Scorecard.
@@ -140,6 +153,7 @@ class FlowRunner:
                 blueprint=blueprint,
                 task=task,
                 upstream_outputs=upstream_outputs,
+                extra_context=extra_context,
             )
 
             report = execute_mandate(

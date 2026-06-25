@@ -101,6 +101,7 @@ class MandateRunner:
         task: str,
         engine_override: str | None = None,
         workdir: Path | None = None,
+        extra_context: str | None = None,
     ) -> RunReport:
         """Execute one task against the given Blueprint.
 
@@ -110,6 +111,9 @@ class MandateRunner:
             engine_override: If set, use this engine name instead of manifest.default_engine.
             workdir: Directory to run checks in. Defaults to Path.cwd() when None.
                      Pass an IsolatedWorktree path to confine agent edits to that tree.
+            extra_context: Optional primed context string (Primer text, bundle summary, or
+                           both joined). Injected into the directive when truthy; default
+                           None leaves behavior unchanged (Context Budget Trim move).
 
         Returns:
             RunReport with full attempt history and Scorecard.
@@ -127,15 +131,27 @@ class MandateRunner:
             )
 
         # Compose the Single-Mandate directive.
-        directive = self._compose_directive(blueprint, task)
+        directive = self._compose_directive(blueprint, task, extra_context=extra_context)
 
         return execute_mandate(self._manifest, blueprint, directive, engine_override, workdir)
 
-    def _compose_directive(self, blueprint: Blueprint, task: str) -> str:
-        """Compose the full Single-Mandate directive from the Blueprint and task."""
+    def _compose_directive(
+        self,
+        blueprint: Blueprint,
+        task: str,
+        extra_context: str | None = None,
+    ) -> str:
+        """Compose the full Single-Mandate directive from the Blueprint and task.
+
+        When extra_context is truthy, a '## Primed context' section is inserted
+        after the header and before the Blueprint workflow (Context Budget Trim move).
+        """
         header = _CONTEXT_HEADER_TEMPLATE.format(
             blueprint_name=blueprint.name,
             purpose=blueprint.purpose,
             task=task,
         )
+        if extra_context:
+            primed_section = "## Primed context\n\n" + extra_context + "\n\n---\n"
+            return header + primed_section + blueprint.workflow
         return header + blueprint.workflow

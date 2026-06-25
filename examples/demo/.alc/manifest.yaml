@@ -24,3 +24,5 @@ engines:
 blueprints_dir: .alc/blueprints
 flows_dir: .alc/flows
 queue_dir: .alc/queue
+primers_dir: .alc/primers
+bundles_dir: .alc/bundles
