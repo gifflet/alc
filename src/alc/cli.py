@@ -289,8 +289,9 @@ def cmd_tick(args: argparse.Namespace) -> int:
 
     Processes every pending *.yaml file in queue_dir once and exits. Designed
     to be called by cron or launchd — cron provides the cadence; this command
-    provides one drain pass. Exit code is always 0 (cron-friendly); per-task
-    outcomes live in the Gate reports under done/.
+    provides one drain pass. Exit code is 0 for all task outcomes (cron-friendly);
+    per-task outcomes live in the Gate reports under done/. Exit code is 1 only
+    for invalid usage (e.g. --concurrency < 1).
     """
     if args.concurrency < 1:
         print("[ERROR] --concurrency must be >= 1", file=sys.stderr)

@@ -14,7 +14,8 @@ from pathlib import Path
 from alc.engine import Engine, EngineRequest
 from alc.intake import load_blueprint
 from alc.models import Blueprint, Manifest, Specialist, SpecialistReport
-from alc.runner import execute_mandate
+from alc.policy import has_errors, lint
+from alc.runner import PolicyViolationError, execute_mandate
 
 # ---------------------------------------------------------------------------
 # Recall
@@ -205,6 +206,15 @@ def run_specialist(
     # Load the Blueprint for the Act step.
     blueprints_dir = operator_layer.parent / manifest.blueprints_dir
     blueprint = load_blueprint(blueprints_dir, specialist.blueprint)
+
+    # Policy Gate: same check MandateRunner.run performs; refuse on error violations.
+    violations = lint(manifest, [blueprint])
+    if has_errors(violations):
+        error_msgs = [v.message for v in violations if v.severity == "error"]
+        raise PolicyViolationError(
+            "Policy Gate blocked this specialist run:\n"
+            + "\n".join(f"  - {m}" for m in error_msgs)
+        )
 
     # Act: compose the directive and run the Single Mandate.
     directive = compose_act_directive(blueprint, task, knowledge)

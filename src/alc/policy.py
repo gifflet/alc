@@ -27,6 +27,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     3. Blueprint declares a report spec          (warn)  — structured output.
     4. manifest.default_engine in manifest.engines   (error) — resolvable execution plane.
     5. Every Compute Tier maps the referenced engine (error) — model resolvable.
+    6. Blueprint max_repairs, when set, is >= 0  (error) — valid repair budget.
     7. Blueprint check_set names a declared set  (error) — resolvable check set.
 
     Resolved checks = the named check_set's checks (if any) plus the Blueprint's own,

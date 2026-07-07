@@ -7,12 +7,9 @@
 from __future__ import annotations
 
 import argparse
-import io
-import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 from alc.cli import cmd_tick
 from alc.intake import load_manifest
@@ -193,22 +190,21 @@ class TestProcessQueueSerialDemotionIntegration:
         captured = capsys.readouterr()
         assert "3 non-isolated task(s) will run serially" in captured.err
 
-    def test_serial_demotion_note_absent_when_all_parallel(
+    def test_serial_path_emits_no_demotion_note(
         self, operator_layer: Path, capsys
     ) -> None:
-        """No demotion note is printed when all tasks would be parallel (but git missing)."""
-        # This verifies the code path: when serial_tasks is empty, no note is printed.
-        # With is_git=False and isolate:true -> demoted to serial, note IS printed.
-        # So use isolate:false + git=False: all serial but still prints the note.
-        # We want to test the no-note case: no serial tasks when serial_tasks is empty.
-        # The only way to get serial_tasks empty is: all tasks are isolate:true AND git.
-        # Since operator_layer is not a git repo, skip this sub-case with a note.
-        # Instead, validate that with 0 tasks we get no note either.
+        """The serial drain path (max_workers=1) never prints the demotion notice."""
         manifest = load_manifest(operator_layer)
         queue_dir = operator_layer / "queue"
         queue_dir.mkdir(parents=True, exist_ok=True)
-        # No task files -> returns early from the serial path.
-        results = process_queue(manifest, operator_layer, max_workers=3)
-        assert results == []
+        for i in range(2):
+            _write_task(queue_dir, f"s{i}", _TASK_ISOLATE_FALSE.format(index=i))
+
+        # max_workers=1 takes the serial code path, which bypasses _partition_tasks
+        # entirely — the demotion notice must never appear regardless of isolate flags.
+        results = process_queue(manifest, operator_layer, max_workers=1)
+
+        assert len(results) == 2
+        assert all(r.success for r in results)
         captured = capsys.readouterr()
         assert "non-isolated" not in captured.err

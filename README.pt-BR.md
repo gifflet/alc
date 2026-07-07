@@ -70,7 +70,7 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc init [--setup]` | Gera um Operator Layer `.alc/` padrão; detecta o stack do projeto e cria checks reais (e instala a skill do editor) |
 | `alc lint` | Valida o Operator Layer contra o Policy Gate |
 | `alc run <blueprint> "<tarefa>"` | Roda um Blueprint como um Single Mandate verificado; `--tier NOME` substitui o compute tier para esta invocação |
-| `alc flow <flow> "<tarefa>"` | Roda um pipeline multi-estágio (ex.: plan → build); `--tier NOME` aplica a todos os estágios; estágios verify-only atuam como Policy Gates puros (só checks, sem turno de engine) |
+| `alc flow <flow> "<tarefa>"` | Roda um pipeline multi-estágio (ex.: plan → build); `--tier NOME` aplica a todos os estágios; estágios verify-only atuam como check gates puros (só checks, sem turno de engine) |
 | `alc conduct "<objetivo>" [--parallel]` | Deixa o ALC escolher quais Flows rodar; `--parallel` despacha unidades independentes em paralelo em worktrees isoladas; `--enqueue` para enfileirar |
 | `alc specialist <nome> "<tarefa>"` | Roda um Specialist de área (Recall → Act → Learn) |
 | `alc tick [--concurrency N]` | Drena a fila de tarefas — chame isto via cron; `--concurrency N` processa até N tarefas isoladas em paralelo |
@@ -79,7 +79,7 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 
 Adicione `--engine claude-code|gemini|mock` para escolher o executor e `--isolate` para conter as edições numa branch de git-worktree.
 
-Blueprints suportam `max_repairs` para limitar o orçamento de reparos do Assurance Loop, e `check_set` para referenciar um conjunto de checks nomeado e reutilizável declarado no Manifest. Checks rodam por código de saída sem shell por padrão; adicione um `shell:` one-liner a uma entrada de check para rodá-lo via `sh -c` (atenção: shell checks também são avaliados apenas pelo código de saída — não há captura de stdout).
+Blueprints suportam `max_repairs` para limitar o orçamento de reparos do Assurance Loop, e `check_set` para referenciar um conjunto de checks nomeado e reutilizável declarado no Manifest. Checks rodam por código de saída sem shell por padrão; adicione um `shell:` one-liner a uma entrada de check para rodá-lo via `sh -c` (atenção: o resultado é decidido exclusivamente pelo código de saída — stdout/stderr são capturados e alimentam a diretiva de reparo, mas não afetam a decisão de passar ou falhar).
 
 ## 🧱 Como as peças se encaixam
 

@@ -10,6 +10,7 @@ import yaml
 from alc.engines.mock import MockEngine
 from alc.intake import load_manifest
 from alc.models import Specialist
+from alc.runner import PolicyViolationError
 from alc.specialist import compose_act_directive, learn, recall, run_specialist
 
 
@@ -241,3 +242,70 @@ report:
         assert report.knowledge_updated is False
         knowledge_file = alc.parent / specialist.knowledge_path
         assert not knowledge_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# run_specialist — Policy Gate enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestRunSpecialistPolicyGate:
+    """run_specialist must enforce the Policy Gate just like MandateRunner.run."""
+
+    def test_unknown_check_set_raises_policy_violation(self, tmp_path: Path) -> None:
+        """A blueprint that references a check_set absent from the Manifest raises
+        PolicyViolationError before any engine turn starts."""
+        alc = tmp_path / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "specialists").mkdir(parents=True)
+
+        _MANIFEST_NO_SETS = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+engines:
+  mock:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+"""
+        # Blueprint references a check_set that does not exist in the manifest.
+        _BP_UNKNOWN_SET = """\
+---
+name: chore
+purpose: Apply a maintenance change.
+compute_tier: standard
+check_set: nonexistent-set
+report:
+  format: json
+  schema:
+    status: string
+---
+# Workflow
+1. Make the smallest change.
+"""
+        (alc / "manifest.yaml").write_text(_MANIFEST_NO_SETS)
+        (alc / "blueprints" / "chore.md").write_text(_BP_UNKNOWN_SET)
+
+        data = {
+            "name": "db",
+            "area": "db layer",
+            "blueprint": "chore",
+            "knowledge_path": ".alc/specialists/db.knowledge.md",
+        }
+        (alc / "specialists" / "db.yaml").write_text(yaml.safe_dump(data))
+
+        manifest = load_manifest(alc)
+        specialist = Specialist.model_validate(data)
+
+        with pytest.raises(PolicyViolationError):
+            run_specialist(
+                manifest=manifest,
+                operator_layer=alc,
+                specialist=specialist,
+                task="do something",
+                engine_override="mock",
+            )

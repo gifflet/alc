@@ -1,6 +1,6 @@
 # queue.py — Unattended Mode: drains the task queue (the Source) for alc tick.
-# process_queue is a pure function: no printing, no side-effects beyond the
-# filesystem operations needed to move task files into done/ (the Gate).
+# process_queue moves task files into done/ (the Gate). When max_workers > 1
+# and serial tasks are present, it prints a demotion notice to stderr.
 from __future__ import annotations
 
 import sys

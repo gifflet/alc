@@ -46,6 +46,15 @@ checks:
 1. Make the smallest change that satisfies the task; keep it single-purpose.
 """
 
+# A single-stage flow that only references the chore blueprint.
+_SINGLE_FLOW = """\
+name: single
+description: One-stage flow for isolated queue drain tests.
+stages:
+  - name: do
+    blueprint: chore
+"""
+
 
 def _init_git_repo(repo: Path) -> None:
     """Initialize a git repo with committed identity config inside *repo*."""
@@ -80,6 +89,7 @@ def _make_alc_repo(base: Path) -> Path:
     (alc / "flows").mkdir(parents=True)
     (alc / "manifest.yaml").write_text(_MANIFEST)
     (alc / "blueprints" / "chore.md").write_text(_CHORE)
+    (alc / "flows" / "single.yaml").write_text(_SINGLE_FLOW)
 
     _commit_all(repo, "seed operator layer")
     return repo
@@ -278,6 +288,13 @@ engine: mock
 isolate: false
 """
 
+_TASK_YAML_ISOLATE = """\
+flow: single
+task: "isolated-task-{index}"
+engine: mock
+isolate: true
+"""
+
 
 class TestProcessQueueParallel:
     def test_max_workers_drains_all_tasks_in_order(self, operator_layer: Path) -> None:
@@ -300,3 +317,57 @@ class TestProcessQueueParallel:
             assert (done_dir / f"t{i}.yaml").exists()
             assert (done_dir / f"t{i}.report.json").exists()
             assert not (queue_dir / f"t{i}.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
+# (e) Parallel queue drain with isolate:true tasks in a real git repo.
+# ---------------------------------------------------------------------------
+
+
+class TestProcessQueueParallelIsolated:
+    """process_queue's ThreadPoolExecutor branch with isolate:true tasks."""
+
+    def test_two_isolated_tasks_run_concurrently_and_are_archived(
+        self, tmp_path: Path
+    ) -> None:
+        """2 isolate:true tasks in a git repo, max_workers=2 -> both archived in order.
+
+        The mock engine writes nothing, so IsolatedWorktree finds no staged changes
+        and cleans up the temporary branches.  We therefore assert:
+        - 2 successful TickResults in original (sorted) order.
+        - Both task files and their reports are archived to done/.
+        - No stray worktrees remain (git worktree list shows only the main tree).
+        """
+        repo = _make_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        queue_dir = repo / manifest.queue_dir
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(2):
+            (queue_dir / f"p{i}.yaml").write_text(_TASK_YAML_ISOLATE.format(index=i))
+
+        results = process_queue(manifest, operator_layer, max_workers=2)
+
+        # Both tasks were processed successfully and are in the original sorted order.
+        assert len(results) == 2
+        assert all(r.success for r in results), [r for r in results if not r.success]
+        assert [r.task_file for r in results] == ["p0.yaml", "p1.yaml"]
+
+        # Each task file and its Gate report are in done/.
+        done_dir = queue_dir / "done"
+        for i in range(2):
+            assert (done_dir / f"p{i}.yaml").exists(), f"p{i}.yaml not archived"
+            assert (done_dir / f"p{i}.report.json").exists(), f"p{i}.report.json missing"
+            assert not (queue_dir / f"p{i}.yaml").exists(), f"p{i}.yaml still in queue"
+
+        # No stray worktrees: only the main working tree should remain.
+        wt_list = subprocess.run(
+            ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        # Each worktree entry starts with "worktree <path>"; there must be exactly one.
+        worktree_entries = [l for l in wt_list.splitlines() if l.startswith("worktree ")]
+        assert len(worktree_entries) == 1, f"Stray worktrees found:\n{wt_list}"

@@ -72,7 +72,7 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc init [--setup]` | Scaffold a default `.alc/` Operator Layer; detects your stack and writes real checks (and installs the editor skill) |
 | `alc lint` | Validate the Operator Layer (your `.alc/`, not your source code) against the Policy Gate |
 | `alc run <blueprint> "<task>"` | Run one Blueprint as a verified Single Mandate; `--tier NAME` overrides the compute tier for this invocation |
-| `alc flow <flow> "<task>"` | Run a multi-stage pipeline (e.g. plan → build); `--tier NAME` applies to every stage; verify-only stages act as pure Policy Gates (checks only, no engine turn) |
+| `alc flow <flow> "<task>"` | Run a multi-stage pipeline (e.g. plan → build); `--tier NAME` applies to every stage; verify-only stages act as pure check gates (checks only, no engine turn) |
 | `alc conduct "<goal>" [--parallel]` | Let ALC pick which Flow(s) to run; `--parallel` dispatches independent units concurrently in isolated worktrees; `--enqueue` to queue instead |
 | `alc specialist <name> "<task>"` | Run an area Specialist (Recall → Act → Learn) |
 | `alc tick [--concurrency N]` | Drain the task queue — call this from cron; `--concurrency N` processes up to N isolated tasks in parallel |
@@ -81,7 +81,7 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 
 Add `--engine claude-code|gemini|mock` to choose the executor, and `--isolate` to contain edits to a git-worktree branch.
 
-Blueprints support `max_repairs` to cap the Assurance Loop repair budget, and `check_set` to reference a reusable named check set declared in the Manifest. Checks run by exit code without a shell by default; add a `shell:` one-liner to a check entry to run it via `sh -c` (note: shell checks still exit-code only — there is no stdout capture).
+Blueprints support `max_repairs` to cap the Assurance Loop repair budget, and `check_set` to reference a reusable named check set declared in the Manifest. Checks run by exit code without a shell by default; add a `shell:` one-liner to a check entry to run it via `sh -c` (note: pass/fail is decided solely by the exit code — stdout/stderr are captured and fed to the repair directive, but they do not affect the pass/fail decision).
 
 ## 🧱 How it fits together
 

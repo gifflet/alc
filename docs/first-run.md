@@ -51,7 +51,9 @@ Two rules that save you pain:
 - Checks are judged by **exit code** and run **without a shell** by default. `go build`,
   `pytest`, `tsc --noEmit` work. `gofmt -l` (exits 0 even when files are unformatted)
   doesn't. For commands that need pipes or `$(...)`, add a `shell:` one-liner to the
-  check entry — it runs via `sh -c`, still judged by exit code only (no stdout capture).
+  check entry — it runs via `sh -c`; pass/fail is decided solely by the exit code
+  (stdout/stderr are captured and fed to the repair directive, but do not affect
+  the pass/fail decision).
 - **Run each check yourself once first.** A check that already fails on a clean checkout
   makes *every* run fail — the agent can't fix problems that aren't its task.
 
