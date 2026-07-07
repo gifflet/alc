@@ -804,6 +804,91 @@ class TestPendingState:
         assert reset_state.stopped_reason is None
 
 
+# ---------------------------------------------------------------------------
+# Replenish header (observability)
+# ---------------------------------------------------------------------------
+
+
+class TestReplenishHeader:
+    """The replenish step must print a ▶ header to stderr (Mode A only)."""
+
+    def _setup_specialist_loop(
+        self, operator_layer: Path, monkeypatch
+    ) -> tuple:
+        """Wire up a specialist-replenish loop with a fake run_specialist."""
+        specialists_dir = operator_layer / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "pm.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "pm",
+                    "area": "planning",
+                    "blueprint": "chore",
+                    "knowledge_path": ".alc/specialists/pm.knowledge.md",
+                }
+            )
+        )
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nreplenish:\n  kind: specialist\n  ref: pm\n  task: plan\n"
+            "stop:\n  max_cycles: 20\n",
+        )
+
+        def _fake_run_specialist(
+            *, manifest, operator_layer, specialist, task, engine_override
+        ):
+            from alc.models import RunReport, Scorecard, SpecialistReport
+
+            act = RunReport(
+                blueprint="chore",
+                engine="mock",
+                success=True,
+                attempts=[],
+                scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+                output_text="",
+            )
+            return SpecialistReport(
+                specialist=specialist.name, act=act, knowledge_updated=False
+            )
+
+        monkeypatch.setattr("alc.specialist.run_specialist", _fake_run_specialist)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        return manifest, loop_def
+
+    def test_specialist_replenish_prints_header(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """Mode A specialist replenish emits '▶ replenish — specialist:<ref>'."""
+        from alc import loop as loop_mod
+
+        manifest, loop_def = self._setup_specialist_loop(operator_layer, monkeypatch)
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+        err = capsys.readouterr().err
+        assert any(
+            line.startswith("▶ replenish — specialist:") and "pm" in line
+            for line in err.splitlines()
+        ), f"Expected replenish header in stderr, got: {err!r}"
+
+    def test_mode_b_prints_no_replenish_header(
+        self, operator_layer: Path, capsys
+    ) -> None:
+        """Mode B (no replenish configured) must not emit any '▶ replenish' line."""
+        from alc import loop as loop_mod
+
+        manifest = load_manifest(operator_layer)
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+        err = capsys.readouterr().err
+        assert "▶ replenish" not in err, f"Unexpected replenish header in stderr: {err!r}"
+
+
 class TestCliLoop:
     def test_loop_terminates_at_max_cycles(
         self, operator_layer: Path, monkeypatch, capsys

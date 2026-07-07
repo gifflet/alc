@@ -218,6 +218,17 @@ def run_replenish(
     if loop_def.replenish is None:
         return 0, delta
 
+    # Announce the replenish step so operator output is grouped under a header,
+    # matching the ▶ style used by queue._process_task and flow.FlowRunner.
+    if loop_def.replenish.kind == "specialist":
+        print(
+            f"▶ replenish — specialist:{loop_def.replenish.ref}",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        print("▶ replenish — conduct", file=sys.stderr, flush=True)
+
     before = _count_queue_files(manifest, operator_layer)
 
     if loop_def.replenish.kind == "specialist":
