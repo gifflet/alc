@@ -168,3 +168,20 @@ def load_specialist(specialists_dir: Path, name: str) -> Specialist:
     with specialist_path.open() as fh:
         data = yaml.safe_load(fh)
     return Specialist.model_validate(data)
+
+
+def load_all_specialists(manifest: Manifest, operator_layer: Path) -> list[Specialist]:
+    """Load every .yaml file from the specialists directory.
+
+    `manifest.specialists_dir` is relative to the project root (the parent of the
+    Operator Layer), e.g. ".alc/specialists". Returns an empty list when the
+    directory is missing.
+    """
+    specialists_dir = operator_layer.parent / manifest.specialists_dir
+    if not specialists_dir.exists():
+        return []
+
+    specialists = []
+    for yaml_file in sorted(specialists_dir.glob("*.yaml")):
+        specialists.append(load_specialist(specialists_dir, yaml_file.stem))
+    return specialists

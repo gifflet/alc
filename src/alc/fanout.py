@@ -9,9 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from alc.flow import FlowRunner
-from alc.intake import load_blueprint, load_flow
+from alc.intake import load_blueprint, load_flow, load_specialist
 from alc.models import FanoutReport, Manifest, UnitResult
 from alc.runner import MandateRunner
+from alc.specialist import run_specialist
 from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
 
 
@@ -23,13 +24,13 @@ def run_unit(
     task: str,
     engine_override: str | None = None,
 ) -> UnitResult:
-    """Run one Flow or Blueprint in a fresh IsolatedWorktree and return its outcome.
+    """Run one Flow, Blueprint, or Specialist in a fresh IsolatedWorktree.
 
     Args:
         manifest: The loaded Manifest (provides engines, dirs, compute tiers).
         operator_layer: Path to the ``.alc/`` directory.
-        kind: "flow" or "blueprint" — selects FlowRunner or MandateRunner.
-        name: The Flow or Blueprint name (also used as the worktree label).
+        kind: "flow", "blueprint", or "specialist" — selects the runner.
+        name: The Flow / Blueprint / Specialist name (also the worktree label).
         task: The free-text task description for this unit.
         engine_override: If set, use this engine instead of manifest.default_engine.
 
@@ -56,12 +57,28 @@ def run_unit(
         exc_info = (None, None, None)
         run_report = None
         flow_report = None
+        specialist_report = None
         try:
             if kind == "flow":
                 flow = load_flow(project_root / manifest.flows_dir, name)
                 runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
                 flow_report = runner.run(
                     flow=flow,
+                    task=task,
+                    engine_override=engine_override,
+                    workdir=wt_path,
+                )
+            elif kind == "specialist":
+                # Resolve the Specialist and its Knowledge File against the worktree
+                # so the Learn write lands on this unit's branch, not the main tree.
+                wt_operator_layer = wt_path / operator_layer.name
+                specialist = load_specialist(
+                    wt_operator_layer.parent / manifest.specialists_dir, name
+                )
+                specialist_report = run_specialist(
+                    manifest=manifest,
+                    operator_layer=wt_operator_layer,
+                    specialist=specialist,
                     task=task,
                     engine_override=engine_override,
                     workdir=wt_path,
@@ -83,15 +100,22 @@ def run_unit(
         if exc_info[1] is not None:
             raise exc_info[1]
 
-        report = flow_report if kind == "flow" else run_report
+        if kind == "flow":
+            success = flow_report.success
+        elif kind == "specialist":
+            success = specialist_report.act.success
+        else:
+            success = run_report.success
+
         return UnitResult(
             kind=kind,
             name=name,
             task=task,
-            success=report.success,
+            success=success,
             branch=wt.branch if wt.committed else None,
             run_report=run_report,
             flow_report=flow_report,
+            specialist_report=specialist_report,
         )
     except Exception as exc:
         # A single unit failure must never kill the pool — record it and move on.
@@ -116,7 +140,7 @@ def run_fanout(
         manifest: The loaded Manifest.
         operator_layer: Path to the ``.alc/`` directory.
         units: Ordered list of ``{"kind", "name", "task"}`` dicts. ``kind`` is
-            "flow" or "blueprint".
+            "flow", "blueprint", or "specialist".
         max_workers: Bounded concurrency (default 4). The work is subprocess-bound,
             so threads are correct.
 

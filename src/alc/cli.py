@@ -343,6 +343,7 @@ def cmd_conduct(args: argparse.Namespace) -> int:
             goal=args.goal,
             engine_override=args.engine,
             enqueue=args.enqueue,
+            parallel=args.parallel,
         )
     except ValueError as exc:
         print(f"[ERROR] Conductor could not produce a valid plan: {exc}", file=sys.stderr)
@@ -353,19 +354,20 @@ def cmd_conduct(args: argparse.Namespace) -> int:
     print()
     print("Plan:")
     for item in report.plan.items:
-        print(f"  -> {item.flow}: {item.task}")
+        print(f"  -> {item.name} ({item.kind}): {item.task}")
     print()
 
     if report.mode == "run":
-        all_ok = True
+        # Parallel dispatch reports per-unit outcomes; serial reports flow outcomes.
+        for unit in report.units:
+            status = "SUCCESS" if unit.success else "FAILED"
+            print(f"  {unit.name} ({unit.kind}) -> {status}")
         for flow_report in report.flow_reports:
             status = "SUCCESS" if flow_report.success else "FAILED"
             print(f"  {flow_report.flow} -> {status}")
-            if not flow_report.success:
-                all_ok = False
         print()
         print(report.model_dump_json(indent=2))
-        return 0 if all_ok else 1
+        return 0 if report.success else 1
 
     # Enqueue mode.
     n = len(report.enqueued_files)
@@ -661,6 +663,15 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Write queue task files instead of running Flows immediately.",
+    )
+    conduct_parser.add_argument(
+        "--parallel",
+        action="store_true",
+        default=False,
+        help=(
+            "Dispatch independent plan units concurrently, each in an isolated "
+            "git worktree (requires a git repo)."
+        ),
     )
 
     # alc specialist <name> "<task>" [--engine NAME]

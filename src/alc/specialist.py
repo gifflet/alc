@@ -166,6 +166,7 @@ def run_specialist(
     specialist: Specialist,
     task: str,
     engine_override: str | None = None,
+    workdir: Path | None = None,
 ) -> SpecialistReport:
     """Orchestrate one Recall -> Act -> Learn cycle for a Specialist.
 
@@ -180,10 +181,16 @@ def run_specialist(
         specialist: The Specialist to run.
         task: Free-text task description provided by the operator.
         engine_override: Use this engine name instead of manifest.default_engine.
+        workdir: Directory the Act step runs checks in. Defaults to Path.cwd()
+            (None = unchanged). Pass an IsolatedWorktree path to confine edits.
 
     Returns:
         SpecialistReport with the Specialist name, Act RunReport, and whether
         the Knowledge File was updated.
+
+    NOTE: Running the SAME Specialist concurrently races on its Knowledge File
+    (Recall reads and Learn writes the one file). Distinct Specialists are safe
+    to fan out in parallel — each owns a separate Knowledge File.
     """
     from alc.engines.registry import resolve_engine
 
@@ -197,7 +204,7 @@ def run_specialist(
 
     # Act: compose the directive and run the Single Mandate.
     directive = compose_act_directive(blueprint, task, knowledge)
-    act = execute_mandate(manifest, blueprint, directive, engine_override)
+    act = execute_mandate(manifest, blueprint, directive, engine_override, workdir)
 
     # Learn: only when Act succeeded.
     knowledge_updated = False

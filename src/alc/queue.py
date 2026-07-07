@@ -10,8 +10,9 @@ from pathlib import Path
 import yaml
 
 from alc.flow import FlowRunner
-from alc.intake import load_flow
+from alc.intake import load_flow, load_specialist
 from alc.models import FlowReport, Manifest, QueueTask, RunReport, Scorecard, TickResult
+from alc.specialist import run_specialist
 from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
 
 
@@ -34,6 +35,39 @@ def _error_flow_report(flow_name: str, engine: str, message: str) -> FlowReport:
     )
 
 
+def _specialist_flow_report(name: str, engine: str, act: RunReport) -> FlowReport:
+    """Wrap a Specialist's Act RunReport into a FlowReport for uniform Gate records."""
+    return FlowReport(
+        flow=name,
+        engine=engine,
+        success=act.success,
+        stages=[act],
+        scorecard=act.scorecard,
+    )
+
+
+def _run_specialist_task(
+    manifest: Manifest,
+    operator_layer: Path,
+    qt: QueueTask,
+    name: str,
+    workdir: Path | None,
+) -> FlowReport:
+    """Run one specialist queue task, threading ``workdir`` when isolated."""
+    specialists_dir = operator_layer.parent / manifest.specialists_dir
+    specialist = load_specialist(specialists_dir, name)
+    report = run_specialist(
+        manifest=manifest,
+        operator_layer=operator_layer,
+        specialist=specialist,
+        task=qt.task,
+        engine_override=qt.engine,
+        workdir=workdir,
+    )
+    engine_name = qt.engine or manifest.default_engine
+    return _specialist_flow_report(name, engine_name, report.act)
+
+
 def _process_task(
     manifest: Manifest,
     operator_layer: Path,
@@ -53,11 +87,25 @@ def _process_task(
     try:
         raw = yaml.safe_load(task_file.read_text())
         qt = QueueTask.model_validate(raw)
-        flow_name = qt.flow
+        unit_name = qt.unit_name()
+        flow_name = unit_name  # TickResult.flow carries the unit name (flow or specialist)
         engine_name = qt.engine or manifest.default_engine
 
-        flow = load_flow(flows_dir, qt.flow)
-        runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+        def _run(workdir: Path | None) -> FlowReport:
+            """Run this task (flow or specialist) in the given workdir."""
+            if qt.kind == "specialist":
+                # A specialist run in a worktree resolves its Knowledge File against
+                # the worktree so the Learn write lands on the isolated branch.
+                ol = (workdir / operator_layer.name) if workdir is not None else operator_layer
+                return _run_specialist_task(manifest, ol, qt, unit_name, workdir)
+            flow = load_flow(flows_dir, unit_name)
+            runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+            return runner.run(
+                flow=flow,
+                task=qt.task,
+                engine_override=qt.engine,
+                workdir=workdir,
+            )
 
         branch: str | None = None
 
@@ -68,12 +116,7 @@ def _process_task(
             exc_info = (None, None, None)
             report: FlowReport | None = None
             try:
-                report = runner.run(
-                    flow=flow,
-                    task=qt.task,
-                    engine_override=qt.engine,
-                    workdir=wt_path,
-                )
+                report = _run(wt_path)
             except BaseException as exc:
                 exc_info = (type(exc), exc, exc.__traceback__)
             finally:
@@ -84,12 +127,7 @@ def _process_task(
 
             branch = wt.branch if wt.committed else None
         else:
-            report = runner.run(
-                flow=flow,
-                task=qt.task,
-                engine_override=qt.engine,
-                workdir=None,
-            )
+            report = _run(None)
 
         success = report.success
 
@@ -131,7 +169,8 @@ def process_queue(
 
     For each task:
     - Parse the YAML into a QueueTask.
-    - Load the FlowDefinition and run it via FlowRunner.
+    - Dispatch by ``qt.kind``: flow tasks run via FlowRunner; specialist tasks
+      run via run_specialist. Legacy files (only ``flow:``) drain identically.
     - If ``qt.isolate`` is True and the project root is a git repo, wrap the
       run in an IsolatedWorktree (Sandbox), record the branch on TickResult.
     - Write the Gate (FlowReport JSON) to ``done/<stem>.report.json``.

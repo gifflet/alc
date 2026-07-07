@@ -2,6 +2,8 @@
 # Covers the Operator Layer (Manifest, Blueprint) and run-time records (RunReport, Scorecard).
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -114,12 +116,21 @@ class QueueTask(BaseModel):
 
     Stored as a YAML file under queue_dir. The Trigger (``alc tick``) reads
     and drains these files; each is archived to done/ after processing.
+
+    Legacy files that only set ``flow:`` keep working: when ``name`` is None and
+    ``kind`` is "flow", the ``flow`` field is treated as the unit name.
     """
 
-    flow: str
+    flow: str = ""
     task: str
     engine: str | None = None
     isolate: bool = True
+    kind: Literal["flow", "specialist"] = "flow"
+    name: str | None = None
+
+    def unit_name(self) -> str:
+        """Return the unit name to dispatch: ``name`` when set, else ``flow``."""
+        return self.name if self.name is not None else self.flow
 
 
 class TickResult(BaseModel):
@@ -138,19 +149,21 @@ class TickResult(BaseModel):
 
 
 class UnitResult(BaseModel):
-    """Outcome of one fan-out unit — a single Flow or Blueprint run in isolation.
+    """Outcome of one fan-out unit — a Flow, Blueprint, or Specialist run in isolation.
 
-    Exactly one of ``run_report`` / ``flow_report`` is populated on success,
-    matching ``kind``; on failure both are None and ``error`` holds the message.
+    Exactly one of ``run_report`` / ``flow_report`` / ``specialist_report`` is
+    populated on success, matching ``kind``; on failure all are None and
+    ``error`` holds the message.
     """
 
-    kind: str                              # "flow" or "blueprint"
+    kind: str                              # "flow", "blueprint", or "specialist"
     name: str                              # unit name (used for the worktree label)
     task: str
     success: bool
     branch: str | None = None              # set when the IsolatedWorktree committed changes
     run_report: RunReport | None = None    # populated when kind == "blueprint"
     flow_report: FlowReport | None = None  # populated when kind == "flow"
+    specialist_report: "SpecialistReport | None" = None  # populated when kind == "specialist"
     error: str | None = None               # populated when the unit raised
 
 
@@ -166,17 +179,31 @@ class FanoutReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PlannedFlow(BaseModel):
-    """One (flow, task) pair produced by the Conductor's planning turn."""
+class PlannedUnit(BaseModel):
+    """One (kind, name, task) triple produced by the Conductor's planning turn.
 
-    flow: str
+    ``kind`` selects the dispatch target: a Flow or a Specialist. ``name`` is
+    validated against the catalog. ``task`` is the free-text task for that unit.
+    """
+
+    kind: Literal["flow", "specialist"]
+    name: str          # validated against the catalog (Flow or Specialist name)
     task: str
+
+    @property
+    def flow(self) -> str:
+        """Back-compat accessor: the unit name (historically ``item.flow``)."""
+        return self.name
+
+
+# Back-compat alias: earlier code/tests referred to plan items as PlannedFlow.
+PlannedFlow = PlannedUnit
 
 
 class ConductorPlan(BaseModel):
-    """Structured plan returned by the Conductor: an ordered list of PlannedFlow items."""
+    """Structured plan returned by the Conductor: an ordered list of PlannedUnit items."""
 
-    items: list[PlannedFlow]
+    items: list[PlannedUnit]
 
 
 class ConductReport(BaseModel):
@@ -185,8 +212,10 @@ class ConductReport(BaseModel):
     goal: str
     mode: str                           # "run" or "enqueue"
     plan: ConductorPlan
-    flow_reports: list[FlowReport] = []  # populated in run mode
+    flow_reports: list[FlowReport] = []  # populated for flow dispatches (serial run mode)
+    units: list[UnitResult] = []         # populated by parallel dispatch
     enqueued_files: list[str] = []       # populated in enqueue mode
+    success: bool | None = None          # overall run outcome (None in enqueue mode)
 
 
 # ---------------------------------------------------------------------------
@@ -213,3 +242,7 @@ class SpecialistReport(BaseModel):
     specialist: str
     act: RunReport
     knowledge_updated: bool
+
+
+# Resolve UnitResult's forward reference to SpecialistReport (defined above).
+UnitResult.model_rebuild()
