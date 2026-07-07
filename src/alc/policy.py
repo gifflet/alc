@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from alc.intake import resolve_checks
 from alc.models import Blueprint, FlowDefinition, Manifest
 
 
@@ -21,11 +22,15 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     """Run all Policy Gate rules and return every Violation found.
 
     Rules (from mvp.md):
-    1. Blueprint declares >= 1 check            (error) — no Assurance Loop otherwise.
-    2. Blueprint has exactly one name/purpose   (error) — Single Mandate.
-    3. Blueprint declares a report spec         (warn)  — structured output.
-    4. manifest.default_engine in manifest.engines  (error) — resolvable execution plane.
-    5. Every Compute Tier maps the referenced engine  (error) — model resolvable.
+    1. Blueprint resolves to >= 1 check          (error) — no Assurance Loop otherwise.
+    2. Blueprint has exactly one name/purpose    (error) — Single Mandate.
+    3. Blueprint declares a report spec          (warn)  — structured output.
+    4. manifest.default_engine in manifest.engines   (error) — resolvable execution plane.
+    5. Every Compute Tier maps the referenced engine (error) — model resolvable.
+    7. Blueprint check_set names a declared set  (error) — resolvable check set.
+
+    Resolved checks = the named check_set's checks (if any) plus the Blueprint's own,
+    so a Blueprint that only references a check_set still satisfies rule 1.
     """
     violations: list[Violation] = []
 
@@ -58,8 +63,22 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
             )
 
     for bp in blueprints:
-        # Rule 1: blueprint must declare at least one check.
-        if not bp.checks:
+        # Rule 7: check_set, when set, must name a set declared in the Manifest.
+        if bp.check_set is not None and bp.check_set not in manifest.check_sets:
+            violations.append(
+                Violation(
+                    rule="blueprint-check-set-exists",
+                    severity="error",
+                    message=(
+                        f"Blueprint '{bp.name}' references check_set '{bp.check_set}' "
+                        f"which is not declared in manifest.check_sets "
+                        f"(available: {sorted(manifest.check_sets)})."
+                    ),
+                )
+            )
+
+        # Rule 1: blueprint must resolve to at least one check (own checks + check_set).
+        if not resolve_checks(manifest, bp):
             violations.append(
                 Violation(
                     rule="blueprint_has_checks",

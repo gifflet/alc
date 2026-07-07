@@ -75,7 +75,7 @@ def load_blueprint(blueprints_dir: Path, name: str) -> Blueprint:
     # so the Policy Gate reports it cleanly instead of crashing.
     raw_checks = fm.get("checks") or []
     checks = [
-        Check(name=c["name"], command=c["command"]) if isinstance(c, dict) else c
+        Check.model_validate(c) if isinstance(c, dict) else c
         for c in raw_checks
     ]
 
@@ -90,10 +90,24 @@ def load_blueprint(blueprints_dir: Path, name: str) -> Blueprint:
         purpose=fm.get("purpose", ""),
         compute_tier=fm.get("compute_tier", "standard"),
         checks=checks,
+        check_set=fm.get("check_set"),
         report=report,
         workflow=body,
         max_repairs=fm.get("max_repairs"),
     )
+
+
+def resolve_checks(manifest: Manifest, blueprint: Blueprint) -> list[Check]:
+    """Return the effective checks for a Blueprint: its check_set (if any) then its own.
+
+    When ``blueprint.check_set`` names a set present in ``manifest.check_sets``, those
+    checks run first, followed by the Blueprint's own ``checks``. An absent or unknown
+    check_set contributes nothing (the Policy Gate flags unknown names separately).
+    """
+    set_checks: list[Check] = []
+    if blueprint.check_set is not None:
+        set_checks = manifest.check_sets.get(blueprint.check_set, [])
+    return list(set_checks) + list(blueprint.checks)
 
 
 def load_all_blueprints(manifest: Manifest, operator_layer: Path) -> list[Blueprint]:

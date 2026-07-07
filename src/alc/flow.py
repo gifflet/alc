@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alc.intake import load_blueprint
+from alc.intake import load_blueprint, resolve_checks
 from alc.models import (
     Blueprint,
     FlowDefinition,
@@ -183,7 +183,7 @@ class FlowRunner:
             if stage.verify_only:
                 # Verify-only stage: run checks as a pure gate — no engine turn.
                 wd = workdir or Path.cwd()
-                check_results = Verifier().run(blueprint.checks, wd)
+                check_results = Verifier().run(resolve_checks(self._manifest, blueprint), wd)
                 all_passed = all(cr.passed for cr in check_results)
                 summary_lines = [
                     f"{cr.name}: {'pass' if cr.passed else 'fail'}"

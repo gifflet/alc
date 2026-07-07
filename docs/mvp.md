@@ -135,7 +135,8 @@ class AssuranceLoop:
 
 | Rule | Severity | Rationale |
 |---|---|---|
-| Blueprint declares ≥ 1 check | `error` | No Assurance Loop ⇒ no guarantee |
+| Blueprint resolves ≥ 1 check (own `checks` + `check_set`) | `error` | No Assurance Loop ⇒ no guarantee |
+| Blueprint `check_set` names a set in `manifest.check_sets` | `error` | Resolvable check set |
 | Blueprint has a single `name`/purpose (one class per file) | `error` | Single Mandate |
 | Blueprint declares a `report` spec | `warn` | Structured, parseable output |
 | Manifest `default_engine` exists in `engines` | `error` | Resolvable execution plane |

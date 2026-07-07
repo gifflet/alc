@@ -36,8 +36,10 @@ class Verifier:
         """
         results: list[CheckResult] = []
         for check in checks:
+            # The Check model guarantees exactly one of shell/command is set.
+            argv = ["sh", "-c", check.shell] if check.shell is not None else check.command
             proc = subprocess.run(
-                check.command,
+                argv,
                 cwd=workdir,
                 capture_output=True,
                 text=True,

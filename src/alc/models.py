@@ -8,10 +8,25 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class Check(BaseModel):
-    """A single verification command declared by a Blueprint."""
+    """A single verification command declared by a Blueprint.
+
+    Exactly one of ``command`` or ``shell`` must be set:
+      - ``command``: an argv list run directly, e.g. ["pytest", "-q"].
+      - ``shell``: a shell one-liner run via ``sh -c``, e.g. 'test -z "$(git diff)"'.
+    """
 
     name: str
-    command: list[str]  # e.g. ["pytest", "-q"]
+    command: list[str] | None = None  # e.g. ["pytest", "-q"]
+    shell: str | None = None          # e.g. 'test -z "$(git status --porcelain)"'
+
+    @model_validator(mode="after")
+    def _exactly_one_form(self) -> "Check":
+        """Enforce that exactly one of command/shell is declared (fail fast at intake)."""
+        if (self.command is None) == (self.shell is None):
+            raise ValueError(
+                f"Check '{self.name}' must declare exactly one of 'command' or 'shell'."
+            )
+        return self
 
 
 class ReportSpec(BaseModel):
@@ -30,6 +45,7 @@ class Blueprint(BaseModel):
     purpose: str
     compute_tier: str = "standard"
     checks: list[Check] = []
+    check_set: str | None = None  # name of a reusable check set declared in the Manifest
     report: ReportSpec | None = None
     workflow: str  # markdown body parsed from the Blueprint file
     max_repairs: int | None = None  # override AssuranceLoop repair budget; None -> default (3)
@@ -42,6 +58,7 @@ class Manifest(BaseModel):
     default_engine: str
     compute_tiers: dict[str, dict[str, str]]  # tier -> {engine_name: model_id}
     engines: dict[str, dict]                  # engine_name -> {type, ...}
+    check_sets: dict[str, list[Check]] = {}   # reusable named check sets a Blueprint may reference
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"

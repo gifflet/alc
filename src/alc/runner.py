@@ -9,6 +9,7 @@ from pathlib import Path
 from alc.assurance import AssuranceLoop
 from alc.engine import Engine, EngineRequest
 from alc.engines.registry import resolve_engine
+from alc.intake import resolve_checks
 from alc.models import Blueprint, Manifest, RunReport
 from alc.policy import has_errors, lint
 from alc.verifier import Verifier
@@ -129,7 +130,7 @@ def execute_mandate(
     if blueprint.max_repairs is not None:
         loop_kwargs["max_repairs"] = blueprint.max_repairs
     loop = AssuranceLoop(engine=engine, verifier=verifier, **loop_kwargs)
-    report = loop.run(request=request, checks=blueprint.checks)
+    report = loop.run(request=request, checks=resolve_checks(manifest, blueprint))
 
     # Snapshot the git state after the Assurance Loop and compute changed paths.
     state_after = _git_state(effective_workdir)
