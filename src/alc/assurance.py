@@ -5,9 +5,39 @@ from __future__ import annotations
 
 import sys
 
-from alc.engine import Engine, EngineRequest
+from alc.engine import Engine, EngineRequest, Usage
 from alc.models import AttemptRecord, Blueprint, Check, RunReport, Scorecard
 from alc.verifier import Verifier
+
+
+def _accumulate_usage(total: Usage | None, result_usage: Usage) -> Usage | None:
+    """Fold one attempt's EngineResult.usage into the running per-run total.
+
+    None-safe: a missing field on either side is treated as 0 for the sum, but a
+    field stays None until at least one attempt actually reports it. When nothing
+    has ever been reported the running total stays None (so the loop can WARN
+    instead of silently reading a usage of zero).
+    """
+    reported = (
+        result_usage.input_tokens is not None
+        or result_usage.output_tokens is not None
+        or result_usage.cost_usd is not None
+    )
+    if not reported:
+        return total
+    if total is None:
+        total = Usage()
+
+    def _add(a: int | float | None, b: int | float | None):
+        if a is None and b is None:
+            return None
+        return (a or 0) + (b or 0)
+
+    return Usage(
+        input_tokens=_add(total.input_tokens, result_usage.input_tokens),
+        output_tokens=_add(total.output_tokens, result_usage.output_tokens),
+        cost_usd=_add(total.cost_usd, result_usage.cost_usd),
+    )
 
 
 class AssuranceLoop:
@@ -42,6 +72,7 @@ class AssuranceLoop:
         attempts: list[AttemptRecord] = []
         current_request = request
         last_output = ""
+        usage_total: Usage | None = None
 
         for attempt_index in range(self._max_repairs + 1):
             # --- Act ---
@@ -52,6 +83,7 @@ class AssuranceLoop:
             )
             result = self._engine.run(current_request)
             last_output = result.output_text
+            usage_total = _accumulate_usage(usage_total, result.usage)
 
             # The engine itself failed to run (bad invocation, missing binary,
             # auth error, timeout). Repairing is futile — surface the error and
@@ -72,6 +104,7 @@ class AssuranceLoop:
                     attempts=attempts,
                     scorecard=Scorecard(span=0, passes=attempt_index + 1, streak=0, touch=0),
                     output_text=result.output_text,
+                    usage=usage_total,
                 )
 
             # --- Verify ---
@@ -104,6 +137,7 @@ class AssuranceLoop:
                     attempts=attempts,
                     scorecard=scorecard,
                     output_text=last_output,
+                    usage=usage_total,
                 )
 
             print(
@@ -149,6 +183,7 @@ class AssuranceLoop:
             attempts=attempts,
             scorecard=scorecard,
             output_text=last_output,
+            usage=usage_total,
         )
 
     @staticmethod

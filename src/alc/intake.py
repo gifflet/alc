@@ -6,7 +6,15 @@ from pathlib import Path
 
 import yaml
 
-from alc.models import Blueprint, Check, FlowDefinition, Manifest, ReportSpec, Specialist
+from alc.models import (
+    Blueprint,
+    Check,
+    FlowDefinition,
+    LoopDefinition,
+    Manifest,
+    ReportSpec,
+    Specialist,
+)
 
 
 def load_manifest(operator_layer: Path) -> Manifest:
@@ -183,6 +191,27 @@ def load_specialist(specialists_dir: Path, name: str) -> Specialist:
     with specialist_path.open() as fh:
         data = yaml.safe_load(fh)
     return Specialist.model_validate(data)
+
+
+def load_loop(loops_dir: Path, name: str) -> LoopDefinition:
+    """Load a LoopDefinition by name from the loops directory.
+
+    Loops are plain YAML files (configuration, not prompts), like Flows.
+
+    Args:
+        loops_dir: Directory containing loop YAML files.
+        name: Loop name (used as the filename stem).
+
+    Returns:
+        Parsed LoopDefinition.
+
+    Raises:
+        FileNotFoundError: If the loop file does not exist.
+    """
+    loop_path = loops_dir / f"{name}.yaml"
+    with loop_path.open() as fh:
+        data = yaml.safe_load(fh)
+    return LoopDefinition.model_validate(data)
 
 
 def load_all_specialists(manifest: Manifest, operator_layer: Path) -> list[Specialist]:

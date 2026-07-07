@@ -150,6 +150,7 @@ def execute_mandate(
         scorecard=report.scorecard,
         output_text=report.output_text,
         changed_files=changed_files,
+        usage=report.usage,
     )
 
 

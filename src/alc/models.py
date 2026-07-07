@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from alc.engine import Usage
 
 
 class Check(BaseModel):
@@ -66,6 +68,7 @@ class Manifest(BaseModel):
     specialists_dir: str = ".alc/specialists"
     primers_dir: str = ".alc/primers"
     bundles_dir: str = ".alc/bundles"
+    loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
 
 
 class AttemptRecord(BaseModel):
@@ -95,6 +98,13 @@ class RunReport(BaseModel):
     scorecard: Scorecard
     output_text: str
     changed_files: list[str] = []  # paths that changed or appeared during this run
+    # Cumulative engine Usage across every attempt in this run (None when the
+    # engine reported nothing at all). The Autonomous Loop reads this to enforce
+    # usd/tokens budgets. Usage is a frozen dataclass; Pydantic serialises it via
+    # arbitrary_types_allowed.
+    usage: Usage | None = None
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class FlowStage(BaseModel):
@@ -282,3 +292,111 @@ class SpecialistReport(BaseModel):
 
 # Resolve UnitResult's forward reference to SpecialistReport (defined above).
 UnitResult.model_rebuild()
+
+
+# ---------------------------------------------------------------------------
+# Autonomous Loop (plan -> drain -> check stop -> repeat, driven by cron)
+# ---------------------------------------------------------------------------
+
+
+class Replenish(BaseModel):
+    """The replenish (planning) step run at the start of each Mode A cycle.
+
+    ``kind`` selects the dispatch target: a Specialist run or a Conductor goal.
+    NOTE: flow-replenish is NOT part of v1 — a Flow's enqueue semantics under
+    the loop are unclear, so it is deliberately trimmed here.
+    """
+
+    kind: Literal["specialist", "conduct"]
+    ref: str | None = None   # specialist name; None allowed for a conduct replenish
+    task: str
+
+
+class LoopBudget(BaseModel):
+    """A finer, best-effort cap on cumulative usage across cycles."""
+
+    unit: Literal["engine_calls", "usd", "tokens"]
+    max: float
+
+    @field_validator("max")
+    @classmethod
+    def _max_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("LoopBudget.max must be > 0.")
+        return v
+
+
+class LoopStop(BaseModel):
+    """Stop conditions for a loop. ``max_cycles`` is the mandatory hard backstop."""
+
+    max_cycles: int
+    on_no_new_work: bool = True
+    budget: LoopBudget | None = None
+
+    @field_validator("max_cycles")
+    @classmethod
+    def _max_cycles_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("LoopStop.max_cycles must be > 0.")
+        return v
+
+
+class LoopFailure(BaseModel):
+    """Failure policy: stop after N consecutive no-progress cycles."""
+
+    max_consecutive: int = 5
+
+    @field_validator("max_consecutive")
+    @classmethod
+    def _max_consecutive_valid(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("LoopFailure.max_consecutive must be >= 1.")
+        return v
+
+
+class LoopDrain(BaseModel):
+    """Drain options: how many queued tasks to process per cycle."""
+
+    concurrency: int = 1
+
+    @field_validator("concurrency")
+    @classmethod
+    def _concurrency_valid(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("LoopDrain.concurrency must be >= 1.")
+        return v
+
+
+class LoopDefinition(BaseModel):
+    """Declares one Autonomous Loop — loaded from .alc/loops/<name>.yaml."""
+
+    name: str
+    replenish: Replenish | None = None   # None -> Mode B (drain-only)
+    stop: LoopStop
+    failure: LoopFailure = LoopFailure()
+    drain: LoopDrain = LoopDrain()
+
+
+class LoopState(BaseModel):
+    """Persisted loop state — .alc/loops/<name>.state.json."""
+
+    name: str
+    status: Literal["running", "stopped"] = "running"
+    cycle: int = 0
+    consecutive_no_progress: int = 0
+    # Cumulative usage per unit; keys among engine_calls / usd / tokens.
+    budget_used: dict[str, float] = {}
+    stopped_reason: str | None = None
+
+
+class CycleRecord(BaseModel):
+    """One line of the per-cycle ledger — .alc/loops/<name>.ledger.jsonl."""
+
+    cycle: int
+    replenished: int
+    drained: int
+    succeeded: int
+    failed: int
+    progress: bool
+    budget_delta: dict[str, float]
+    stopped_reason: str | None = None
