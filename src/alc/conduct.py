@@ -242,9 +242,10 @@ def dispatch_now(
 ) -> list[FlowReport]:
     """Run each PlannedUnit immediately, routing by kind (serial).
 
-    Flow units run via FlowRunner (and produce a FlowReport). Specialist units
-    run via run_specialist. Only flow units contribute to the returned list, so
-    existing FlowReport consumers keep working unchanged.
+    Flow units run via FlowRunner. Specialist units run via run_specialist; their
+    Act outcome is wrapped into a FlowReport (via queue.py's _specialist_flow_report)
+    so every unit — flow or specialist — contributes to the returned list and to
+    the overall success computation.
 
     Args:
         plan: The validated ConductorPlan.
@@ -253,8 +254,10 @@ def dispatch_now(
         engine_override: Optional engine name to use instead of the manifest default.
 
     Returns:
-        List of FlowReport, one per flow item in the plan (in order).
+        List of FlowReport, one per plan item (in order): a flow's own report or a
+        specialist's Act outcome wrapped as a FlowReport.
     """
+    from alc.queue import _specialist_flow_report
     from alc.specialist import run_specialist
 
     flows_dir = operator_layer.parent / manifest.flows_dir
@@ -264,12 +267,16 @@ def dispatch_now(
     for item in plan.items:
         if item.kind == "specialist":
             specialist = load_specialist(specialists_dir, item.name)
-            run_specialist(
+            specialist_report = run_specialist(
                 manifest=manifest,
                 operator_layer=operator_layer,
                 specialist=specialist,
                 task=item.task,
                 engine_override=engine_override,
+            )
+            engine_name = engine_override or manifest.default_engine
+            reports.append(
+                _specialist_flow_report(item.name, engine_name, specialist_report.act)
             )
             continue
         flow = load_flow(flows_dir, item.name)
@@ -401,7 +408,9 @@ def conduct(
                 {"kind": item.kind, "name": item.name, "task": item.task}
                 for item in plan.items
             ]
-            fanout = run_fanout(manifest, operator_layer, units)
+            fanout = run_fanout(
+                manifest, operator_layer, units, engine_override=engine_override
+            )
             return ConductReport(
                 goal=goal,
                 mode="run",

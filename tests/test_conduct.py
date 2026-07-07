@@ -323,8 +323,11 @@ class TestDispatchNowRoutesSpecialist:
 
         reports = dispatch_now(plan, manifest, operator_layer, engine_override="mock")
 
-        # No FlowReport is produced for a specialist item.
-        assert reports == []
+        # The specialist's Act outcome is wrapped into a FlowReport so it counts
+        # toward the overall success.
+        assert len(reports) == 1
+        assert reports[0].flow == "db"
+        assert reports[0].success is True
 
         # The Knowledge File was written by the successful Act -> Learn cycle.
         knowledge_file = operator_layer.parent / ".alc/specialists/db.knowledge.md"
@@ -435,6 +438,140 @@ def _make_conduct_repo(base: Path) -> Path:
     return repo
 
 
+class TestDispatchNowSurfacesSpecialistFailure:
+    def test_failing_specialist_makes_serial_conduct_unsuccessful(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        # A blueprint whose only check always fails, so the specialist's Act fails.
+        failing_bp = (
+            "---\nname: failing\npurpose: Always fails its check.\ncompute_tier: standard\n"
+            'checks:\n  - name: nope\n    command: ["false"]\n---\n# Workflow\n1. Do nothing.\n'
+        )
+        (operator_layer / "blueprints" / "failing.md").write_text(failing_bp)
+
+        specialists_dir = operator_layer / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "db.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "db",
+                    "area": "the database access layer",
+                    "blueprint": "failing",
+                    "knowledge_path": ".alc/specialists/db.knowledge.md",
+                }
+            )
+        )
+
+        manifest = load_manifest(operator_layer)
+
+        # Drive the planning turn to a specialist-only plan.
+        monkeypatch.setattr(
+            "alc.engines.registry.resolve_engine",
+            lambda name, engines: MockEngine(
+                output='[{"kind":"specialist","name":"db","task":"document"}]'
+            ),
+        )
+
+        report = conduct(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            goal="document the db",
+            engine_override="mock",
+        )
+
+        # Serial dispatch must surface the failing specialist, not report success.
+        assert report.mode == "run"
+        assert len(report.flow_reports) == 1
+        assert report.flow_reports[0].flow == "db"
+        assert report.flow_reports[0].success is False
+        assert report.success is False
+
+
+class TestConductParallelHonorsEngineOverride:
+    def test_units_run_on_override_not_manifest_default(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from alc.engine import Capabilities, EngineResult
+
+        class _NamedMockEngine:
+            """Mock engine that reports a distinct name (records which engine ran)."""
+
+            def __init__(self, name: str, output: str | None = None) -> None:
+                self.name = name
+                self._output = output
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                text = self._output if self._output is not None else "[mock] applied"
+                return EngineResult(ok=True, output_text=text)
+
+        # Repo whose manifest default engine ("base") differs from the override
+        # ("chosen"); both are mock-typed so the run is hermetic.
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        manifest_yaml = (
+            "version: 1\n"
+            "default_engine: base\n"
+            "compute_tiers:\n  standard:\n    base: base-small\n    chosen: chosen-small\n"
+            "engines:\n  base:\n    type: mock\n  chosen:\n    type: mock\n"
+            "blueprints_dir: .alc/blueprints\n"
+            "flows_dir: .alc/flows\n"
+            "queue_dir: .alc/queue\n"
+        )
+        chore = (
+            "---\nname: chore\npurpose: Apply a change.\ncompute_tier: standard\n"
+            'checks:\n  - name: smoke\n    command: ["true"]\n---\n# Workflow\n1. Make it.\n'
+        )
+        ship = (
+            "name: ship\ndescription: Build it.\nstages:\n"
+            "  - name: build\n    blueprint: chore\n"
+        )
+        (alc / "manifest.yaml").write_text(manifest_yaml)
+        (alc / "blueprints" / "chore.md").write_text(chore)
+        (alc / "flows" / "ship.yaml").write_text(ship)
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed"], check=True, capture_output=True
+        )
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+
+        plan_output = '[{"kind":"flow","name":"ship","task":"build"}]'
+
+        def _resolve(name: str, engines: dict):
+            # Return a named engine so RunReport.engine records which one ran.
+            return _NamedMockEngine(name, output=plan_output)
+
+        # conduct() resolves the planning engine via the registry namespace, while
+        # execute_mandate resolves the dispatch engine via runner's own import.
+        monkeypatch.setattr("alc.engines.registry.resolve_engine", _resolve)
+        monkeypatch.setattr("alc.runner.resolve_engine", _resolve)
+
+        report = conduct(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            goal="build it",
+            engine_override="chosen",
+            parallel=True,
+        )
+
+        assert report.success is True
+        assert len(report.units) == 1
+        # The dispatched unit must have run on the override, not the manifest default.
+        stages = report.units[0].flow_report.stages
+        assert all(s.engine == "chosen" for s in stages)
+
+
 class TestConductParallelMixedPlan:
     def test_parallel_dispatch_fills_units(self, tmp_path: Path, monkeypatch) -> None:
         repo = _make_conduct_repo(tmp_path)
@@ -491,8 +628,9 @@ class TestConductParallelOutsideGitFallsBack:
         )
 
         assert report.mode == "run"
-        # Serial dispatch: no fan-out units, one flow report for the ship flow.
+        # Serial dispatch: no fan-out units; one report per plan item — the ship
+        # flow plus the db specialist's Act wrapped as a FlowReport.
         assert report.units == []
-        assert len(report.flow_reports) == 1
-        assert report.flow_reports[0].flow == "ship"
+        assert len(report.flow_reports) == 2
+        assert [r.flow for r in report.flow_reports] == ["ship", "db"]
         assert report.success is True

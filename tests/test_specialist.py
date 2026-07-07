@@ -97,6 +97,33 @@ class TestLearn:
         result = learn(engine, "mock-small", "base", "area", "task", "output")
         assert result == "UPDATED"
 
+    def test_forwards_workdir_to_engine_request(self, tmp_path: Path) -> None:
+        """The Learn engine turn must run in the given workdir, not always cwd."""
+
+        class _RecordingEngine:
+            name = "mock"
+
+            def __init__(self) -> None:
+                self.seen_workdir: Path | None = None
+
+            def capabilities(self):
+                from alc.engine import Capabilities
+
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                from alc.engine import EngineResult
+
+                self.seen_workdir = request.workdir
+                return EngineResult(ok=True, output_text="UPDATED")
+
+        engine = _RecordingEngine()
+        learn(engine, None, "base", "area", "task", "output", workdir=tmp_path)
+        assert engine.seen_workdir == tmp_path
+
 
 # ---------------------------------------------------------------------------
 # run_specialist — integration test using operator_layer fixture

@@ -179,6 +179,76 @@ class TestRunFanout:
 
 
 # ---------------------------------------------------------------------------
+# (b2) run_fanout forwards the engine override to every unit.
+# ---------------------------------------------------------------------------
+
+
+_MANIFEST_TWO_ENGINES = """\
+version: 1
+default_engine: base
+compute_tiers:
+  standard:
+    base: base-small
+    chosen: chosen-small
+engines:
+  base:
+    type: mock
+  chosen:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+"""
+
+
+class TestRunFanoutForwardsEngineOverride:
+    def test_units_run_on_override_not_default(self, tmp_path: Path, monkeypatch) -> None:
+        """A manifest default of 'base' plus override 'chosen' must dispatch on 'chosen'."""
+        from alc.engine import Capabilities, EngineResult
+
+        class _NamedMockEngine:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                return EngineResult(ok=True, output_text="[mock] applied")
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_MANIFEST_TWO_ENGINES)
+        (alc / "blueprints" / "chore.md").write_text(_CHORE)
+        _commit_all(repo, "seed operator layer")
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+
+        # runner.py imports resolve_engine at module load, so patch there too:
+        # that is the reference execute_mandate uses to build the RunReport's engine.
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine",
+            lambda name, engines: _NamedMockEngine(name),
+        )
+
+        units = [{"kind": "blueprint", "name": "chore", "task": "do it"}]
+        report = run_fanout(
+            manifest, operator_layer, units, max_workers=1, engine_override="chosen"
+        )
+
+        assert report.success is True
+        assert report.units[0].run_report.engine == "chosen"
+
+
+# ---------------------------------------------------------------------------
 # (c) run_unit refuses a non-git directory.
 # ---------------------------------------------------------------------------
 

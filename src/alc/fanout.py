@@ -133,6 +133,7 @@ def run_fanout(
     operator_layer: Path,
     units: list[dict],
     max_workers: int = 4,
+    engine_override: str | None = None,
 ) -> FanoutReport:
     """Run every unit concurrently, each isolated in its own git worktree.
 
@@ -143,6 +144,8 @@ def run_fanout(
             "flow", "blueprint", or "specialist".
         max_workers: Bounded concurrency (default 4). The work is subprocess-bound,
             so threads are correct.
+        engine_override: If set, run every unit on this engine instead of
+            manifest.default_engine (mirrors the serial dispatch path).
 
     Returns:
         FanoutReport whose ``units`` preserve the input order and whose ``success``
@@ -158,6 +161,7 @@ def run_fanout(
                 unit["kind"],
                 unit["name"],
                 unit["task"],
+                engine_override,
             ): index
             for index, unit in enumerate(units)
         }

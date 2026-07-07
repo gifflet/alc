@@ -114,6 +114,7 @@ def learn(
     area: str,
     task: str,
     act_output: str,
+    workdir: Path | None = None,
 ) -> str:
     """Ask the engine to update the Knowledge File and return the new text.
 
@@ -128,6 +129,9 @@ def learn(
         area: Human description of the area this Specialist covers.
         task: The task the Specialist just completed.
         act_output: The full output_text from the Act step's RunReport.
+        workdir: Directory the engine runs in. Defaults to Path.cwd() (None =
+            unchanged). Pass an IsolatedWorktree path to keep the Learn turn
+            confined to this unit's branch.
 
     Returns:
         Updated Knowledge File text, or the original ``knowledge`` if the engine
@@ -142,7 +146,7 @@ def learn(
 
     request = EngineRequest(
         directive=directive,
-        workdir=Path.cwd(),
+        workdir=workdir or Path.cwd(),
         model=model,
     )
     result = engine.run(request)
@@ -220,6 +224,7 @@ def run_specialist(
             area=specialist.area,
             task=task,
             act_output=act.output_text,
+            workdir=workdir,
         )
 
         if new_knowledge != knowledge:
