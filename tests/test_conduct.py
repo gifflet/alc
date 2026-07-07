@@ -10,7 +10,7 @@ import yaml
 from alc.conduct import conduct, dispatch_enqueue, dispatch_now, parse_plan, plan_flows
 from alc.engines.mock import MockEngine
 from alc.intake import load_manifest
-from alc.models import ConductorPlan, PlannedUnit, QueueTask
+from alc.models import ConductorPlan, PlannedFlow, PlannedUnit, QueueTask
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +280,50 @@ class TestParsePlanUnitShapes:
 
         with pytest.raises(ValueError, match="unknown specialist"):
             parse_plan('[{"kind":"specialist","name":"nope","task":"x"}]', {"ship"}, {"db"})
+
+
+# ---------------------------------------------------------------------------
+# PlannedUnit / PlannedFlow constructor compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestPlannedUnitConstructorCompat:
+    def test_planned_unit_canonical_shape(self) -> None:
+        """PlannedUnit(kind=..., name=..., task=...) constructs without error."""
+        unit = PlannedUnit(kind="flow", name="ship", task="do it")
+        assert unit.kind == "flow"
+        assert unit.name == "ship"
+        assert unit.task == "do it"
+
+    def test_planned_flow_alias_legacy_shape(self) -> None:
+        """PlannedFlow(flow=..., task=...) constructs and maps kind/name correctly."""
+        item = PlannedFlow(flow="ship", task="build the widget")  # type: ignore[call-arg]
+        assert item.kind == "flow"
+        assert item.name == "ship"
+        assert item.task == "build the widget"
+
+    def test_planned_flow_flow_property_round_trips(self) -> None:
+        """The back-compat .flow property returns the unit name."""
+        item = PlannedFlow(flow="deploy", task="push it")  # type: ignore[call-arg]
+        assert item.flow == "deploy"
+
+    def test_conductor_plan_model_validate_legacy_dict(self) -> None:
+        """ConductorPlan.model_validate works with legacy {flow, task} dicts in items."""
+        plan = ConductorPlan.model_validate({
+            "items": [{"flow": "ship", "task": "legacy task"}]
+        })
+        assert len(plan.items) == 1
+        assert plan.items[0].kind == "flow"
+        assert plan.items[0].name == "ship"
+        assert plan.items[0].task == "legacy task"
+
+    def test_conductor_plan_model_validate_current_dict(self) -> None:
+        """ConductorPlan.model_validate works with the current {kind, name, task} shape."""
+        plan = ConductorPlan.model_validate({
+            "items": [{"kind": "specialist", "name": "db", "task": "document"}]
+        })
+        assert plan.items[0].kind == "specialist"
+        assert plan.items[0].name == "db"
 
 
 # ---------------------------------------------------------------------------

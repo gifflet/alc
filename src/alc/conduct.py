@@ -95,14 +95,17 @@ def parse_plan(
                 f"Item {i} in Conductor plan is not an object: {entry!r}"
             )
 
-        # Legacy shape: {"flow": X, "task": Y} -> a flow unit named X.
+        # Resolve kind/name from either the current shape or the legacy shape.
+        # The legacy shape {"flow": X, "task": Y} is also accepted by PlannedUnit's
+        # model_validator, but we need kind/name here for catalog validation first.
         if "flow" in entry and "kind" not in entry:
+            # Legacy shape: {"flow": X, "task": Y}
             if "task" not in entry:
                 raise ValueError(
                     f"Item {i} in Conductor plan is missing 'task' key: {entry!r}"
                 )
-            kind = "flow"
-            name = entry["flow"]
+            kind: str = "flow"
+            name: str = entry["flow"]
         else:
             if "kind" not in entry or "name" not in entry or "task" not in entry:
                 raise ValueError(
@@ -129,7 +132,11 @@ def parse_plan(
                 f"Item {i} has invalid kind '{kind}'; expected 'flow' or 'specialist'."
             )
 
-        items.append(PlannedUnit(kind=kind, name=name, task=str(entry["task"])))
+        # Build via model_validate so the before-validator normalises any
+        # legacy shape; the catalog check above has already run by this point.
+        items.append(PlannedUnit.model_validate({
+            "kind": kind, "name": name, "task": str(entry["task"])
+        }))
 
     return ConductorPlan(items=items)
 

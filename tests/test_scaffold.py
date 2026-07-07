@@ -187,3 +187,47 @@ class TestScaffoldPythonProject:
         for name in ("chore", "feature"):
             content = (tmp_path / ".alc" / "blueprints" / f"{name}.md").read_text()
             assert "pytest" in content, f"{name}.md missing pytest check"
+
+
+# ---------------------------------------------------------------------------
+# Stack detection — Node and Rust stacks, plus precedence
+# ---------------------------------------------------------------------------
+
+
+class TestDetectStackNode:
+    def test_package_json_detected(self, tmp_path: Path) -> None:
+        """detect_stack() returns ('Node', ...) when package.json is present."""
+        (tmp_path / "package.json").write_text('{"name": "myapp"}\n')
+        label, _checks = detect_stack(tmp_path)
+        assert label == "Node"
+
+    def test_node_checks_block_contains_npm_test(self, tmp_path: Path) -> None:
+        """Node checks block references npm test."""
+        (tmp_path / "package.json").write_text('{"name": "myapp"}\n')
+        _label, checks = detect_stack(tmp_path)
+        assert "npm" in checks
+        assert "test" in checks
+
+
+class TestDetectStackRust:
+    def test_cargo_toml_detected(self, tmp_path: Path) -> None:
+        """detect_stack() returns ('Rust', ...) when Cargo.toml is present."""
+        (tmp_path / "Cargo.toml").write_text('[package]\nname = "hello"\n')
+        label, _checks = detect_stack(tmp_path)
+        assert label == "Rust"
+
+    def test_rust_checks_block_contains_cargo_check(self, tmp_path: Path) -> None:
+        """Rust checks block references cargo check."""
+        (tmp_path / "Cargo.toml").write_text('[package]\nname = "hello"\n')
+        _label, checks = detect_stack(tmp_path)
+        assert "cargo" in checks
+        assert "check" in checks
+
+
+class TestDetectStackPrecedence:
+    def test_go_wins_over_pyproject(self, tmp_path: Path) -> None:
+        """go.mod takes precedence over pyproject.toml when both are present."""
+        (tmp_path / "go.mod").write_text("module example\n")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        label, _checks = detect_stack(tmp_path)
+        assert label == "Go"

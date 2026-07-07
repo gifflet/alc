@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Check(BaseModel):
@@ -184,11 +184,29 @@ class PlannedUnit(BaseModel):
 
     ``kind`` selects the dispatch target: a Flow or a Specialist. ``name`` is
     validated against the catalog. ``task`` is the free-text task for that unit.
+
+    Legacy constructor shape ``PlannedUnit(flow="ship", task="x")`` (no kind/name)
+    is accepted via the before-validator and mapped to kind="flow", name=<flow value>.
+    This keeps the ``PlannedFlow`` alias constructible with keyword argument ``flow=``.
     """
 
     kind: Literal["flow", "specialist"]
     name: str          # validated against the catalog (Flow or Specialist name)
     task: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_flow_shape(cls, values: object) -> object:
+        """Map legacy ``{"flow": X, ...}`` input to ``{"kind": "flow", "name": X, ...}``.
+
+        Only applied when the input is a dict that has ``flow`` but lacks ``kind``
+        and ``name``.  All other shapes pass through unchanged.
+        """
+        if isinstance(values, dict) and "flow" in values and "kind" not in values and "name" not in values:
+            values = dict(values)   # avoid mutating caller's dict
+            values["kind"] = "flow"
+            values["name"] = values.pop("flow")
+        return values
 
     @property
     def flow(self) -> str:
