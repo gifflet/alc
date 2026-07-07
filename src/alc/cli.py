@@ -284,6 +284,41 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if report.success else 1
 
 
+def _failure_reason(result, queue_dir) -> str:
+    """Build a human-readable explanation string for a failed TickResult.
+
+    Extracts the tail of the last executed stage's output_text (up to 400
+    characters, prefixed with '…' when truncated) and appends a pointer to
+    the Gate report JSON.  Used in cmd_tick to surface WHY a unit failed.
+
+    Args:
+        result: A TickResult whose ``success`` is False.
+        queue_dir: The queue directory Path (used to build the report pointer).
+
+    Returns:
+        A multi-line string with indented tail output and the report pointer.
+    """
+    report = result.report
+    pointer = f"    see: {queue_dir}/done/{Path(result.task_file).stem}.report.json"
+
+    if not report.stages:
+        return pointer
+
+    last_stage = report.stages[-1]
+    if not last_stage.output_text:
+        return pointer
+
+    text = last_stage.output_text
+    if len(text) > 400:
+        tail = "…" + text[-400:]
+    else:
+        tail = text
+
+    # Indent every line of the tail by 4 spaces.
+    indented = "\n".join("    " + line for line in tail.splitlines())
+    return indented + "\n" + pointer
+
+
 def cmd_tick(args: argparse.Namespace) -> int:
     """Run `alc tick`: drain the task queue (Unattended Mode Trigger).
 
@@ -327,6 +362,8 @@ def cmd_tick(args: argparse.Namespace) -> int:
         if result.branch:
             line += f" (branch {result.branch})"
         print(line)
+        if not result.success:
+            print(_failure_reason(result, queue_dir))
 
     return 0
 

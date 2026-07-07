@@ -4,6 +4,7 @@
 # Assurance Loop, Scorecard) is reused for every stage via execute_mandate.
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from alc.intake import load_blueprint, resolve_checks
@@ -179,6 +180,12 @@ class FlowRunner:
 
         for stage in flow.stages:
             blueprint = stage_blueprints[stage.name]
+
+            # Announce the active stage before any engine or verifier work.
+            _stage_header = f"▶ stage {stage.name} — blueprint:{blueprint.name}"
+            if stage.verify_only:
+                _stage_header += " (verify-only)"
+            print(_stage_header, file=sys.stderr, flush=True)
 
             if stage.verify_only:
                 # Verify-only stage: run checks as a pure gate — no engine turn.

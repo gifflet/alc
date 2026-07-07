@@ -92,6 +92,9 @@ def _process_task(
         flow_name = unit_name  # TickResult.flow carries the unit name (flow or specialist)
         engine_name = qt.engine or manifest.default_engine
 
+        # Announce the active unit so operator output is grouped under a header.
+        print(f"▶ {task_file.name} — {qt.kind}:{unit_name}", file=sys.stderr, flush=True)
+
         def _run(workdir: Path | None) -> FlowReport:
             """Run this task (flow or specialist) in the given workdir."""
             if qt.kind == "specialist":
