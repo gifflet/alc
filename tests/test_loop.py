@@ -441,6 +441,87 @@ class TestStopBudget:
 
 
 # ---------------------------------------------------------------------------
+# Budget-unit-unmeasurable WARN
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetUnitWarn:
+    """Covers the PRD requirement: warn when a usd/tokens cap is inert for a cycle."""
+
+    def test_warns_when_usd_unit_reports_nothing(
+        self, operator_layer: Path, capsys
+    ) -> None:
+        """Engine runs (engine_calls > 0) but reports no usd cost -> WARN emitted."""
+        manifest = load_manifest(operator_layer)
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nstop:\n  max_cycles: 20\n  on_no_new_work: false\n"
+            "  budget:\n    unit: usd\n    max: 100\n",
+        )
+        # MockEngine reports no Usage (cost_usd stays None / 0), but the ship flow
+        # DOES run engine turns, so engine_calls > 0 after the cycle.
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        _seed_queue(operator_layer, "t1")
+
+        run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"), engine_override="mock"
+        )
+
+        err = capsys.readouterr().err
+        assert "[WARN] budget unit 'usd'" in err
+        assert "max_cycles remains the backstop" in err
+
+    def test_no_warn_when_usd_cost_is_reported(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """Engine reports a real usd cost -> no WARN."""
+        manifest = load_manifest(operator_layer)
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nstop:\n  max_cycles: 20\n  on_no_new_work: false\n"
+            "  budget:\n    unit: usd\n    max: 100\n",
+        )
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine",
+            lambda name, engines: _UsageEngine(cost=0.5),
+        )
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        _seed_queue(operator_layer, "t1")
+
+        run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"), engine_override="mock"
+        )
+
+        err = capsys.readouterr().err
+        assert "[WARN] budget unit 'usd'" not in err
+
+    def test_no_warn_on_empty_cycle_with_usd_budget(
+        self, operator_layer: Path, capsys
+    ) -> None:
+        """Mode B empty cycle (engine_calls == 0, queue empty) -> no WARN."""
+        manifest = load_manifest(operator_layer)
+        _write_loop(
+            operator_layer,
+            "deliver",
+            # on_no_new_work: false so the empty cycle is not a pre-stop;
+            # the cycle runs but drains nothing (engine_calls stays 0).
+            "name: deliver\nstop:\n  max_cycles: 20\n  on_no_new_work: false\n"
+            "  budget:\n    unit: usd\n    max: 100\n",
+        )
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        # No task seeded -> queue is empty -> engine_calls == 0 after the cycle.
+
+        run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"), engine_override="mock"
+        )
+
+        err = capsys.readouterr().err
+        assert "[WARN] budget unit 'usd'" not in err
+
+
+# ---------------------------------------------------------------------------
 # Replenish counting
 # ---------------------------------------------------------------------------
 

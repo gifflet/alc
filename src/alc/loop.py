@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from alc.engine import Usage
@@ -67,7 +68,13 @@ def save_loop_state(path: Path, state: LoopState) -> None:
 
 
 def append_ledger(path: Path, record: CycleRecord) -> None:
-    """Append one cycle record as a JSON line (creating the loops dir if needed)."""
+    """Append one cycle record as a JSON line (creating the loops dir if needed).
+
+    This write is best-effort: if the process crashes between the ledger append and
+    the caller persisting state, the ledger may contain a duplicated entry for that
+    cycle; the hard backstops (max_cycles/budget) are re-evaluated from persisted state
+    so this cannot cause a runaway.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as fh:
         fh.write(record.model_dump_json() + "\n")
@@ -145,6 +152,36 @@ def _flow_usage(report: FlowReport, delta: dict[str, float]) -> None:
     """Fold a FlowReport (sum across its stages) into the running cycle delta."""
     for stage in report.stages:
         _report_usage(stage, delta)
+
+
+def _warn_if_budget_unmeasurable(
+    loop_def: LoopDefinition, delta: dict[str, float]
+) -> None:
+    """Print a one-line warning to stderr when the budget unit is unmeasurable.
+
+    Triggers only when:
+    - a budget stop is configured with unit 'usd' or 'tokens', AND
+    - engine work actually ran this cycle (engine_calls > 0), AND
+    - the chosen unit contributed nothing to the delta (still 0).
+
+    When none of those conditions hold — no budget, engine_calls unit, nothing ran,
+    or the unit was genuinely measured — this is a silent no-op.
+    """
+    budget = loop_def.stop.budget
+    if budget is None:
+        return
+    unit = budget.unit
+    if unit == "engine_calls":
+        return
+    if delta.get("engine_calls", 0) == 0:
+        # Nothing ran this cycle; zero is expected, not a reporting gap.
+        return
+    if delta.get(unit, 0) == 0:
+        print(
+            f"[WARN] budget unit '{unit}' reported nothing this cycle; "
+            f"the {unit} cap is inert — max_cycles remains the backstop.",
+            file=sys.stderr,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +332,11 @@ def run_cycle(
         progress=progress,
         budget_delta=delta,
     )
+
+    # (g-pre) Warn when a usd/tokens budget cap is configured but the chosen unit
+    # reported nothing this cycle despite engine work having run.  The cap is inert
+    # when the unit stays at zero forever; max_cycles is the true backstop.
+    _warn_if_budget_unmeasurable(loop_def, delta)
 
     # (g) Post-check: did this cycle trip a stop condition?
     post = check_post_stop(loop_def, new_state, record)
