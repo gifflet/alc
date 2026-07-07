@@ -18,6 +18,17 @@ class ClaudeCodeEngine:
 
     name: str = "claude-code"
 
+    def __init__(self, clean_config: bool = False) -> None:
+        """Construct the adapter.
+
+        Args:
+            clean_config: When True, restrict the CLI to the ``user`` and
+                ``local`` setting sources, so the host project's ``.claude/``
+                settings and hooks are NOT inherited into the run. Opt-in; the
+                default (False) leaves today's argv byte-identical.
+        """
+        self.clean_config = clean_config
+
     def capabilities(self) -> Capabilities:
         """Claude Code supports tool scoping, system-prompt append, structured output,
         subagents, and MCP natively."""
@@ -50,6 +61,13 @@ class ClaudeCodeEngine:
         Assurance Loop's job.
         """
         cmd = ["claude", "--print", "--output-format", "stream-json", "--verbose"]
+
+        # Opt-in clean-config: load only the user and local setting sources,
+        # excluding `project`. This stops the host project's .claude/ settings
+        # and hooks from leaking into the run. Verified against `claude --help`
+        # (`--setting-sources <sources>`: user, project, local).
+        if self.clean_config:
+            cmd += ["--setting-sources", "user,local"]
 
         # Headless edits need a non-interactive permission mode. The control plane
         # isolates each run (sandbox/worktree), so auto-accepting file edits is both

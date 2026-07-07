@@ -27,6 +27,7 @@ engines:
   claude-code:
     type: claude-code
     binary: claude
+    # clean_config: true  # skip the host project's .claude/ settings and hooks
 
 blueprints_dir: .alc/blueprints
 flows_dir: .alc/flows

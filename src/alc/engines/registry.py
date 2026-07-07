@@ -55,4 +55,10 @@ def resolve_engine(engine_name: str, engines_config: dict[str, dict]) -> "Engine
             f"Registered types: {list(_FACTORIES)}"
         )
 
+    # claude-code reads an opt-in `clean_config` flag from its manifest entry.
+    # This is the only place aware of concrete engines (DIP boundary), so the
+    # per-engine wiring lives here rather than in the control plane.
+    if engine_type == "claude-code":
+        return _FACTORIES[engine_type](clean_config=engine_conf.get("clean_config", False))
+
     return _FACTORIES[engine_type]()
