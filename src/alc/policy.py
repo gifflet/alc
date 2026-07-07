@@ -5,8 +5,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pathlib import Path
+
 from alc.intake import resolve_checks
-from alc.models import Blueprint, FlowDefinition, Manifest
+from alc.models import Blueprint, FlowDefinition, LoopDefinition, Manifest
 
 
 @dataclass
@@ -200,6 +202,45 @@ def lint_flow(flow: FlowDefinition, available_blueprints: set[str]) -> list[Viol
                         f"Flow '{flow.name}', stage '{stage.name}': blueprint "
                         f"'{stage.blueprint}' does not exist in the Operator Layer "
                         f"(available: {sorted(available_blueprints)})."
+                    ),
+                )
+            )
+
+    return violations
+
+
+def validate_loop(
+    manifest: Manifest, operator_layer: Path, loop_def: LoopDefinition
+) -> list[Violation]:
+    """Run Policy Gate rules specific to a LoopDefinition.
+
+    The numeric constraints (max_cycles > 0, budget.max > 0, max_consecutive >= 1,
+    valid budget unit) are already enforced by the pydantic validators at load
+    time, so the only reference this checks is the replenish target: a
+    specialist-kind replenish must name a Specialist file that exists.
+
+    Args:
+        manifest: The loaded Manifest (provides specialists_dir).
+        operator_layer: Path to the ``.alc/`` directory.
+        loop_def: The LoopDefinition to validate.
+
+    Returns:
+        List of Violations (may be empty).
+    """
+    violations: list[Violation] = []
+
+    replenish = loop_def.replenish
+    if replenish is not None and replenish.kind == "specialist":
+        specialists_dir = operator_layer.parent / manifest.specialists_dir
+        ref = replenish.ref
+        if not ref or not (specialists_dir / f"{ref}.yaml").exists():
+            violations.append(
+                Violation(
+                    rule="loop-replenish-specialist-exists",
+                    severity="error",
+                    message=(
+                        f"Loop '{loop_def.name}' replenish references specialist "
+                        f"'{ref}' which does not exist in {specialists_dir}."
                     ),
                 )
             )

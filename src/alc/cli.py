@@ -1,6 +1,7 @@
 # cli.py — argparse entrypoint for ALC.
 # Provides subcommands: `alc init` (supports --setup), `alc lint`, `alc run`,
-# `alc flow`, `alc tick`, `alc conduct`, `alc specialist`, `alc setup`.
+# `alc flow`, `alc tick`, `alc conduct`, `alc cycle`, `alc loop`, `alc specialist`,
+# `alc setup`.
 from __future__ import annotations
 
 import argparse
@@ -420,6 +421,122 @@ def cmd_conduct(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_loop(args: argparse.Namespace):
+    """Shared cycle/loop setup: resolve operator layer, manifest, loop def, and paths.
+
+    Returns a (manifest, operator_layer, loop_def, loops, spath, error_code) tuple.
+    ``error_code`` is an int exit code when setup failed (loop file missing or a
+    Policy Gate violation), else None. When error_code is set, the other fields
+    may be partially populated and must not be used.
+    """
+    from alc.intake import load_loop, load_manifest
+    from alc.loop import loops_dir, state_path
+    from alc.policy import validate_loop
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    loops = loops_dir(manifest, operator_layer)
+
+    try:
+        loop_def = load_loop(loops, args.name)
+    except FileNotFoundError:
+        print(f"[ERROR] No loop named '{args.name}' in {loops}", file=sys.stderr)
+        return None, None, None, None, None, 1
+
+    violations = validate_loop(manifest, operator_layer, loop_def)
+    if violations:
+        for v in violations:
+            print(f"[ERROR] [{v.rule}] {v.message}", file=sys.stderr)
+        return None, None, None, None, None, 1
+
+    return manifest, operator_layer, loop_def, loops, state_path(loops, args.name), None
+
+
+def cmd_cycle(args: argparse.Namespace) -> int:
+    """Run `alc cycle <name>`: run exactly ONE autonomous loop cycle (cron target)."""
+    from alc.loop import (
+        format_cycle_summary,
+        load_loop_state,
+        run_cycle,
+        save_loop_state,
+    )
+    from alc.models import LoopState
+
+    manifest, operator_layer, loop_def, _loops, spath, err = _resolve_loop(args)
+    if err is not None:
+        return err
+
+    state = load_loop_state(spath, args.name)
+
+    if args.status:
+        print(state.model_dump_json(indent=2))
+        return 0
+
+    if args.reset:
+        state = LoopState(name=args.name)
+        save_loop_state(spath, state)
+        print(f"Loop '{args.name}' reset.")
+        return 0
+
+    if state.status == "stopped":
+        print(
+            f"Loop '{args.name}' already stopped: {state.stopped_reason}. "
+            "Use --reset to restart."
+        )
+        return 0
+
+    # A per-invocation --concurrency > 0 overrides the definition's drain concurrency.
+    if args.concurrency and args.concurrency > 0:
+        loop_def = loop_def.model_copy(
+            update={"drain": loop_def.drain.model_copy(update={"concurrency": args.concurrency})}
+        )
+
+    state, record = run_cycle(
+        manifest, operator_layer, loop_def, state, engine_override=args.engine
+    )
+    save_loop_state(spath, state)
+    print(format_cycle_summary(record))
+    return 0
+
+
+def cmd_loop(args: argparse.Namespace) -> int:
+    """Run `alc loop <name> [--interval S]`: foreground wrapper repeating cycles."""
+    import time
+
+    from alc.loop import (
+        format_cycle_summary,
+        load_loop_state,
+        run_cycle,
+        save_loop_state,
+    )
+
+    manifest, operator_layer, loop_def, _loops, spath, err = _resolve_loop(args)
+    if err is not None:
+        return err
+
+    state = load_loop_state(spath, args.name)
+    if state.status == "stopped":
+        print(
+            f"Loop '{args.name}' already stopped: {state.stopped_reason}. "
+            "Use `alc cycle {name} --reset` to restart."
+        )
+        return 0
+
+    while True:
+        state, record = run_cycle(
+            manifest, operator_layer, loop_def, state, engine_override=args.engine
+        )
+        save_loop_state(spath, state)
+        print(format_cycle_summary(record))
+        if state.status == "stopped":
+            break
+        if args.interval > 0:
+            time.sleep(args.interval)
+
+    print(f"Loop '{args.name}' stopped: {state.stopped_reason}")
+    return 0
+
+
 def cmd_primer(args: argparse.Namespace) -> int:
     """Run `alc primer new <name> [--force]`: scaffold a new Primer file."""
     from alc.intake import load_manifest
@@ -716,6 +833,52 @@ def main() -> None:
         ),
     )
 
+    # alc cycle <name> [--engine NAME] [--concurrency N] [--status] [--reset]
+    cycle_parser = subparsers.add_parser(
+        "cycle",
+        help=(
+            "Run ONE Autonomous Loop cycle (replenish -> drain -> check stop) and "
+            "exit. State persists between fires — call via cron."
+        ),
+    )
+    cycle_parser.add_argument("name", help="Loop name (e.g. 'deliver').")
+    cycle_parser.add_argument("--engine", default=None, help="Override the default engine.")
+    cycle_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=0,
+        help="Override the loop's drain concurrency for this cycle (0 = use the definition).",
+    )
+    cycle_parser.add_argument(
+        "--status",
+        action="store_true",
+        default=False,
+        help="Print the loop state without running a cycle.",
+    )
+    cycle_parser.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Clear a stopped state and start fresh (does not run a cycle).",
+    )
+
+    # alc loop <name> [--engine NAME] [--interval S]
+    loop_parser = subparsers.add_parser(
+        "loop",
+        help=(
+            "Foreground wrapper that repeats `alc cycle` until the loop stops, "
+            "sleeping between cycles. For interactive use without cron."
+        ),
+    )
+    loop_parser.add_argument("name", help="Loop name (e.g. 'deliver').")
+    loop_parser.add_argument("--engine", default=None, help="Override the default engine.")
+    loop_parser.add_argument(
+        "--interval",
+        type=int,
+        default=300,
+        help="Seconds to sleep between cycles (0 = no sleep). Default 300.",
+    )
+
     # alc specialist <name> "<task>" [--engine NAME]
     specialist_parser = subparsers.add_parser(
         "specialist",
@@ -812,6 +975,10 @@ def main() -> None:
         sys.exit(cmd_tick(args))
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
+    elif args.command == "cycle":
+        sys.exit(cmd_cycle(args))
+    elif args.command == "loop":
+        sys.exit(cmd_loop(args))
     elif args.command == "specialist":
         sys.exit(cmd_specialist(args))
     elif args.command == "primer":
