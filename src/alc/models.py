@@ -49,6 +49,7 @@ class Blueprint(BaseModel):
     report: ReportSpec | None = None
     workflow: str  # markdown body parsed from the Blueprint file
     max_repairs: int | None = None  # override AssuranceLoop repair budget; None -> default (3)
+    permission_mode: str | None = None  # opt-in engine permission mode; None -> engine default
 
 
 class Manifest(BaseModel):

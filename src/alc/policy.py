@@ -18,6 +18,11 @@ class Violation:
     message: str
 
 
+_VALID_PERMISSION_MODES: frozenset[str] = frozenset(
+    {"acceptEdits", "auto", "bypassPermissions", "default"}
+)
+
+
 def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     """Run all Policy Gate rules and return every Violation found.
 
@@ -29,6 +34,8 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     5. Every Compute Tier maps the referenced engine (error) — model resolvable.
     6. Blueprint max_repairs, when set, is >= 0  (error) — valid repair budget.
     7. Blueprint check_set names a declared set  (error) — resolvable check set.
+    8. Blueprint permission_mode, when set, is a recognised claude-code value
+                                                 (error) — prevents silent misconfiguration.
 
     Resolved checks = the named check_set's checks (if any) plus the Blueprint's own,
     so a Blueprint that only references a check_set still satisfies rule 1.
@@ -126,6 +133,20 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                     message=(
                         f"Blueprint '{bp.name}' declares max_repairs={bp.max_repairs} — "
                         "repair budget must be >= 0 (0 = one shot, no repair)."
+                    ),
+                )
+            )
+
+        # Rule 8: permission_mode, when declared, must be a recognised value.
+        if bp.permission_mode is not None and bp.permission_mode not in _VALID_PERMISSION_MODES:
+            violations.append(
+                Violation(
+                    rule="blueprint-permission-mode-valid",
+                    severity="error",
+                    message=(
+                        f"Blueprint '{bp.name}' declares permission_mode='{bp.permission_mode}' "
+                        f"which is not a recognised value "
+                        f"(allowed: {sorted(_VALID_PERMISSION_MODES)})."
                     ),
                 )
             )

@@ -72,7 +72,9 @@ class ClaudeCodeEngine:
         # Headless edits need a non-interactive permission mode. The control plane
         # isolates each run (sandbox/worktree), so auto-accepting file edits is both
         # safe and required to satisfy the contract: "edit files headlessly".
-        cmd += ["--permission-mode", "acceptEdits"]
+        # Blueprints may opt into a broader mode (e.g. "bypassPermissions") via
+        # request.permission_mode; the default "acceptEdits" is unchanged.
+        cmd += ["--permission-mode", request.permission_mode or "acceptEdits"]
 
         if request.model:
             cmd += ["--model", request.model]

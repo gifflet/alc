@@ -73,6 +73,8 @@ class GeminiEngine:
         if request.model:
             cmd += ["--model", request.model]
 
+        # request.permission_mode is claude-code-specific and is not mapped here.
+
         # system_append and tool scoping are NOT passed: capabilities() reports
         # them as unsupported, so the control plane already folded system_append
         # into request.directive and sandboxes tool access. Honoring them here

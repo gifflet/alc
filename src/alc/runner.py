@@ -114,11 +114,13 @@ def execute_mandate(
     # Resolve effective workdir once so the same value is used for snapshots and the request.
     effective_workdir = workdir or Path.cwd()
 
-    # Build the EngineRequest.
+    # Build the EngineRequest. permission_mode is an opt-in Blueprint override
+    # threaded through to the engine adapter without interpretation here (DIP).
     request = EngineRequest(
         directive=directive,
         workdir=effective_workdir,
         model=model,
+        permission_mode=blueprint.permission_mode,
     )
 
     # Snapshot the git state before the Assurance Loop.

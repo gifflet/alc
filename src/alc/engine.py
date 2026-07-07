@@ -31,6 +31,7 @@ class EngineRequest:
     system_append: str | None = None       # best-effort; prepended to directive if unsupported
     timeout_s: int = 1800
     env: dict[str, str] = field(default_factory=dict)
+    permission_mode: str | None = None     # engine-interpreted; None means use the engine default
 
 
 @dataclass(frozen=True)

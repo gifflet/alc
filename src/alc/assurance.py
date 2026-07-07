@@ -129,6 +129,7 @@ class AssuranceLoop:
                 system_append=request.system_append,
                 timeout_s=request.timeout_s,
                 env=request.env,
+                permission_mode=request.permission_mode,
             )
 
         # All attempts exhausted without passing all checks.
