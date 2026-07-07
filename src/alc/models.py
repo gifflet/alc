@@ -133,6 +133,35 @@ class TickResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Concurrent fan-out (run isolated units in parallel)
+# ---------------------------------------------------------------------------
+
+
+class UnitResult(BaseModel):
+    """Outcome of one fan-out unit — a single Flow or Blueprint run in isolation.
+
+    Exactly one of ``run_report`` / ``flow_report`` is populated on success,
+    matching ``kind``; on failure both are None and ``error`` holds the message.
+    """
+
+    kind: str                              # "flow" or "blueprint"
+    name: str                              # unit name (used for the worktree label)
+    task: str
+    success: bool
+    branch: str | None = None              # set when the IsolatedWorktree committed changes
+    run_report: RunReport | None = None    # populated when kind == "blueprint"
+    flow_report: FlowReport | None = None  # populated when kind == "flow"
+    error: str | None = None               # populated when the unit raised
+
+
+class FanoutReport(BaseModel):
+    """Aggregate record of one fan-out invocation, preserving input order."""
+
+    units: list[UnitResult]
+    success: bool
+
+
+# ---------------------------------------------------------------------------
 # Conductor (single-interface orchestrator)
 # ---------------------------------------------------------------------------
 

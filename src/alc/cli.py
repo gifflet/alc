@@ -310,7 +310,7 @@ def cmd_tick(args: argparse.Namespace) -> int:
         if not acquired:
             print("Another tick is already in progress; skipping.")
             return 0
-        results = process_queue(manifest, operator_layer)
+        results = process_queue(manifest, operator_layer, max_workers=args.concurrency)
 
     if not results:
         print("No pending tasks.")
@@ -629,11 +629,20 @@ def main() -> None:
     )
 
     # alc tick
-    subparsers.add_parser(
+    tick_parser = subparsers.add_parser(
         "tick",
         help=(
             "Drain the task queue (Unattended Mode Trigger). "
             "Processes all pending tasks once and exits — call via cron."
+        ),
+    )
+    tick_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help=(
+            "Process up to N queue tasks in parallel; each isolated task gets "
+            "its own git worktree."
         ),
     )
 
