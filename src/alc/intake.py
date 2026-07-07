@@ -92,6 +92,7 @@ def load_blueprint(blueprints_dir: Path, name: str) -> Blueprint:
         checks=checks,
         report=report,
         workflow=body,
+        max_repairs=fm.get("max_repairs"),
     )
 
 

@@ -97,6 +97,19 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                 )
             )
 
+        # Rule 6: max_repairs, when declared, must be >= 0.
+        if bp.max_repairs is not None and bp.max_repairs < 0:
+            violations.append(
+                Violation(
+                    rule="blueprint-max-repairs-valid",
+                    severity="error",
+                    message=(
+                        f"Blueprint '{bp.name}' declares max_repairs={bp.max_repairs} — "
+                        "repair budget must be >= 0 (0 = one shot, no repair)."
+                    ),
+                )
+            )
+
     return violations
 
 

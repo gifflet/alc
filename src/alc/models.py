@@ -30,6 +30,7 @@ class Blueprint(BaseModel):
     checks: list[Check] = []
     report: ReportSpec | None = None
     workflow: str  # markdown body parsed from the Blueprint file
+    max_repairs: int | None = None  # override AssuranceLoop repair budget; None -> default (3)
 
 
 class Manifest(BaseModel):

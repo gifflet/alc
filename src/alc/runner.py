@@ -68,9 +68,12 @@ def execute_mandate(
         model=model,
     )
 
-    # Run the Assurance Loop.
+    # Run the Assurance Loop — use Blueprint's repair budget when set, else keep default.
     verifier = Verifier()
-    loop = AssuranceLoop(engine=engine, verifier=verifier)
+    loop_kwargs: dict = {}
+    if blueprint.max_repairs is not None:
+        loop_kwargs["max_repairs"] = blueprint.max_repairs
+    loop = AssuranceLoop(engine=engine, verifier=verifier, **loop_kwargs)
     report = loop.run(request=request, checks=blueprint.checks)
 
     # Patch the report's blueprint field to the real name (not the truncated directive).
