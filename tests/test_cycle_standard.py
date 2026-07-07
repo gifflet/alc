@@ -667,3 +667,143 @@ class TestWorkdirToplevelGuard:
         _commit_all(repo, "add src/")
 
         assert has_non_alc_changes(subdir) is False
+
+
+# ---------------------------------------------------------------------------
+# Item 8: gitignored .alc — dogfood scenario where .alc is in .gitignore.
+# ---------------------------------------------------------------------------
+
+
+class TestGitignoreAlc:
+    """Reproduce the dogfood bug: when .alc is listed in .gitignore, the old
+    ``git add -A -- ':(exclude).alc/'`` command printed an "ignored path" warning
+    and exited 1, causing commit_workdir to return None even though non-.alc
+    changes were correctly staged.
+
+    The two-step fix (git add -A then git reset -- .alc/) must:
+    - return a real sha (not None),
+    - include the non-.alc files in the commit,
+    - exclude .alc changes from the commit,
+    - leave the tree clean for non-.alc files afterwards.
+    """
+
+    def _build_gitignored_alc_repo(self, tmp_path: Path) -> Path:
+        """Build a repo where .alc is in .gitignore but has one tracked file."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+
+        # Add .alc to .gitignore first so subsequent git add -A skips it.
+        (repo / ".gitignore").write_text(".alc\n")
+
+        # Force-add one .alc file so it becomes tracked (simulates a blueprint
+        # that was committed before the .gitignore rule was added).
+        (repo / ".alc").mkdir()
+        tracked_alc = repo / ".alc" / "blueprints"
+        tracked_alc.mkdir(parents=True)
+        (tracked_alc / "x.md").write_text("original\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-f", ".alc/blueprints/x.md"],
+            check=True,
+            capture_output=True,
+        )
+        (repo / "docs").mkdir()
+        (repo / "docs" / "ROADMAP.md").write_text("initial roadmap\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "docs/ROADMAP.md"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed"],
+            check=True,
+            capture_output=True,
+        )
+        return repo
+
+    def test_gitignored_alc_returns_sha_not_none(self, tmp_path: Path) -> None:
+        """commit_workdir must succeed (return a sha) even when .alc is gitignored."""
+        repo = self._build_gitignored_alc_repo(tmp_path)
+
+        # Modify the tracked .alc file (should be excluded from commit).
+        (repo / ".alc" / "blueprints" / "x.md").write_text("modified\n")
+        # Add a non-.alc change (should be included in commit).
+        (repo / "docs" / "ROADMAP.md").write_text("updated roadmap\n")
+        (repo / "src").mkdir()
+        (repo / "src" / "f.ts").write_text("export const x = 1;\n")
+
+        sha = commit_workdir(repo, "feat(auto): x")
+
+        assert sha is not None, (
+            "commit_workdir returned None when .alc is gitignored; "
+            "the two-step staging fix must handle this case"
+        )
+
+    def test_gitignored_alc_commit_includes_non_alc_files(self, tmp_path: Path) -> None:
+        """The commit created under gitignored .alc must contain the non-.alc files."""
+        repo = self._build_gitignored_alc_repo(tmp_path)
+
+        (repo / ".alc" / "blueprints" / "x.md").write_text("modified\n")
+        (repo / "docs" / "ROADMAP.md").write_text("updated roadmap\n")
+        (repo / "src").mkdir()
+        (repo / "src" / "f.ts").write_text("export const x = 1;\n")
+
+        commit_workdir(repo, "feat(auto): x")
+
+        tree = subprocess.run(
+            ["git", "-C", str(repo), "show", "--name-only", "--format=", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "docs/ROADMAP.md" in tree
+        assert "src/f.ts" in tree
+
+    def test_gitignored_alc_commit_excludes_alc_change(self, tmp_path: Path) -> None:
+        """The commit must NOT include the .alc modification even though the file is tracked."""
+        repo = self._build_gitignored_alc_repo(tmp_path)
+
+        (repo / ".alc" / "blueprints" / "x.md").write_text("modified\n")
+        (repo / "docs" / "ROADMAP.md").write_text("updated roadmap\n")
+
+        commit_workdir(repo, "feat(auto): x")
+
+        tree = subprocess.run(
+            ["git", "-C", str(repo), "show", "--name-only", "--format=", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert ".alc/blueprints/x.md" not in tree
+
+    def test_gitignored_alc_commit_message_has_no_co_author(self, tmp_path: Path) -> None:
+        """The commit message must carry no Co-Authored-By trailer."""
+        repo = self._build_gitignored_alc_repo(tmp_path)
+
+        (repo / "docs" / "ROADMAP.md").write_text("updated roadmap\n")
+
+        commit_workdir(repo, "feat(auto): x")
+
+        body = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", "--format=%B"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "co-authored" not in body.lower()
+
+    def test_gitignored_alc_has_non_alc_changes_false_after_commit(
+        self, tmp_path: Path
+    ) -> None:
+        """After commit_workdir, has_non_alc_changes must be False (non-.alc tree is clean)."""
+        repo = self._build_gitignored_alc_repo(tmp_path)
+
+        (repo / ".alc" / "blueprints" / "x.md").write_text("modified\n")
+        (repo / "docs" / "ROADMAP.md").write_text("updated roadmap\n")
+
+        sha = commit_workdir(repo, "feat(auto): x")
+        assert sha is not None
+
+        # The .alc modification remains uncommitted (excluded), but the non-.alc
+        # tree must now be clean so has_non_alc_changes returns False.
+        assert has_non_alc_changes(repo) is False

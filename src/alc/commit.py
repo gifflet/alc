@@ -94,14 +94,22 @@ def commit_workdir(
 ) -> str | None:
     """Stage and commit everything in *workdir* (except *exclude*), return the sha.
 
-    Runs, in *workdir*: ``git add -A -- ':(exclude)<path>'`` for every exclude entry,
-    then commits only when something is actually staged (never creates an empty
+    Two-step staging strategy:
+    1. ``git add -A`` — stages all non-ignored changes; exits 0 and silently skips
+       ignored files regardless of whether any exclude entry appears in .gitignore.
+       Using the ``:(exclude)`` pathspec here triggers an "ignored path" warning and
+       exit 1 when the excluded path is listed in .gitignore, which is the bug this
+       approach avoids.
+    2. For each *exclude* entry: ``git reset -q -- <entry>`` — unstages anything that
+       was staged under that prefix (covers tracked-but-now-gitignored files that
+       ``git add -A`` would otherwise include).
+
+    Then commits only when something is actually staged (never creates an empty
     commit). The *message* is passed to git verbatim (a list argv, no shell) — the
     caller supplies a clean message with NO Co-Authored-By trailer.
 
-    Always operates against the git toplevel so the root-anchored ``:(exclude)``
-    pathspec resolves correctly. Returns None (with a stderr warning) when *workdir*
-    is not inside a git repo.
+    Always operates against the git toplevel. Returns None (with a stderr warning)
+    when *workdir* is not inside a git repo.
 
     Args:
         workdir: Directory to stage and commit in (the Flow's shared workdir).
@@ -117,17 +125,28 @@ def commit_workdir(
     if root is None:
         return None
 
-    add_argv = ["git", "-C", str(root), "add", "-A", "--"]
-    add_argv += [f":(exclude){entry}" for entry in exclude]
-
     try:
-        add = subprocess.run(add_argv, capture_output=True, text=True)
+        # Step 1: stage everything git does not ignore (no pathspec avoids the
+        # "ignored path" exit-1 that the :(exclude) form triggers).
+        add = subprocess.run(
+            ["git", "-C", str(root), "add", "-A"],
+            capture_output=True,
+            text=True,
+        )
         if add.returncode != 0:
             print(
                 f"[commit] git add failed in {root}: {add.stderr.strip()}",
                 file=sys.stderr,
             )
             return None
+
+        # Step 2: unstage excluded prefixes (handles tracked files under .alc/ that
+        # git add -A would otherwise include because they are tracked).
+        for entry in exclude:
+            subprocess.run(
+                ["git", "-C", str(root), "reset", "-q", "--", entry],
+                capture_output=True,
+            )
 
         # Nothing staged -> exit 0 -> skip the commit (no empty commits).
         diff = subprocess.run(
