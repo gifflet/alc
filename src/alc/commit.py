@@ -1,0 +1,107 @@
+# commit.py — Workdir-scoped terminal commit for a Flow.
+# A committing Flow lands EXACTLY its workdir's changes as one clean control-plane
+# commit on success. Scoping the commit to the workdir (relative to that workdir's
+# HEAD) is what makes it parallel-ready: an isolated worktree commits only its own
+# demand's changes, with no cross-contamination.
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+def has_non_alc_changes(workdir: Path) -> bool:
+    """Return True if *workdir* has uncommitted changes outside ``.alc/``.
+
+    Backs the clean-tree guard for a committing Flow in shared (non-isolated) mode:
+    pre-existing non-``.alc/`` dirt must abort the Flow so the terminal commit never
+    sweeps unrelated work. Returns False when *workdir* is not a git repo or git is
+    unavailable (no dirt to protect against — the guard is a no-op there).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workdir), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return False
+    if result.returncode != 0:
+        return False
+
+    for line in result.stdout.splitlines():
+        # Porcelain v1: "XY path" (path starts at col 3). Renames use " -> ".
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if not path.startswith(".alc/"):
+            return True
+    return False
+
+
+def commit_workdir(
+    workdir: Path,
+    message: str,
+    exclude: tuple[str, ...] = (".alc/",),
+) -> str | None:
+    """Stage and commit everything in *workdir* (except *exclude*), return the sha.
+
+    Runs, in *workdir*: ``git add -A -- ':(exclude)<path>'`` for every exclude entry,
+    then commits only when something is actually staged (never creates an empty
+    commit). The *message* is passed to git verbatim (a list argv, no shell) — the
+    caller supplies a clean message with NO Co-Authored-By trailer.
+
+    Args:
+        workdir: Directory to stage and commit in (the Flow's shared workdir).
+        message: The commit message, used verbatim.
+        exclude: Path prefixes to keep out of the commit (default: the ``.alc/``
+            control-plane state, which must never land in a demand's commit).
+
+    Returns:
+        The new commit's sha, or None when there is nothing to commit or any git
+        step fails (a commit failure must never crash the Flow).
+    """
+    add_argv = ["git", "-C", str(workdir), "add", "-A", "--"]
+    add_argv += [f":(exclude){entry}" for entry in exclude]
+
+    try:
+        add = subprocess.run(add_argv, capture_output=True, text=True)
+        if add.returncode != 0:
+            print(
+                f"[commit] git add failed in {workdir}: {add.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return None
+
+        # Nothing staged -> exit 0 -> skip the commit (no empty commits).
+        diff = subprocess.run(
+            ["git", "-C", str(workdir), "diff", "--cached", "--quiet"],
+            capture_output=True,
+        )
+        if diff.returncode == 0:
+            return None
+
+        commit = subprocess.run(
+            ["git", "-C", str(workdir), "commit", "-m", message],
+            capture_output=True,
+            text=True,
+        )
+        if commit.returncode != 0:
+            print(
+                f"[commit] git commit failed in {workdir}: {commit.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return None
+
+        rev = subprocess.run(
+            ["git", "-C", str(workdir), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        if rev.returncode != 0:
+            return None
+        return rev.stdout.strip()
+    except FileNotFoundError:
+        # git not installed — never raise out of a terminal commit.
+        print("[commit] git not found; skipping terminal commit.", file=sys.stderr)
+        return None

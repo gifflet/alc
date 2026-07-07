@@ -138,12 +138,26 @@ class FlowStage(BaseModel):
         return self
 
 
+class CommitSpec(BaseModel):
+    """Declares a Flow's terminal commit (workdir-scoped, on success only).
+
+    The message is a template: ``{name}`` = flow name, ``{task}`` = flow task
+    (first line). The rendered message is passed to git verbatim and MUST NOT
+    contain a Co-Authored-By trailer — this is a deterministic control-plane
+    commit, not the engine's.
+    """
+
+    enabled: bool = True
+    message: str = "chore(cycle): {name}"
+
+
 class FlowDefinition(BaseModel):
     """Declares an ordered pipeline of Single-Mandate stages."""
 
     name: str
     description: str = ""
     stages: list[FlowStage]
+    commit: CommitSpec | None = None  # None -> no terminal commit (default, unchanged)
 
 
 class FlowReport(BaseModel):
@@ -154,6 +168,7 @@ class FlowReport(BaseModel):
     success: bool
     stages: list[RunReport]    # one RunReport per executed stage
     scorecard: Scorecard       # aggregate across all stages
+    commit_sha: str | None = None  # set when a terminal commit was created on success
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from alc.commit import commit_workdir, has_non_alc_changes
 from alc.intake import load_blueprint, load_specialist, resolve_checks
 from alc.models import (
     Blueprint,
@@ -191,6 +192,31 @@ class FlowRunner:
         # Resolve engine name for the report header.
         engine_name = engine_override or self._manifest.default_engine
 
+        effective_workdir = workdir or Path.cwd()
+
+        # Clean-tree guard: a committing Flow in a shared (non-isolated) workdir must
+        # not sweep pre-existing, unrelated work into its terminal commit. If the
+        # workdir has uncommitted non-.alc/ changes, abort before running any stage.
+        # (In an isolated worktree the tree is fresh from HEAD, so this passes.)
+        if (
+            flow.commit is not None
+            and flow.commit.enabled
+            and has_non_alc_changes(effective_workdir)
+        ):
+            print(
+                "▶ flow aborted — the workdir has uncommitted non-.alc/ changes; a "
+                "committing flow requires a clean tree.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return FlowReport(
+                flow=flow.name,
+                engine=engine_name,
+                success=False,
+                stages=[],
+                scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+            )
+
         stage_reports: list[RunReport] = []
         upstream_outputs: list[str] = []
 
@@ -283,10 +309,21 @@ class FlowRunner:
             touch=0,
         )
 
+        # Terminal commit: only on a fully successful flow, and only when enabled.
+        # Broken/unvalidated work never lands. Scoped to the flow's workdir.
+        commit_sha: str | None = None
+        if success and flow.commit is not None and flow.commit.enabled:
+            message = flow.commit.message.format(
+                name=flow.name,
+                task=(task.splitlines()[0] if task else ""),
+            )
+            commit_sha = commit_workdir(effective_workdir, message)
+
         return FlowReport(
             flow=flow.name,
             engine=engine_name,
             success=success,
             stages=stage_reports,
             scorecard=aggregate_scorecard,
+            commit_sha=commit_sha,
         )
