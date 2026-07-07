@@ -82,6 +82,7 @@ class FlowStage(BaseModel):
     name: str
     blueprint: str             # name of an existing Blueprint
     compute_tier: str | None = None  # optional override of the Blueprint's tier
+    verify_only: bool = False  # when True: run checks as a pure gate, no engine turn
 
 
 class FlowDefinition(BaseModel):

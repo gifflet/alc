@@ -17,6 +17,7 @@ from alc.models import (
 )
 from alc.policy import has_errors, lint, lint_flow
 from alc.runner import PolicyViolationError, execute_mandate
+from alc.verifier import Verifier
 
 
 def _compose_stage_directive(
@@ -147,22 +148,46 @@ class FlowRunner:
         for stage in flow.stages:
             blueprint = stage_blueprints[stage.name]
 
-            directive = _compose_stage_directive(
-                flow_name=flow.name,
-                stage_name=stage.name,
-                blueprint=blueprint,
-                task=task,
-                upstream_outputs=upstream_outputs,
-                extra_context=extra_context,
-            )
+            if stage.verify_only:
+                # Verify-only stage: run checks as a pure gate — no engine turn.
+                wd = workdir or Path.cwd()
+                check_results = Verifier().run(blueprint.checks, wd)
+                all_passed = all(cr.passed for cr in check_results)
+                summary_lines = [
+                    f"{cr.name}: {'pass' if cr.passed else 'fail'}"
+                    for cr in check_results
+                ]
+                report = RunReport(
+                    blueprint=blueprint.name,
+                    engine="(verify-only)",
+                    success=all_passed,
+                    attempts=[],
+                    scorecard=Scorecard(
+                        span=sum(1 for cr in check_results if cr.passed),
+                        passes=0,
+                        streak=0,
+                        touch=0,
+                    ),
+                    output_text="\n".join(summary_lines),
+                )
+            else:
+                directive = _compose_stage_directive(
+                    flow_name=flow.name,
+                    stage_name=stage.name,
+                    blueprint=blueprint,
+                    task=task,
+                    upstream_outputs=upstream_outputs,
+                    extra_context=extra_context,
+                )
 
-            report = execute_mandate(
-                manifest=self._manifest,
-                blueprint=blueprint,
-                directive=directive,
-                engine_override=engine_override,
-                workdir=workdir,
-            )
+                report = execute_mandate(
+                    manifest=self._manifest,
+                    blueprint=blueprint,
+                    directive=directive,
+                    engine_override=engine_override,
+                    workdir=workdir,
+                )
+
             stage_reports.append(report)
 
             # Fail-fast: stop the pipeline if this stage did not succeed.
