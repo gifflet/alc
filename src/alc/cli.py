@@ -19,6 +19,20 @@ def _find_operator_layer() -> Path:
     return cwd / ".alc"
 
 
+def _validate_tier(manifest, tier: str | None) -> str | None:
+    """Validate that *tier* exists in manifest.compute_tiers.
+
+    Returns an error message string when the tier is unknown, or None when
+    the tier is valid (or when tier is None, meaning no override was requested).
+    """
+    if tier is None:
+        return None
+    if tier not in manifest.compute_tiers:
+        available = ", ".join(sorted(manifest.compute_tiers))
+        return f"unknown compute tier '{tier}'; available: {available}"
+    return None
+
+
 def _print_run_report(report) -> None:
     """Print the human-readable summary and full JSON for a RunReport."""
     status = "SUCCESS" if report.success else "FAILED"
@@ -160,6 +174,15 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     blueprints_dir = operator_layer.parent / manifest.blueprints_dir
     blueprint = load_blueprint(blueprints_dir, args.blueprint)
+
+    # Validate --tier early before any work is done.
+    tier_err = _validate_tier(manifest, args.tier)
+    if tier_err:
+        print(f"[ERROR] {tier_err}", file=sys.stderr)
+        return 1
+
+    if args.tier:
+        blueprint = blueprint.model_copy(update={"compute_tier": args.tier})
 
     runner = MandateRunner(manifest=manifest, operator_layer=operator_layer)
 
@@ -385,6 +408,12 @@ def cmd_flow(args: argparse.Namespace) -> int:
     flows_dir = operator_layer.parent / manifest.flows_dir
     flow = load_flow(flows_dir, args.flow_name)
 
+    # Validate --tier early before any work is done.
+    tier_err = _validate_tier(manifest, args.tier)
+    if tier_err:
+        print(f"[ERROR] {tier_err}", file=sys.stderr)
+        return 1
+
     runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
 
     # Build extra_context from --primer and/or --from-bundle before branching.
@@ -426,6 +455,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
                 engine_override=args.engine,
                 workdir=wt_path,
                 extra_context=extra_context,
+                tier_override=args.tier,
             )
         except PolicyViolationError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
@@ -456,6 +486,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
             task=args.task,
             engine_override=args.engine,
             extra_context=extra_context,
+            tier_override=args.tier,
         )
     except PolicyViolationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
@@ -558,6 +589,12 @@ def main() -> None:
             "(looked up in bundles_dir). Context Budget Offload move."
         ),
     )
+    run_parser.add_argument(
+        "--tier",
+        default=None,
+        metavar="NAME",
+        help="Override the Compute Tier for this invocation (flow: applies to every stage).",
+    )
 
     # alc tick
     subparsers.add_parser(
@@ -639,6 +676,12 @@ def main() -> None:
             "Replay a prior bundle into every stage's directive. REF is a bundle file path "
             "or stem (looked up in bundles_dir). Context Budget Offload move."
         ),
+    )
+    flow_parser.add_argument(
+        "--tier",
+        default=None,
+        metavar="NAME",
+        help="Override the Compute Tier for this invocation (flow: applies to every stage).",
     )
 
     args = parser.parse_args()

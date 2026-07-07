@@ -11,6 +11,7 @@ from alc.models import (
     Blueprint,
     FlowDefinition,
     FlowReport,
+    FlowStage,
     Manifest,
     RunReport,
     Scorecard,
@@ -74,6 +75,35 @@ def _compose_stage_directive(
     return header + primed_section + upstream_section + blueprint.workflow
 
 
+def _stage_blueprint(
+    blueprint: Blueprint,
+    stage: FlowStage,
+    tier_override: str | None,
+) -> Blueprint:
+    """Return the effective Blueprint for a Flow stage, applying Compute Tier priority.
+
+    Priority (highest first):
+        1. tier_override  — per-invocation override supplied via ``--tier``
+        2. stage.compute_tier — per-stage override declared in the Flow YAML
+        3. blueprint's own compute_tier — the Blueprint default
+
+    A new Blueprint is returned via model_copy only when the tier actually
+    changes; otherwise the original object is returned unchanged.
+
+    Args:
+        blueprint: The base Blueprint loaded from the Operator Layer.
+        stage: The FlowStage describing this pipeline step.
+        tier_override: Optional per-invocation Compute Tier name (from CLI ``--tier``).
+
+    Returns:
+        Blueprint with the effective compute_tier applied.
+    """
+    effective_tier: str | None = tier_override or stage.compute_tier
+    if effective_tier is not None and effective_tier != blueprint.compute_tier:
+        return blueprint.model_copy(update={"compute_tier": effective_tier})
+    return blueprint
+
+
 class FlowRunner:
     """Orchestrates a Flow: runs each stage in order as a separate Single Mandate.
 
@@ -95,6 +125,7 @@ class FlowRunner:
         engine_override: str | None = None,
         workdir: Path | None = None,
         extra_context: str | None = None,
+        tier_override: str | None = None,
     ) -> FlowReport:
         """Execute every stage in the Flow and return an aggregate FlowReport.
 
@@ -108,6 +139,8 @@ class FlowRunner:
             extra_context: Optional primed context string (Primer text, bundle summary,
                 or both joined). Passed to every stage's directive unchanged (Context
                 Budget Trim move). Default None leaves behavior unchanged.
+            tier_override: If set, override the Compute Tier for every stage in this
+                invocation (takes precedence over stage.compute_tier and Blueprint default).
 
         Returns:
             FlowReport with per-stage RunReports and an aggregate Scorecard.
@@ -121,9 +154,8 @@ class FlowRunner:
         stage_blueprints: dict[str, Blueprint] = {}
         for stage in flow.stages:
             bp = load_blueprint(blueprints_dir, stage.blueprint)
-            # Apply optional per-stage compute_tier override.
-            if stage.compute_tier is not None:
-                bp = bp.model_copy(update={"compute_tier": stage.compute_tier})
+            # Apply Compute Tier priority: tier_override > stage.compute_tier > blueprint default.
+            bp = _stage_blueprint(bp, stage, tier_override)
             stage_blueprints[stage.name] = bp
 
         # Flow Policy Gate: lint blueprints + lint the flow itself.
