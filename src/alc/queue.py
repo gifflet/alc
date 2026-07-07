@@ -3,6 +3,7 @@
 # filesystem operations needed to move task files into done/ (the Gate).
 from __future__ import annotations
 
+import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -155,6 +156,45 @@ def _process_task(
     )
 
 
+def _partition_tasks(
+    pending: list[Path],
+    is_git: bool,
+) -> tuple[list[Path], list[Path]]:
+    """Split *pending* task files into parallel-eligible and serial lists.
+
+    A task is eligible to run concurrently only when **both** conditions hold:
+    - Its ``isolate`` flag is True (it will run in an isolated git worktree).
+    - The project root is a git repository (``is_git`` is True).
+
+    Tasks that fail either condition share the working directory and must run
+    serially to avoid filesystem conflicts.  The relative order within each
+    returned list matches the original *pending* order.
+
+    Args:
+        pending: Sorted list of queue task file paths.
+        is_git: Whether the project root is a git repository.
+
+    Returns:
+        A ``(parallel_list, serial_list)`` tuple.
+    """
+    parallel: list[Path] = []
+    serial: list[Path] = []
+    for task_file in pending:
+        try:
+            raw = yaml.safe_load(task_file.read_text())
+            qt = QueueTask.model_validate(raw)
+            isolate_and_git = qt.isolate and is_git
+        except Exception:
+            # Unreadable / invalid tasks are treated as serial; _process_task
+            # will capture and report the error when it runs.
+            isolate_and_git = False
+        if isolate_and_git:
+            parallel.append(task_file)
+        else:
+            serial.append(task_file)
+    return parallel, serial
+
+
 def process_queue(
     manifest: Manifest,
     operator_layer: Path,
@@ -209,21 +249,39 @@ def process_queue(
             for task_file in pending
         ]
 
-    # Parallel path — preserve the original pending order in the results list.
+    # Parallel path — only isolated tasks (isolate:true + git repo) may run
+    # concurrently; all others share the working directory and run serially.
+    is_git = is_git_repo(project_root)
+    parallel_tasks, serial_tasks = _partition_tasks(pending, is_git)
+
+    if serial_tasks:
+        n = len(serial_tasks)
+        print(f"{n} non-isolated task(s) will run serially", file=sys.stderr)
+
+    # Map original pending index -> TickResult so we can restore order.
+    pending_index: dict[Path, int] = {p: i for i, p in enumerate(pending)}
     results: list[TickResult] = [None] * len(pending)  # type: ignore[list-item]
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        future_to_index = {
-            pool.submit(
-                _process_task,
-                manifest,
-                operator_layer,
-                flows_dir,
-                queue_dir,
-                task_file,
-            ): index
-            for index, task_file in enumerate(pending)
-        }
-        for future in future_to_index:
-            results[future_to_index[future]] = future.result()
+
+    # Run parallel-eligible tasks concurrently.
+    if parallel_tasks:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_to_index = {
+                pool.submit(
+                    _process_task,
+                    manifest,
+                    operator_layer,
+                    flows_dir,
+                    queue_dir,
+                    task_file,
+                ): pending_index[task_file]
+                for task_file in parallel_tasks
+            }
+            for future in future_to_index:
+                results[future_to_index[future]] = future.result()
+
+    # Run serial tasks one by one, preserving their original positions.
+    for task_file in serial_tasks:
+        result = _process_task(manifest, operator_layer, flows_dir, queue_dir, task_file)
+        results[pending_index[task_file]] = result
 
     return results

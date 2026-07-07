@@ -292,6 +292,10 @@ def cmd_tick(args: argparse.Namespace) -> int:
     provides one drain pass. Exit code is always 0 (cron-friendly); per-task
     outcomes live in the Gate reports under done/.
     """
+    if args.concurrency < 1:
+        print("[ERROR] --concurrency must be >= 1", file=sys.stderr)
+        return 1
+
     from alc.intake import load_manifest
     from alc.lock import tick_lock
     from alc.queue import process_queue
