@@ -163,3 +163,55 @@ class TestVerifyOnlyStage:
         assert gate_report.success is False
         # The scorecard must show zero passes (no engine turn).
         assert gate_report.scorecard.passes == 0
+
+    def test_passing_gate_does_not_zero_aggregate_streak(
+        self, verify_layer: Path, tmp_path: Path
+    ) -> None:
+        """A passing verify-only gate must not zero the aggregate Flow streak.
+
+        Flow is [one-shot mock engine stage, passing verify-only gate].
+        The mock engine produces streak=1; the gate passes so it also produces
+        streak=1; therefore the aggregate FlowReport.scorecard.streak must be 1.
+
+        Also verifies that passes sums only the engine stage's passes (gate
+        contributes passes=0), so aggregate passes == 1.
+        """
+        from alc.intake import load_flow
+
+        manifest = load_manifest(verify_layer)
+        flows_dir = verify_layer.parent / manifest.flows_dir
+        flow = load_flow(flows_dir, "verify-pass-flow")
+
+        runner = FlowRunner(manifest=manifest, operator_layer=verify_layer)
+        report = runner.run(flow=flow, task="run the gate", workdir=tmp_path)
+
+        assert report.success is True
+        assert report.scorecard.streak == 1, (
+            "A passing gate must not zero the aggregate streak"
+        )
+        # Gate contributes passes=0; the mock engine stage contributes passes=1.
+        assert report.scorecard.passes == 1, (
+            "Aggregate passes must equal the mock engine stage's passes only"
+        )
+
+    def test_failing_gate_keeps_aggregate_streak_zero(
+        self, verify_layer: Path, tmp_path: Path
+    ) -> None:
+        """A failing verify-only gate must keep the aggregate Flow streak at 0.
+
+        The gate fails immediately (fail-fast), so the overall flow is not
+        successful and the aggregate streak must be 0.
+        """
+        from alc.intake import load_flow
+
+        manifest = load_manifest(verify_layer)
+        flows_dir = verify_layer.parent / manifest.flows_dir
+        flow = load_flow(flows_dir, "verify-fail-first-flow")
+
+        runner = FlowRunner(manifest=manifest, operator_layer=verify_layer)
+        report = runner.run(flow=flow, task="run the gate", workdir=tmp_path)
+
+        assert report.success is False
+        assert report.scorecard.streak == 0, (
+            "A failing gate must keep the aggregate streak at 0"
+        )

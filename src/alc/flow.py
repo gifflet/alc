@@ -197,7 +197,9 @@ class FlowRunner:
                     scorecard=Scorecard(
                         span=sum(1 for cr in check_results if cr.passed),
                         passes=0,
-                        streak=0,
+                        # A passing gate is one-shot by definition (zero repairs);
+                        # a failing gate is not a successful one-shot run.
+                        streak=1 if all_passed else 0,
                         touch=0,
                     ),
                     output_text="\n".join(summary_lines),
