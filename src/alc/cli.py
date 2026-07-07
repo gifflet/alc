@@ -363,6 +363,25 @@ def cmd_conduct(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_primer(args: argparse.Namespace) -> int:
+    """Run `alc primer new <name> [--force]`: scaffold a new Primer file."""
+    from alc.intake import load_manifest
+    from alc.primer import new_primer
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    primers_dir = operator_layer.parent / manifest.primers_dir
+
+    try:
+        path = new_primer(primers_dir, args.name, force=args.force)
+    except FileExistsError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    print(path)
+    return 0
+
+
 def cmd_specialist(args: argparse.Namespace) -> int:
     """Run `alc specialist <name> "<task>" [--engine NAME]`."""
     from alc.intake import load_manifest, load_specialist
@@ -636,6 +655,24 @@ def main() -> None:
         "--engine", default=None, help="Override the default engine."
     )
 
+    # alc primer <action> <name> [--force]
+    primer_parser = subparsers.add_parser(
+        "primer",
+        help="Manage Primer files (curated context blocks) in the Operator Layer.",
+    )
+    primer_parser.add_argument(
+        "action",
+        choices=["new"],
+        help="Action to perform. Currently only 'new' is supported.",
+    )
+    primer_parser.add_argument("name", help="Primer name (file stem, without .md extension).")
+    primer_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite an existing Primer file.",
+    )
+
     # alc flow <flow_name> "<task>" [--engine NAME] [--isolate] [--primer NAME]
     #           [--bundle] [--from-bundle REF]
     flow_parser = subparsers.add_parser(
@@ -702,6 +739,8 @@ def main() -> None:
         sys.exit(cmd_conduct(args))
     elif args.command == "specialist":
         sys.exit(cmd_specialist(args))
+    elif args.command == "primer":
+        sys.exit(cmd_primer(args))
     else:
         parser.print_help()
         sys.exit(1)
