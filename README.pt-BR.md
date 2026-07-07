@@ -55,25 +55,31 @@ alc lint                # confere se o Operator Layer está bem-formado
 alc run chore "remover o endpoint de export não usado"
 
 # Use um engine real quando quiser:
-alc run chore "organizar os imports"          --engine claude-code
+alc run chore "organizar os imports"           --engine claude-code
+alc run chore "organizar os imports"           --engine claude-code --tier standard
 alc flow ship "adicionar entrada no changelog" --engine claude-code --isolate
-alc conduct "o README está desatualizado, atualize as docs" --engine claude-code
+alc conduct "o README está desatualizado, atualize as docs" --engine claude-code --parallel
+alc primer new meu-contexto                    # cria .alc/primers/meu-contexto.md
+alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo tempo
 ```
 
 ## 🧭 Comandos
 
 | Comando | O que faz |
 |---|---|
-| `alc init [--setup]` | Gera um Operator Layer `.alc/` padrão (e instala a skill do editor) |
+| `alc init [--setup]` | Gera um Operator Layer `.alc/` padrão; detecta o stack do projeto e cria checks reais (e instala a skill do editor) |
 | `alc lint` | Valida o Operator Layer contra o Policy Gate |
-| `alc run <blueprint> "<tarefa>"` | Roda um Blueprint como um Single Mandate verificado |
-| `alc flow <flow> "<tarefa>"` | Roda um pipeline multi-estágio (ex.: plan → build) |
-| `alc conduct "<objetivo>"` | Deixa o ALC escolher quais Flows rodar; `--enqueue` para enfileirar |
+| `alc run <blueprint> "<tarefa>"` | Roda um Blueprint como um Single Mandate verificado; `--tier NOME` substitui o compute tier para esta invocação |
+| `alc flow <flow> "<tarefa>"` | Roda um pipeline multi-estágio (ex.: plan → build); `--tier NOME` aplica a todos os estágios; estágios verify-only atuam como Policy Gates puros (só checks, sem turno de engine) |
+| `alc conduct "<objetivo>" [--parallel]` | Deixa o ALC escolher quais Flows rodar; `--parallel` despacha unidades independentes em paralelo em worktrees isoladas; `--enqueue` para enfileirar |
 | `alc specialist <nome> "<tarefa>"` | Roda um Specialist de área (Recall → Act → Learn) |
-| `alc tick` | Drena a fila de tarefas — chame isto via cron |
+| `alc tick [--concurrency N]` | Drena a fila de tarefas — chame isto via cron; `--concurrency N` processa até N tarefas isoladas em paralelo |
+| `alc primer new <nome>` | Cria um novo arquivo Primer em `.alc/primers/<nome>.md` |
 | `alc setup [--engine]` | Instala/atualiza a skill user-level do editor (Claude Code ou Gemini) |
 
 Adicione `--engine claude-code|gemini|mock` para escolher o executor e `--isolate` para conter as edições numa branch de git-worktree.
+
+Blueprints suportam `max_repairs` para limitar o orçamento de reparos do Assurance Loop, e `check_set` para referenciar um conjunto de checks nomeado e reutilizável declarado no Manifest. Checks rodam por código de saída sem shell por padrão; adicione um `shell:` one-liner a uma entrada de check para rodá-lo via `sh -c` (atenção: shell checks também são avaliados apenas pelo código de saída — não há captura de stdout).
 
 ## 🧱 Como as peças se encaixam
 

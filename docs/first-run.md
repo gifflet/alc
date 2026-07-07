@@ -34,8 +34,9 @@ The defaults are deliberately generic. Two edits make ALC real for your project:
 `claude-code` (or `gemini`). `mock` is a free no-op for dry runs; the real engines do
 the work.
 
-**Set real checks.** Each Blueprint ships placeholder `["true"]` checks. Replace them
-with the commands that gate your work:
+**Set real checks.** `alc init` detects common stacks (Go, Python, Node, Rust) and writes
+real checks automatically. For other stacks, each Blueprint ships a placeholder `["true"]`
+check — replace it with the commands that gate your work:
 
 ```yaml
 checks:
@@ -47,9 +48,10 @@ checks:
 
 Two rules that save you pain:
 
-- Checks are judged by **exit code** and run **without a shell**. `go build`, `pytest`,
-  `tsc --noEmit` work. `gofmt -l` (exits 0 even when files are unformatted) and anything
-  needing pipes or `$(...)` don't.
+- Checks are judged by **exit code** and run **without a shell** by default. `go build`,
+  `pytest`, `tsc --noEmit` work. `gofmt -l` (exits 0 even when files are unformatted)
+  doesn't. For commands that need pipes or `$(...)`, add a `shell:` one-liner to the
+  check entry — it runs via `sh -c`, still judged by exit code only (no stdout capture).
 - **Run each check yourself once first.** A check that already fails on a clean checkout
   makes *every* run fail — the agent can't fix problems that aren't its task.
 
@@ -74,10 +76,12 @@ model takes a couple of minutes; the streaming tells you it's working, not hung.
 Two heads-ups:
 
 - The model and cost come from the Blueprint's compute tier (`feature` → `deep` → the
-  priciest model). There's no per-run model flag yet — edit the tier to switch.
+  priciest model). Pass `--tier standard` (or any tier name) to override it for one run
+  without editing the Blueprint.
 - Without `--isolate`, edits land in your working tree. If you cancel mid-run, partial
   changes stay — including new, **untracked** files. Check `git status`, not just
-  `git diff --stat` (the latter hides untracked files).
+  `git diff --stat` (the latter hides untracked files). The run report lists the files
+  the agent changed.
 
 ## 6. Review — the human gate
 
@@ -95,8 +99,7 @@ more of the work — with the guardrails always on.
 
 Honest, still-being-smoothed:
 
-- `alc init` doesn't detect your stack — you set checks by hand on each Blueprint.
-- No `--tier` flag to pick the model per run (edit the Blueprint's `compute_tier`).
-- The run report doesn't list the files it changed (check `git status`).
 - The `claude-code` engine runs inside your project, so it inherits your `.claude/`
-  hooks/settings — which can add harmless noise to the output.
+  hooks/settings by default — which can add harmless noise to the output. Set
+  `clean_config: true` on the engine entry in `manifest.yaml` to restrict the CLI to
+  user-level settings only and skip the project's `.claude/` configuration.
