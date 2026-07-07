@@ -644,7 +644,8 @@ class TestCliCycle:
         assert cmd_cycle(args) == 0
         out = json.loads(capsys.readouterr().out)
         assert out["name"] == "deliver"
-        assert out["status"] == "running"
+        # A never-run loop reports "pending", not "running".
+        assert out["status"] == "pending"
         assert out["cycle"] == 0
 
     def test_reset_writes_fresh_state(self, operator_layer: Path, monkeypatch, capsys) -> None:
@@ -667,7 +668,8 @@ class TestCliCycle:
         assert cmd_cycle(args) == 0
         assert "reset" in capsys.readouterr().out.lower()
         reloaded = load_loop_state(spath, "deliver")
-        assert reloaded.status == "running"
+        # --reset must return the state to "pending" (never-run).
+        assert reloaded.status == "pending"
         assert reloaded.cycle == 0
 
     def test_stopped_loop_is_no_op(self, operator_layer: Path, monkeypatch, capsys) -> None:
@@ -715,6 +717,91 @@ class TestCliCycle:
         spath = state_path(loops_dir(load_manifest(operator_layer), operator_layer), "deliver")
         state = load_loop_state(spath, "deliver")
         assert state.cycle == 1
+
+    def test_pending_loop_runs_cycle_not_no_op(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """A pending loop must NOT hit the already-stopped no-op path."""
+        from alc.cli import cmd_cycle
+
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        _seed_queue(operator_layer, "t1")
+        _chdir_to_project(operator_layer, monkeypatch)
+
+        # Write an explicit pending state to confirm that pending != stopped.
+        spath = state_path(loops_dir(load_manifest(operator_layer), operator_layer), "deliver")
+        spath.parent.mkdir(parents=True, exist_ok=True)
+        spath.write_text(LoopState(name="deliver", status="pending").model_dump_json())
+
+        args = argparse.Namespace(
+            name="deliver", engine="mock", concurrency=0, status=False, reset=False
+        )
+        assert cmd_cycle(args) == 0
+        out = capsys.readouterr().out
+        # A cycle ran — the no-op "already stopped" message must NOT appear.
+        assert "already stopped" not in out
+        assert "cycle 1:" in out
+
+
+# ---------------------------------------------------------------------------
+# Three-state machine: pending -> running -> stopped
+# ---------------------------------------------------------------------------
+
+
+class TestPendingState:
+    def test_fresh_state_no_file_is_pending(self, tmp_path: Path) -> None:
+        """load_loop_state returns status=pending when no file exists."""
+        missing = tmp_path / "nonexistent.state.json"
+        state = load_loop_state(missing, "myloop")
+        assert state.status == "pending"
+        assert state.cycle == 0
+
+    def test_after_one_non_stopping_cycle_status_is_running(
+        self, operator_layer: Path
+    ) -> None:
+        """First completed cycle transitions pending -> running."""
+        manifest = load_manifest(operator_layer)
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        _seed_queue(operator_layer, "t1")
+
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        state = LoopState(name="deliver")  # default: pending
+        assert state.status == "pending"
+
+        new_state, record = run_cycle(
+            manifest, operator_layer, loop_def, state, engine_override="mock"
+        )
+        assert new_state.status == "running"
+        assert new_state.cycle == 1
+        assert record.stopped_reason is None
+
+    def test_stop_condition_yields_stopped(self, operator_layer: Path) -> None:
+        """When a stop fires the status transitions directly to stopped."""
+        manifest = load_manifest(operator_layer)
+        # max_cycles=1 so after one cycle the post-check fires max_cycles.
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nstop:\n  max_cycles: 1\n  on_no_new_work: false\n",
+        )
+        _seed_queue(operator_layer, "t1")
+
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        state = LoopState(name="deliver")
+
+        new_state, record = run_cycle(
+            manifest, operator_layer, loop_def, state, engine_override="mock"
+        )
+        assert new_state.status == "stopped"
+        assert new_state.stopped_reason == "max_cycles"
+
+    def test_reset_returns_state_to_pending(self, tmp_path: Path) -> None:
+        """LoopState constructed fresh (as --reset does) has status=pending."""
+        state = LoopState(name="myloop", status="stopped", cycle=5, stopped_reason="budget")
+        reset_state = LoopState(name=state.name)
+        assert reset_state.status == "pending"
+        assert reset_state.cycle == 0
+        assert reset_state.stopped_reason is None
 
 
 class TestCliLoop:

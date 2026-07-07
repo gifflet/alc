@@ -55,7 +55,7 @@ def ledger_path(loops: Path, name: str) -> Path:
 
 
 def load_loop_state(path: Path, name: str) -> LoopState:
-    """Load loop state from disk, or return a fresh running state when absent."""
+    """Load loop state from disk, or return a fresh pending state when absent."""
     if not path.exists():
         return LoopState(name=name)
     return LoopState.model_validate_json(path.read_text())
@@ -310,11 +310,13 @@ def run_cycle(
         _flow_usage(result.report, delta)
 
     # (f) Update state: advance cycle, accumulate budget, track no-progress streak.
+    # Transition pending -> running on the first completed cycle.
     budget_used = dict(state.budget_used)
     for key, value in delta.items():
         budget_used[key] = budget_used.get(key, 0.0) + value
     new_state = state.model_copy(
         update={
+            "status": "running",
             "cycle": state.cycle + 1,
             "budget_used": budget_used,
             "consecutive_no_progress": (

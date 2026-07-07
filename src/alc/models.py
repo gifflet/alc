@@ -378,10 +378,16 @@ class LoopDefinition(BaseModel):
 
 
 class LoopState(BaseModel):
-    """Persisted loop state — .alc/loops/<name>.state.json."""
+    """Persisted loop state — .alc/loops/<name>.state.json.
+
+    Status transitions: pending -> running -> stopped.
+    A loop is "pending" when it has never completed a cycle. Once at least one
+    cycle finishes without triggering a stop condition the status becomes
+    "running". "stopped" is terminal until an explicit --reset.
+    """
 
     name: str
-    status: Literal["running", "stopped"] = "running"
+    status: Literal["pending", "running", "stopped"] = "pending"
     cycle: int = 0
     consecutive_no_progress: int = 0
     # Cumulative usage per unit; keys among engine_calls / usd / tokens.
