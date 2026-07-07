@@ -268,4 +268,19 @@ def validate_loop(
                 )
             )
 
+    if replenish is not None and replenish.kind == "flow":
+        flows_dir = operator_layer.parent / manifest.flows_dir
+        ref = replenish.ref
+        if not ref or not (flows_dir / f"{ref}.yaml").exists():
+            violations.append(
+                Violation(
+                    rule="loop-replenish-flow-exists",
+                    severity="error",
+                    message=(
+                        f"Loop '{loop_def.name}' replenish references flow "
+                        f"'{ref}' which does not exist in {flows_dir}."
+                    ),
+                )
+            )
+
     return violations

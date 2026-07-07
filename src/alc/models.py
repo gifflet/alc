@@ -339,14 +339,28 @@ UnitResult.model_rebuild()
 class Replenish(BaseModel):
     """The replenish (planning) step run at the start of each Mode A cycle.
 
-    ``kind`` selects the dispatch target: a Specialist run or a Conductor goal.
-    NOTE: flow-replenish is NOT part of v1 — a Flow's enqueue semantics under
-    the loop are unclear, so it is deliberately trimmed here.
+    ``kind`` selects the dispatch target:
+    - ``specialist``: run a Specialist (Recall -> Act -> Learn); ``ref`` is the
+      specialist name and is required.
+    - ``conduct``: plan a Conductor goal and enqueue the resulting units; ``ref``
+      is not used.
+    - ``flow``: run a named Flow directly as the planning step (e.g. a committing
+      pm Flow that writes the roadmap and commits it before demand-flows run);
+      ``ref`` is the flow name and is required.
     """
 
-    kind: Literal["specialist", "conduct"]
-    ref: str | None = None   # specialist name; None allowed for a conduct replenish
+    kind: Literal["specialist", "conduct", "flow"]
+    ref: str | None = None   # specialist/flow name; None allowed for a conduct replenish
     task: str
+
+    @model_validator(mode="after")
+    def _ref_required_for_specialist_and_flow(self) -> "Replenish":
+        """Enforce that ``ref`` is set when kind is 'specialist' or 'flow'."""
+        if self.kind in ("specialist", "flow") and not self.ref:
+            raise ValueError(
+                f"Replenish with kind='{self.kind}' requires a non-empty 'ref'."
+            )
+        return self
 
 
 class LoopBudget(BaseModel):

@@ -220,9 +220,16 @@ def run_replenish(
 
     # Announce the replenish step so operator output is grouped under a header,
     # matching the ▶ style used by queue._process_task and flow.FlowRunner.
-    if loop_def.replenish.kind == "specialist":
+    replenish = loop_def.replenish
+    if replenish.kind == "specialist":
         print(
-            f"▶ replenish — specialist:{loop_def.replenish.ref}",
+            f"▶ replenish — specialist:{replenish.ref}",
+            file=sys.stderr,
+            flush=True,
+        )
+    elif replenish.kind == "flow":
+        print(
+            f"▶ replenish — flow:{replenish.ref}",
             file=sys.stderr,
             flush=True,
         )
@@ -231,26 +238,36 @@ def run_replenish(
 
     before = _count_queue_files(manifest, operator_layer)
 
-    if loop_def.replenish.kind == "specialist":
+    if replenish.kind == "specialist":
         from alc.specialist import run_specialist
 
         specialists_dir = operator_layer.parent / manifest.specialists_dir
-        specialist = load_specialist(specialists_dir, loop_def.replenish.ref)
+        specialist = load_specialist(specialists_dir, replenish.ref)
         report = run_specialist(
             manifest=manifest,
             operator_layer=operator_layer,
             specialist=specialist,
-            task=loop_def.replenish.task,
+            task=replenish.task,
             engine_override=engine_override,
         )
         _report_usage(report.act, delta)
+    elif replenish.kind == "flow":
+        from alc.flow import FlowRunner
+        from alc.intake import load_flow
+
+        flows_dir_path = operator_layer.parent / manifest.flows_dir
+        flow = load_flow(flows_dir_path, replenish.ref)
+        flow_report = FlowRunner(
+            manifest=manifest, operator_layer=operator_layer
+        ).run(flow, task=replenish.task, engine_override=engine_override, workdir=None)
+        _flow_usage(flow_report, delta)
     else:  # conduct
         from alc.conduct import conduct
 
         conduct(
             manifest=manifest,
             operator_layer=operator_layer,
-            goal=loop_def.replenish.task,
+            goal=replenish.task,
             engine_override=engine_override,
             enqueue=True,
         )

@@ -889,6 +889,213 @@ class TestReplenishHeader:
         assert "▶ replenish" not in err, f"Unexpected replenish header in stderr: {err!r}"
 
 
+# ---------------------------------------------------------------------------
+# Flow replenish (kind: flow)
+# ---------------------------------------------------------------------------
+
+
+class TestFlowReplenish:
+    """Tests for run_replenish with kind: flow."""
+
+    # A one-stage flow that uses the 'chore' blueprint (always passes its check).
+    _PLAN_FLOW_YAML = (
+        "name: plan\n"
+        "description: Planning flow used as a replenish target.\n"
+        "stages:\n"
+        "  - name: make-plan\n"
+        "    blueprint: chore\n"
+    )
+
+    def _write_plan_flow(self, operator_layer: Path) -> None:
+        """Write a 'plan' flow YAML into the flows directory."""
+        (operator_layer / "flows" / "plan.yaml").write_text(self._PLAN_FLOW_YAML)
+
+    def _write_flow_replenish_loop(self, operator_layer: Path) -> None:
+        """Write a loop definition whose replenish is kind: flow, ref: plan."""
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nreplenish:\n  kind: flow\n  ref: plan\n  task: build the plan\n"
+            "stop:\n  max_cycles: 20\n",
+        )
+
+    def test_flow_replenish_prints_header(
+        self, operator_layer: Path, capsys
+    ) -> None:
+        """run_replenish with kind:flow must print '▶ replenish — flow:<ref>' to stderr."""
+        from alc import loop as loop_mod
+
+        self._write_plan_flow(operator_layer)
+        self._write_flow_replenish_loop(operator_layer)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+        err = capsys.readouterr().err
+        assert any(
+            line.startswith("▶ replenish — flow:") and "plan" in line
+            for line in err.splitlines()
+        ), f"Expected '▶ replenish — flow:plan' in stderr, got: {err!r}"
+
+    def test_flow_replenish_dispatches_to_flow_runner(
+        self, operator_layer: Path
+    ) -> None:
+        """run_replenish with kind:flow must invoke FlowRunner and return a non-zero engine_calls delta."""
+        from alc import loop as loop_mod
+
+        self._write_plan_flow(operator_layer)
+        self._write_flow_replenish_loop(operator_layer)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+
+        _enqueued, delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+        # The chore blueprint has one 'true' check; MockEngine runs one attempt.
+        assert delta["engine_calls"] >= 1, (
+            f"Expected engine_calls > 0 from the flow run, got delta={delta}"
+        )
+
+    def test_flow_replenish_via_mock_flow_runner(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """FlowRunner is called with correct args; returned FlowReport is folded into delta."""
+        from alc import loop as loop_mod
+        from alc.models import FlowReport, RunReport, Scorecard, AttemptRecord
+
+        self._write_plan_flow(operator_layer)
+        self._write_flow_replenish_loop(operator_layer)
+
+        # Build a synthetic FlowReport with one stage that had one engine attempt.
+        _fake_stage = RunReport(
+            blueprint="chore",
+            engine="mock",
+            success=True,
+            attempts=[AttemptRecord(index=0, engine_ok=True, failed_checks=[])],
+            scorecard=Scorecard(span=1, passes=1, streak=1, touch=0),
+            output_text="done",
+        )
+        _fake_report = FlowReport(
+            flow="plan",
+            engine="mock",
+            success=True,
+            stages=[_fake_stage],
+            scorecard=Scorecard(span=1, passes=1, streak=1, touch=0),
+        )
+
+        # Capture the arguments passed to FlowRunner.run.
+        calls: list[dict] = []
+
+        class _MockFlowRunner:
+            def __init__(self, *, manifest, operator_layer):
+                self._manifest = manifest
+                self._operator_layer = operator_layer
+
+            def run(self, flow, *, task, engine_override, workdir):
+                calls.append(
+                    {"flow_name": flow.name, "task": task, "engine_override": engine_override}
+                )
+                return _fake_report
+
+        monkeypatch.setattr("alc.flow.FlowRunner", _MockFlowRunner)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+
+        _enqueued, delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        # FlowRunner.run was called with the right flow name and task.
+        assert len(calls) == 1
+        assert calls[0]["flow_name"] == "plan"
+        assert calls[0]["task"] == "build the plan"
+        assert calls[0]["engine_override"] == "mock"
+
+        # Budget delta reflects the one engine attempt in the fake report.
+        assert delta["engine_calls"] == 1
+
+        # Header was printed.
+        err = capsys.readouterr().err
+        assert "▶ replenish — flow:plan" in err
+
+    def test_flow_replenish_engine_calls_folded_into_cycle_delta(
+        self, operator_layer: Path
+    ) -> None:
+        """run_cycle with a flow replenish accumulates engine_calls in the cycle budget_delta."""
+        from alc.models import LoopState
+
+        self._write_plan_flow(operator_layer)
+        self._write_flow_replenish_loop(operator_layer)
+        # Seed a queue task so the cycle makes progress and does not stop on no_new_work.
+        _seed_queue(operator_layer, "t1")
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        _new_state, record = run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"), engine_override="mock"
+        )
+        # The plan flow ran (>= 1 engine call) + the drained ship flow ran (>= 2).
+        assert record.budget_delta["engine_calls"] >= 2
+
+
+class TestFlowReplenishValidation:
+    """validate_loop must reject a flow replenish whose flow file is missing."""
+
+    def test_missing_flow_ref_yields_error_violation(
+        self, operator_layer: Path
+    ) -> None:
+        """kind:flow with a ref that has no corresponding YAML -> error violation."""
+        from alc.policy import validate_loop
+        from alc.models import LoopDefinition
+
+        loop_def = LoopDefinition.model_validate(
+            {
+                "name": "bad-loop",
+                "replenish": {"kind": "flow", "ref": "nonexistent", "task": "plan"},
+                "stop": {"max_cycles": 5},
+            }
+        )
+        manifest = load_manifest(operator_layer)
+        violations = validate_loop(manifest, operator_layer, loop_def)
+        error_rules = [v.rule for v in violations if v.severity == "error"]
+        assert "loop-replenish-flow-exists" in error_rules, (
+            f"Expected 'loop-replenish-flow-exists' error, got violations: {violations}"
+        )
+
+    def test_existing_flow_ref_no_violation(
+        self, operator_layer: Path
+    ) -> None:
+        """kind:flow with a ref that resolves to an existing file -> no violation."""
+        from alc.policy import validate_loop
+        from alc.models import LoopDefinition
+
+        # The 'ship' flow already exists in the operator_layer fixture.
+        loop_def = LoopDefinition.model_validate(
+            {
+                "name": "ok-loop",
+                "replenish": {"kind": "flow", "ref": "ship", "task": "plan"},
+                "stop": {"max_cycles": 5},
+            }
+        )
+        manifest = load_manifest(operator_layer)
+        violations = validate_loop(manifest, operator_layer, loop_def)
+        error_rules = [v.rule for v in violations if v.severity == "error"]
+        assert "loop-replenish-flow-exists" not in error_rules
+
+    def test_flow_kind_ref_required_at_model_level(self) -> None:
+        """Replenish with kind:flow and no ref must raise ValidationError."""
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="ref"):
+            from alc.models import Replenish
+            Replenish(kind="flow", ref=None, task="plan")
+
+
 class TestCliLoop:
     def test_loop_terminates_at_max_cycles(
         self, operator_layer: Path, monkeypatch, capsys
