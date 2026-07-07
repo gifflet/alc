@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from alc.commit import commit_workdir, has_non_alc_changes
+from alc.commit import commit_workdir, has_non_alc_changes, revert_workdir
 from alc.intake import load_blueprint, load_specialist, resolve_checks
 from alc.models import (
     Blueprint,
@@ -313,6 +313,25 @@ class FlowRunner:
             streak=1 if success and all(r.scorecard.streak == 1 for r in stage_reports) else 0,
             touch=0,
         )
+
+        # Revert hook: when a committing flow fails, discard this demand's uncommitted
+        # changes so the shared workdir is clean for the next demand (atomic semantics).
+        # Gated on commit.enabled (never runs for a non-committing/commit=None flow)
+        # and not success (never runs on a green flow, which commits instead).
+        if (
+            flow.commit is not None
+            and flow.commit.enabled
+            and not success
+            and len(stage_reports) > 0
+        ):
+            if revert_workdir(effective_workdir):
+                print(
+                    "▶ flow reverted — discarded the failed demand's changes.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            # revert_workdir returning None (not a repo / git missing) degrades
+            # gracefully: the tree stays dirty as today; the flow is not crashed.
 
         # Terminal commit: only on a fully successful flow, and only when enabled.
         # Broken/unvalidated work never lands. Scoped to the flow's workdir.

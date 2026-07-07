@@ -87,6 +87,68 @@ def has_non_alc_changes(workdir: Path) -> bool:
     return False
 
 
+def revert_workdir(
+    workdir: Path,
+    exclude: tuple[str, ...] = (".alc/",),
+) -> bool | None:
+    """Revert all uncommitted non-excluded changes back to HEAD.
+
+    Runs three independent git steps against the git toplevel:
+    1. ``git reset -q`` — unstage anything so checkout restores from HEAD, not the index
+       (LOAD-BEARING: without this, staged hunks are silently re-applied by checkout).
+    2. ``git checkout -q -- . ':(exclude)<entry>'`` — restore tracked non-excluded files.
+       A non-zero exit (e.g. empty repo with no HEAD) is NOT fatal; step 3 still runs.
+    3. ``git clean -fdq -e <entry-bare>`` — delete untracked non-excluded files/dirs.
+       ``clean`` without ``-x`` never removes gitignored files; ``-e .alc`` also
+       protects an untracked-but-not-ignored ``.alc/``.
+
+    The two exclude spellings differ: ``:(exclude).alc/`` (with trailing slash) for
+    checkout; ``.alc`` (bare, no slash) for ``clean -e``.
+
+    Args:
+        workdir: Directory to revert (the Flow's shared workdir).
+        exclude: Path prefixes to protect from revert (default: ``.alc/``).
+
+    Returns:
+        True when the three steps ran; None when *workdir* is not inside a git repo
+        or git is unavailable (callers treat None as a graceful no-op).
+
+    Never raises. Errors from individual steps are silently tolerated (same style as
+    the sibling helpers).
+    """
+    root = _resolve_workdir(workdir)
+    if root is None:
+        return None
+
+    try:
+        # Step 1: unstage everything so checkout reads from HEAD, not the index.
+        subprocess.run(
+            ["git", "-C", str(root), "reset", "-q"],
+            capture_output=True,
+        )
+
+        # Step 2: restore tracked files, leaving excluded prefixes untouched.
+        # A non-zero exit (e.g. "pathspec '.' did not match any files" in an empty
+        # repo) is NOT treated as a failure — step 3 must still run.
+        checkout_cmd = ["git", "-C", str(root), "checkout", "-q", "--", "."]
+        for entry in exclude:
+            checkout_cmd.append(f":(exclude){entry}")
+        subprocess.run(checkout_cmd, capture_output=True)
+
+        # Step 3: remove untracked non-excluded files/dirs.  ``clean`` without ``-x``
+        # never removes gitignored files; ``-e <bare>`` also guards an untracked .alc/.
+        clean_cmd = ["git", "-C", str(root), "clean", "-fdq"]
+        for entry in exclude:
+            clean_cmd += ["-e", entry.rstrip("/")]
+        subprocess.run(clean_cmd, capture_output=True)
+
+    except FileNotFoundError:
+        print("[commit] git not found; skipping revert.", file=sys.stderr)
+        return None
+
+    return True
+
+
 def commit_workdir(
     workdir: Path,
     message: str,

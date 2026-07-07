@@ -6,7 +6,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from alc.commit import commit_workdir, has_non_alc_changes
+from alc.commit import commit_workdir, has_non_alc_changes, revert_workdir
 from alc.flow import FlowRunner
 from alc.intake import load_manifest
 from alc.models import CommitSpec, FlowDefinition, FlowStage
@@ -807,3 +807,152 @@ class TestGitignoreAlc:
         # The .alc modification remains uncommitted (excluded), but the non-.alc
         # tree must now be clean so has_non_alc_changes returns False.
         assert has_non_alc_changes(repo) is False
+
+
+# ---------------------------------------------------------------------------
+# Item 9: atomic revert-on-failure for a committing Flow.
+# ---------------------------------------------------------------------------
+
+
+class TestFlowRevertOnFailure:
+    """A committing Flow that fails must revert its own uncommitted non-.alc/ changes
+    so the shared workdir is clean for the next demand.
+
+    Tests A-D cover the revert mechanics; E confirms backward compat (commit=None).
+    """
+
+    def test_a_failed_flow_reverts_file(self, tmp_path: Path, monkeypatch) -> None:
+        """A: engine writes feature.txt, check fails → feature.txt reverted, tree clean."""
+        repo = _build_repo(tmp_path, chore=_CHORE_FAILING)
+        engine = _write_file_engine("feature.txt")
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: engine()
+        )
+
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=_committing_flow(), task="ship the widget", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is False
+        assert report.commit_sha is None
+        # Engine-written file must be gone after revert.
+        assert not (repo / "feature.txt").exists()
+        assert has_non_alc_changes(repo) is False
+        # No new commit — only the seed remains.
+        assert _git_log_subjects(repo) == ["seed operator layer"]
+
+    def test_b_failed_flow_preserves_alc_dir(self, tmp_path: Path, monkeypatch) -> None:
+        """B: pre-existing .alc/scratch.txt survives the revert; feature.txt reverted."""
+        repo = _build_repo(tmp_path, chore=_CHORE_FAILING)
+        engine = _write_file_engine("feature.txt")
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: engine()
+        )
+
+        # Pre-write a file under .alc/ that must survive the revert.
+        scratch = repo / ".alc" / "scratch.txt"
+        scratch.write_text("alc state\n")
+
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=_committing_flow(), task="ship the widget", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is False
+        # feature.txt reverted, scratch.txt untouched.
+        assert not (repo / "feature.txt").exists()
+        assert scratch.exists()
+        assert scratch.read_text() == "alc state\n"
+        # Non-.alc tree is clean.
+        assert has_non_alc_changes(repo) is False
+
+    def test_c_revert_workdir_direct_gitignored_alc(self, tmp_path: Path) -> None:
+        """C: call revert_workdir directly on a gitignored-.alc repo with mixed dirt.
+
+        - Modified tracked docs/ROADMAP.md → restored to HEAD content.
+        - Untracked src/f.ts → removed.
+        - Tracked .alc/blueprints/x.md (modified) → LEFT modified (protected).
+        - Untracked .alc/scratch.txt → LEFT (protected).
+        - has_non_alc_changes → False after revert.
+        """
+        repo = TestGitignoreAlc()._build_gitignored_alc_repo(tmp_path)
+
+        # Dirty the repo: non-.alc tracked file, untracked file, .alc tracked file, .alc untracked.
+        (repo / "docs" / "ROADMAP.md").write_text("modified roadmap\n")
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "src" / "f.ts").write_text("export const x = 1;\n")
+        (repo / ".alc" / "blueprints" / "x.md").write_text("modified\n")
+        alc_scratch = repo / ".alc" / "scratch.txt"
+        alc_scratch.write_text("alc scratch\n")
+
+        result = revert_workdir(repo)
+
+        assert result is True
+        # Non-.alc tracked file restored.
+        assert (repo / "docs" / "ROADMAP.md").read_text() == "initial roadmap\n"
+        # Untracked non-.alc file removed.
+        assert not (repo / "src" / "f.ts").exists()
+        # .alc tracked file left modified (protected by exclude).
+        assert (repo / ".alc" / "blueprints" / "x.md").read_text() == "modified\n"
+        # .alc untracked file left (protected by exclude).
+        assert alc_scratch.exists()
+        assert alc_scratch.read_text() == "alc scratch\n"
+        # Non-.alc portion of tree is clean.
+        assert has_non_alc_changes(repo) is False
+
+    def test_d_revert_workdir_after_git_add_a(self, tmp_path: Path) -> None:
+        """D: same as C but git add -A before revert_workdir — reset -q prefix must undo stage."""
+        repo = TestGitignoreAlc()._build_gitignored_alc_repo(tmp_path)
+
+        (repo / "docs" / "ROADMAP.md").write_text("modified roadmap\n")
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "src" / "f.ts").write_text("export const x = 1;\n")
+        (repo / ".alc" / "blueprints" / "x.md").write_text("modified\n")
+        alc_scratch = repo / ".alc" / "scratch.txt"
+        alc_scratch.write_text("alc scratch\n")
+
+        # Stage everything (simulates a partial commit attempt or user action).
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+        )
+
+        result = revert_workdir(repo)
+
+        assert result is True
+        # Post-state must be identical to test_c.
+        assert (repo / "docs" / "ROADMAP.md").read_text() == "initial roadmap\n"
+        assert not (repo / "src" / "f.ts").exists()
+        assert (repo / ".alc" / "blueprints" / "x.md").read_text() == "modified\n"
+        assert alc_scratch.exists()
+        assert has_non_alc_changes(repo) is False
+
+    def test_e_non_committing_flow_does_not_revert(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """E: commit=None flow that fails must NOT revert (backward compat).
+
+        feature.txt written by the engine must remain after the flow finishes.
+        """
+        repo = _build_repo(tmp_path, chore=_CHORE_FAILING)
+        engine = _write_file_engine("feature.txt")
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: engine()
+        )
+
+        # A plain flow with no CommitSpec.
+        flow = FlowDefinition(
+            name="plain",
+            stages=[FlowStage(name="do", blueprint="chore")],
+        )
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=flow, task="ship the widget", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is False
+        # Tree NOT reverted — backward compat.
+        assert (repo / "feature.txt").exists()
