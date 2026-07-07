@@ -29,6 +29,10 @@ def _print_run_report(report) -> None:
         f"Scorecard: span={report.scorecard.span} passes={report.scorecard.passes} "
         f"streak={report.scorecard.streak} touch={report.scorecard.touch}"
     )
+    if report.changed_files:
+        print("Changed files:")
+        for path in report.changed_files:
+            print(f"  {path}")
     print()
     print(report.model_dump_json(indent=2))
 

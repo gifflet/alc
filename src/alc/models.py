@@ -74,6 +74,7 @@ class RunReport(BaseModel):
     attempts: list[AttemptRecord]
     scorecard: Scorecard
     output_text: str
+    changed_files: list[str] = []  # paths that changed or appeared during this run
 
 
 class FlowStage(BaseModel):

@@ -3,6 +3,7 @@
 # enforces the Policy Gate, and drives the Assurance Loop.
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from alc.assurance import AssuranceLoop
@@ -11,6 +12,54 @@ from alc.engines.registry import resolve_engine
 from alc.models import Blueprint, Manifest, RunReport
 from alc.policy import has_errors, lint
 from alc.verifier import Verifier
+
+def _git_state(workdir: Path) -> dict[str, str] | None:
+    """Return a {path: status} map for the given workdir, or None if not a git work tree.
+
+    Runs ``git status --porcelain -uall`` and parses every output line into a
+    dict keyed by the relative file path with the two-character porcelain status
+    code as the value.  Returns None when workdir is not inside a git repo or
+    when git is not available.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workdir), "status", "--porcelain", "-uall"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        # git not installed
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    state: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        # Porcelain v1: XY SPACE path  (XY = two-char status, cols 0-1; path starts at col 3)
+        status = line[:2]
+        path = line[3:].strip()
+        state[path] = status
+    return state
+
+
+def _changed_between(
+    before: dict[str, str],
+    after: dict[str, str],
+) -> list[str]:
+    """Return sorted paths that are new in *after* or whose status changed since *before*.
+
+    A path is considered changed when it appears for the first time in *after*,
+    or when its porcelain status code differs from the one recorded in *before*.
+    """
+    changed: list[str] = []
+    for path, status in after.items():
+        if path not in before or before[path] != status:
+            changed.append(path)
+    return sorted(changed)
+
 
 # Brief context header prepended to the directive to satisfy the Context Budget.
 _CONTEXT_HEADER_TEMPLATE = """\
@@ -61,12 +110,18 @@ def execute_mandate(
     if tier:
         model = tier.get(engine_name)
 
+    # Resolve effective workdir once so the same value is used for snapshots and the request.
+    effective_workdir = workdir or Path.cwd()
+
     # Build the EngineRequest.
     request = EngineRequest(
         directive=directive,
-        workdir=workdir or Path.cwd(),
+        workdir=effective_workdir,
         model=model,
     )
+
+    # Snapshot the git state before the Assurance Loop.
+    state_before = _git_state(effective_workdir)
 
     # Run the Assurance Loop — use Blueprint's repair budget when set, else keep default.
     verifier = Verifier()
@@ -76,6 +131,13 @@ def execute_mandate(
     loop = AssuranceLoop(engine=engine, verifier=verifier, **loop_kwargs)
     report = loop.run(request=request, checks=blueprint.checks)
 
+    # Snapshot the git state after the Assurance Loop and compute changed paths.
+    state_after = _git_state(effective_workdir)
+    if state_before is None or state_after is None:
+        changed_files: list[str] = []
+    else:
+        changed_files = _changed_between(state_before, state_after)
+
     # Patch the report's blueprint field to the real name (not the truncated directive).
     return RunReport(
         blueprint=blueprint.name,
@@ -84,6 +146,7 @@ def execute_mandate(
         attempts=report.attempts,
         scorecard=report.scorecard,
         output_text=report.output_text,
+        changed_files=changed_files,
     )
 
 
