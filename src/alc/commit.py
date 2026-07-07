@@ -10,6 +10,47 @@ import sys
 from pathlib import Path
 
 
+def _git_toplevel(workdir: Path) -> Path | None:
+    """Return the git toplevel for *workdir*, or None if not in a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workdir), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip())
+
+
+def _resolve_workdir(workdir: Path) -> Path | None:
+    """Resolve *workdir* to the git toplevel, warning if it diverges.
+
+    The root-anchored magic pathspec ``:(exclude).alc/`` only excludes correctly
+    when the operation runs from the git toplevel. If *workdir* resolves to a
+    different path the caller is warned and the toplevel is used instead.
+
+    Returns None when *workdir* is not inside a git repository (callers treat
+    that as a no-op — no git means no dirt and no commit).
+    """
+    toplevel = _git_toplevel(workdir)
+    if toplevel is None:
+        return None
+    try:
+        resolved = workdir.resolve()
+    except OSError:
+        resolved = workdir
+    if resolved != toplevel.resolve():
+        print(
+            f"[commit] WARN: workdir {workdir} is not the git toplevel "
+            f"({toplevel}); operating against the toplevel.",
+            file=sys.stderr,
+        )
+    return toplevel
+
+
 def has_non_alc_changes(workdir: Path) -> bool:
     """Return True if *workdir* has uncommitted changes outside ``.alc/``.
 
@@ -17,10 +58,17 @@ def has_non_alc_changes(workdir: Path) -> bool:
     pre-existing non-``.alc/`` dirt must abort the Flow so the terminal commit never
     sweeps unrelated work. Returns False when *workdir* is not a git repo or git is
     unavailable (no dirt to protect against — the guard is a no-op there).
+
+    The check is always run against the git toplevel so the root-anchored pathspec
+    ``:(exclude).alc/`` resolves correctly.
     """
+    root = _resolve_workdir(workdir)
+    if root is None:
+        return False
+
     try:
         result = subprocess.run(
-            ["git", "-C", str(workdir), "status", "--porcelain"],
+            ["git", "-C", str(root), "status", "--porcelain"],
             capture_output=True,
             text=True,
         )
@@ -51,6 +99,10 @@ def commit_workdir(
     commit). The *message* is passed to git verbatim (a list argv, no shell) — the
     caller supplies a clean message with NO Co-Authored-By trailer.
 
+    Always operates against the git toplevel so the root-anchored ``:(exclude)``
+    pathspec resolves correctly. Returns None (with a stderr warning) when *workdir*
+    is not inside a git repo.
+
     Args:
         workdir: Directory to stage and commit in (the Flow's shared workdir).
         message: The commit message, used verbatim.
@@ -61,40 +113,44 @@ def commit_workdir(
         The new commit's sha, or None when there is nothing to commit or any git
         step fails (a commit failure must never crash the Flow).
     """
-    add_argv = ["git", "-C", str(workdir), "add", "-A", "--"]
+    root = _resolve_workdir(workdir)
+    if root is None:
+        return None
+
+    add_argv = ["git", "-C", str(root), "add", "-A", "--"]
     add_argv += [f":(exclude){entry}" for entry in exclude]
 
     try:
         add = subprocess.run(add_argv, capture_output=True, text=True)
         if add.returncode != 0:
             print(
-                f"[commit] git add failed in {workdir}: {add.stderr.strip()}",
+                f"[commit] git add failed in {root}: {add.stderr.strip()}",
                 file=sys.stderr,
             )
             return None
 
         # Nothing staged -> exit 0 -> skip the commit (no empty commits).
         diff = subprocess.run(
-            ["git", "-C", str(workdir), "diff", "--cached", "--quiet"],
+            ["git", "-C", str(root), "diff", "--cached", "--quiet"],
             capture_output=True,
         )
         if diff.returncode == 0:
             return None
 
         commit = subprocess.run(
-            ["git", "-C", str(workdir), "commit", "-m", message],
+            ["git", "-C", str(root), "commit", "-m", message],
             capture_output=True,
             text=True,
         )
         if commit.returncode != 0:
             print(
-                f"[commit] git commit failed in {workdir}: {commit.stderr.strip()}",
+                f"[commit] git commit failed in {root}: {commit.stderr.strip()}",
                 file=sys.stderr,
             )
             return None
 
         rev = subprocess.run(
-            ["git", "-C", str(workdir), "rev-parse", "HEAD"],
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
         )

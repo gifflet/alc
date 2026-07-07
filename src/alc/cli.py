@@ -635,6 +635,16 @@ def cmd_flow(args: argparse.Namespace) -> int:
         print("--isolate ignored: not inside a git repository", file=sys.stderr)
         use_isolate = False
 
+    # Safety guard: a committing flow + worktree isolation would double-commit.
+    # Refuse early with a clear error so the operator can choose one or the other.
+    if use_isolate and flow.commit is not None and flow.commit.enabled:
+        print(
+            "[ERROR] committing flows are not yet supported with worktree isolation "
+            "(isolate:true); see ROADMAP: worktree with linked dependencies",
+            file=sys.stderr,
+        )
+        return 1
+
     if use_isolate:
         repo_root = git_toplevel(Path.cwd())
         wt = IsolatedWorktree(repo_root, label="flow")

@@ -322,3 +322,348 @@ class TestFlowTerminalCommit:
         assert report.commit_sha is None
         # No terminal commit created despite success.
         assert _git_log_subjects(repo) == ["seed operator layer"]
+
+    def test_bad_commit_template_degrades_gracefully(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """A bad CommitSpec.message template never crashes a green flow.
+
+        The terminal commit must still be created using the safe fallback message;
+        the flow must succeed and FlowReport.commit_sha must be set.
+        """
+        repo = _build_repo(tmp_path)
+        engine = _write_file_engine("feature.txt")
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: engine()
+        )
+
+        # A stray '{' is the classic operator mistake that raises ValueError.
+        bad_flow = FlowDefinition(
+            name="demand",
+            stages=[FlowStage(name="do", blueprint="chore")],
+            commit=CommitSpec(enabled=True, message="feat: {unknown_placeholder}"),
+        )
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=bad_flow, task="ship the widget", engine_override="mock", workdir=repo
+        )
+
+        # Flow must succeed despite the bad template.
+        assert report.success is True
+        assert report.commit_sha is not None
+
+        # The fallback commit message must have been used.
+        subjects = _git_log_subjects(repo)
+        assert subjects[0] == "chore(cycle): demand"
+
+        # A WARN must have been printed to stderr.
+        captured = capsys.readouterr()
+        assert "[WARN]" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Item 4: shared workdir hand-off — specialist stage sees prior stage's file.
+# ---------------------------------------------------------------------------
+
+
+class TestSharedWorkdirHandoff:
+    """The whole point of the standard cycle: every stage shares one workdir,
+    so a specialist stage can see files that an earlier stage wrote there."""
+
+    def test_specialist_sees_prior_stage_file(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Stage 1 (blueprint) writes fileA into the workdir; stage 2 (specialist)
+        observes that fileA exists in the same workdir. This validates the
+        shared-workdir hand-off that makes the dev -> qa pattern work."""
+        import yaml as _yaml
+
+        from alc.engine import Capabilities, EngineResult
+
+        # Build a repo with operator layer so commit-related code has a git root.
+        repo = _build_repo(tmp_path)
+
+        # Add a specialist definition to the operator layer.
+        specialists_dir = repo / ".alc" / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "qa.yaml").write_text(
+            _yaml.safe_dump({
+                "name": "qa",
+                "area": "quality assurance",
+                "blueprint": "chore",
+                "knowledge_path": ".alc/specialists/qa.knowledge.md",
+            })
+        )
+
+        file_written_by_stage1 = repo / "handoff.txt"
+        assert not file_written_by_stage1.exists(), "pre-condition: file absent before flow"
+
+        # Track whether handoff.txt was visible when the qa specialist's engine ran.
+        specialist_saw_file: list[bool] = []
+        # Track blueprint stage writes.
+        blueprint_wrote_file: list[bool] = []
+
+        class _Stage1Engine:
+            """Writes handoff.txt into the workdir (blueprint stage)."""
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                path = request.workdir / "handoff.txt"
+                path.write_text("from stage1\n")
+                blueprint_wrote_file.append(path.exists())
+                return EngineResult(ok=True, output_text="stage1-done")
+
+        class _Stage2Engine:
+            """Checks that handoff.txt is visible in its workdir (specialist stage)."""
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                specialist_saw_file.append((request.workdir / "handoff.txt").exists())
+                return EngineResult(ok=True, output_text="stage2-done")
+
+        # resolve_engine is called once for stage1 (blueprint Act), then once or
+        # more for stage2 (specialist Act + Learn). Use the specialist name in
+        # the request.directive as a discriminator is fragile; instead use a
+        # simple counter: first call returns Stage1, the rest return Stage2.
+        call_count = [0]
+
+        def _resolve(name, engines):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _Stage1Engine()
+            return _Stage2Engine()
+
+        monkeypatch.setattr("alc.runner.resolve_engine", _resolve)
+        monkeypatch.setattr("alc.engines.registry.resolve_engine", _resolve)
+
+        flow = FlowDefinition(
+            name="dev-qa",
+            stages=[
+                FlowStage(name="dev", blueprint="chore"),
+                FlowStage(name="qa", specialist="qa"),
+            ],
+        )
+
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(flow=flow, task="build and verify", engine_override="mock", workdir=repo)
+
+        assert report.success is True, f"flow failed: {[s.output_text for s in report.stages]}"
+        assert blueprint_wrote_file, "blueprint stage engine was never called"
+        assert specialist_saw_file, "specialist stage engine was never called"
+        # The specialist stage must have seen handoff.txt on every invocation.
+        assert all(specialist_saw_file), (
+            "specialist stage did NOT see the file written by the prior blueprint stage; "
+            f"visibility per call: {specialist_saw_file}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Item 5: end-to-end flow with specialist stage + commit.enabled in a git repo.
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistFlowWithCommit:
+    """A flow whose stages include a specialist AND has commit.enabled creates a
+    scoped commit on success, with FlowReport.commit_sha set."""
+
+    def test_specialist_stage_and_commit(self, tmp_path: Path, monkeypatch) -> None:
+        import yaml as _yaml
+
+        from alc.engine import Capabilities, EngineResult
+
+        repo = _build_repo(tmp_path)
+
+        specialists_dir = repo / ".alc" / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "impl.yaml").write_text(
+            _yaml.safe_dump({
+                "name": "impl",
+                "area": "implementation",
+                "blueprint": "chore",
+                "knowledge_path": ".alc/specialists/impl.knowledge.md",
+            })
+        )
+
+        class _WritingEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                (request.workdir / "output.txt").write_text("engine output\n")
+                return EngineResult(ok=True, output_text="done")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _WritingEngine()
+        )
+        monkeypatch.setattr(
+            "alc.engines.registry.resolve_engine",
+            lambda name, engines: _WritingEngine(),
+        )
+
+        flow = FlowDefinition(
+            name="demand",
+            stages=[FlowStage(name="implement", specialist="impl")],
+            commit=CommitSpec(enabled=True, message="feat(auto): {task}"),
+        )
+
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=flow, task="add output", engine_override="mock", workdir=repo
+        )
+
+        # Specialist stage ran successfully.
+        assert report.success is True
+        assert len(report.stages) == 1
+        assert report.stages[0].success is True
+
+        # Terminal commit was created.
+        assert report.commit_sha is not None
+
+        subjects = _git_log_subjects(repo)
+        assert subjects[0] == "feat(auto): add output"
+
+        # The commit object must have no Co-Authored-By trailer.
+        body = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", "--format=%B"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "co-authored" not in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# Item 6: real co-author absence — the actual commit object, not just the string.
+# ---------------------------------------------------------------------------
+
+
+class TestRealCoAuthorAbsence:
+    """commit_workdir must produce a commit object with no Co-Authored-By trailer.
+
+    This test creates an actual commit in a real local git repo (not a mock) and
+    inspects the raw commit body via ``git log``, so it catches any code path that
+    might inject a trailer after the message is composed.
+    """
+
+    def test_commit_object_has_no_co_authored_by(self, tmp_path: Path) -> None:
+        repo = _build_repo(tmp_path)
+        (repo / "change.txt").write_text("real change\n")
+
+        sha = commit_workdir(repo, "chore(auto): real commit")
+        assert sha is not None, "commit_workdir must return a sha"
+
+        body = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", "--format=%B"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+        # Check the raw commit body — no Co-Authored-By or co-authored in any casing.
+        assert "co-authored" not in body.lower(), (
+            f"commit object contains a Co-Authored-By trailer:\n{body}"
+        )
+
+    def test_flow_commit_object_has_no_co_authored_by(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The FlowRunner terminal commit object must also be co-author-free."""
+        repo = _build_repo(tmp_path)
+        engine = _write_file_engine("out.txt")
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: engine()
+        )
+
+        flow = FlowDefinition(
+            name="demand",
+            stages=[FlowStage(name="do", blueprint="chore")],
+            commit=CommitSpec(enabled=True, message="feat(auto): {task}"),
+        )
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=flow, task="deploy", engine_override="mock", workdir=repo
+        )
+
+        assert report.commit_sha is not None
+
+        body = subprocess.run(
+            ["git", "-C", str(repo), "log", "-1", "--format=%B"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "co-authored" not in body.lower(), (
+            f"flow terminal commit object contains a Co-Authored-By trailer:\n{body}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Item 7: workdir-not-toplevel guard in commit_workdir / has_non_alc_changes.
+# ---------------------------------------------------------------------------
+
+
+class TestWorkdirToplevelGuard:
+    """commit_workdir and has_non_alc_changes must operate against the git toplevel
+    even when a subdirectory of the repo is passed as workdir."""
+
+    def test_commit_workdir_uses_toplevel_when_subdir_passed(
+        self, tmp_path: Path
+    ) -> None:
+        """Changes in the repo root are committed even when a subdir is given."""
+        repo = _build_repo(tmp_path)
+        subdir = repo / "src"
+        subdir.mkdir()
+        # Write the file at the repo root (not in subdir) so commit sees it.
+        (repo / "toplevel_change.txt").write_text("change\n")
+
+        # Pass the subdir — the guard must escalate to the toplevel.
+        sha = commit_workdir(subdir, "chore: subdir call")
+
+        assert sha is not None, (
+            "commit_workdir passed a subdir must still commit by escalating to the toplevel"
+        )
+        subjects = _git_log_subjects(repo)
+        assert subjects[0] == "chore: subdir call"
+
+    def test_has_non_alc_changes_uses_toplevel_when_subdir_passed(
+        self, tmp_path: Path
+    ) -> None:
+        """Dirty files at the repo root are detected even when a subdir is given."""
+        repo = _build_repo(tmp_path)
+        subdir = repo / "src"
+        subdir.mkdir()
+        (repo / "dirty.txt").write_text("uncommitted\n")
+
+        assert has_non_alc_changes(subdir) is True
+
+    def test_clean_repo_subdir_returns_false(self, tmp_path: Path) -> None:
+        """A clean repo reports no non-alc changes regardless of which subdir is given."""
+        repo = _build_repo(tmp_path)
+        subdir = repo / "src"
+        subdir.mkdir()
+        # Write a tracked file so the subdir directory can be committed.
+        (subdir / ".keep").write_text("")
+        _commit_all(repo, "add src/")
+
+        assert has_non_alc_changes(subdir) is False

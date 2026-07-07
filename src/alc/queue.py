@@ -113,6 +113,28 @@ def _process_task(
 
         branch: str | None = None
 
+        # Safety guard: a committing flow inside an isolated worktree would fire
+        # BOTH the IsolatedWorktree exit-commit AND the flow's terminal commit,
+        # producing a double-commit. Refuse loudly instead of silently corrupting.
+        if qt.kind == "flow" and qt.isolate and is_git_repo(project_root):
+            try:
+                _check_flow = load_flow(flows_dir, unit_name)
+                if _check_flow.commit is not None and _check_flow.commit.enabled:
+                    _msg = (
+                        "committing flows are not yet supported with worktree isolation "
+                        "(isolate:true); see ROADMAP: worktree with linked dependencies"
+                    )
+                    print(f"[ERROR] {_msg}", file=sys.stderr)
+                    return TickResult(
+                        task_file=task_file.name,
+                        flow=flow_name,
+                        success=False,
+                        branch=None,
+                        report=_error_flow_report(unit_name, engine_name, _msg),
+                    )
+            except Exception:
+                pass  # load failure will be caught by the outer try/except below
+
         if qt.isolate and is_git_repo(project_root):
             repo_root = git_toplevel(project_root)
             wt = IsolatedWorktree(repo_root, label="tick")

@@ -260,7 +260,12 @@ class FlowRunner:
                 # Specialist stage: run its Recall -> Act -> Learn cycle in the
                 # flow's shared workdir (so it sees prior stages' edits and keeps
                 # its Knowledge File). The Act RunReport is this stage's report.
+                # Merge flow-level extra_context (primer/bundle) with upstream
+                # stage outputs so the specialist receives both, mirroring what
+                # blueprint stages get via _compose_stage_directive.
                 specialist = stage_specialists[stage.name]
+                _specialist_ctx_parts = [p for p in [extra_context, "\n\n".join(upstream_outputs)] if p]
+                _specialist_ctx = "\n\n".join(_specialist_ctx_parts) or None
                 specialist_report = run_specialist(
                     manifest=self._manifest,
                     operator_layer=self._operator_layer,
@@ -268,7 +273,7 @@ class FlowRunner:
                     task=task,
                     engine_override=engine_override,
                     workdir=workdir,
-                    extra_context="\n\n".join(upstream_outputs) or None,
+                    extra_context=_specialist_ctx,
                 )
                 report = specialist_report.act
             else:
@@ -313,10 +318,20 @@ class FlowRunner:
         # Broken/unvalidated work never lands. Scoped to the flow's workdir.
         commit_sha: str | None = None
         if success and flow.commit is not None and flow.commit.enabled:
-            message = flow.commit.message.format(
-                name=flow.name,
-                task=(task.splitlines()[0] if task else ""),
-            )
+            try:
+                message = flow.commit.message.format(
+                    name=flow.name,
+                    task=(task.splitlines()[0] if task else ""),
+                )
+            except (KeyError, IndexError, ValueError) as _fmt_err:
+                # A bad operator-supplied template must never crash a green flow.
+                # Degrade gracefully: use the flow name as a safe fallback message.
+                message = f"chore(cycle): {flow.name}"
+                print(
+                    f"[WARN] commit message template error ({_fmt_err!r}); "
+                    f"falling back to: {message!r}",
+                    file=sys.stderr,
+                )
             commit_sha = commit_workdir(effective_workdir, message)
 
         return FlowReport(
