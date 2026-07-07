@@ -6,6 +6,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+import yaml
+from pydantic import ValidationError
+
 from alc.flow import FlowRunner, _compose_stage_directive
 from alc.intake import load_flow, load_manifest
 from alc.models import Blueprint, Check, FlowDefinition, FlowStage, ReportSpec
@@ -104,6 +108,80 @@ class TestFlowRunnerEndToEnd:
         assert raw["engine"] == "mock"
 
 
+class TestFlowSpecialistStage:
+    """A Flow stage can run a Specialist via run_specialist in the shared workdir."""
+
+    def _write_dev_specialist(self, operator_layer: Path) -> None:
+        specialists_dir = operator_layer / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        data = {
+            "name": "dev",
+            "area": "the implementation area",
+            "blueprint": "chore",
+            "knowledge_path": ".alc/specialists/dev.knowledge.md",
+        }
+        (specialists_dir / "dev.yaml").write_text(yaml.safe_dump(data))
+
+    def test_specialist_stage_runs_and_threads_upstream(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """Stage 0 runs the specialist (writes its Knowledge File); stage 1 sees
+        stage 0's upstream output in its directive."""
+        from alc.engine import Capabilities, EngineResult
+
+        self._write_dev_specialist(operator_layer)
+
+        # Flow: [ specialist:dev, blueprint:chore ] sharing one workdir.
+        flow = FlowDefinition(
+            name="demand",
+            stages=[
+                FlowStage(name="implement", specialist="dev"),
+                FlowStage(name="validate", blueprint="chore"),
+            ],
+        )
+
+        seen_directives: list[str] = []
+
+        class _RecordingEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                seen_directives.append(request.directive)
+                return EngineResult(ok=True, output_text="STAGE-OUTPUT-MARKER")
+
+        # Patch resolve_engine everywhere the flow path resolves it: runner.py binds
+        # it at import time (the Act mandate); specialist.py imports it lazily from
+        # the registry (the Learn turn), so patch the registry source too.
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _RecordingEngine()
+        )
+        monkeypatch.setattr(
+            "alc.engines.registry.resolve_engine",
+            lambda name, engines: _RecordingEngine(),
+        )
+
+        manifest = load_manifest(operator_layer)
+        runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+        report = runner.run(flow=flow, task="ship the thing", engine_override="mock")
+
+        assert report.success is True
+        assert len(report.stages) == 2
+
+        # Stage 0 came from the specialist path: its Knowledge File was written.
+        knowledge_file = operator_layer / "specialists" / "dev.knowledge.md"
+        assert knowledge_file.exists(), "specialist stage must run run_specialist (Learn wrote the Knowledge File)"
+
+        # Stage 1's directive carries stage 0's upstream output.
+        assert any("STAGE-OUTPUT-MARKER" in d for d in seen_directives)
+        assert any("Upstream context (previous stages)" in d for d in seen_directives)
+
+
 class TestLintFlow:
     def test_missing_blueprint_yields_error(self) -> None:
         flow = FlowDefinition(
@@ -130,3 +208,46 @@ class TestLintFlow:
         )
         violations = lint_flow(flow, {"plan", "chore"})
         assert violations == []
+
+    def test_missing_specialist_yields_error(self) -> None:
+        flow = FlowDefinition(
+            name="x",
+            stages=[FlowStage(name="s", specialist="ghost")],
+        )
+        violations = lint_flow(flow, set(), available_specialists=set())
+        assert any(v.severity == "error" for v in violations)
+        assert any(v.rule == "flow-specialist-exists" for v in violations)
+
+    def test_present_specialist_yields_no_violations(self) -> None:
+        flow = FlowDefinition(
+            name="demand",
+            stages=[FlowStage(name="implement", specialist="dev")],
+        )
+        violations = lint_flow(flow, set(), available_specialists={"dev"})
+        assert violations == []
+
+
+class TestFlowStageValidator:
+    """FlowStage must reference exactly one of blueprint/specialist."""
+
+    def test_both_blueprint_and_specialist_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            FlowStage(name="s", blueprint="chore", specialist="dev")
+
+    def test_neither_blueprint_nor_specialist_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            FlowStage(name="s")
+
+    def test_verify_only_with_specialist_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            FlowStage(name="s", specialist="dev", verify_only=True)
+
+    def test_blueprint_only_is_valid(self) -> None:
+        stage = FlowStage(name="s", blueprint="chore")
+        assert stage.blueprint == "chore"
+        assert stage.specialist is None
+
+    def test_specialist_only_is_valid(self) -> None:
+        stage = FlowStage(name="s", specialist="dev")
+        assert stage.specialist == "dev"
+        assert stage.blueprint is None

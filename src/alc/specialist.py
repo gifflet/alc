@@ -52,18 +52,27 @@ _KNOWLEDGE_SECTION_HEADER = (
 )
 
 
-def compose_act_directive(blueprint: Blueprint, task: str, knowledge: str) -> str:
+def compose_act_directive(
+    blueprint: Blueprint,
+    task: str,
+    knowledge: str,
+    extra_context: str | None = None,
+) -> str:
     """Compose the Act directive for a Specialist invocation.
 
     Produces a header naming the Specialist's blueprint and task, an optional
-    knowledge section (only when ``knowledge`` is non-empty), then the
-    blueprint's workflow body.
+    upstream-context section (only when ``extra_context`` is truthy), an optional
+    knowledge section (only when ``knowledge`` is non-empty), then the blueprint's
+    workflow body.
 
     Args:
         blueprint: The Blueprint providing the workflow.
         task: The free-text task the Specialist must perform.
         knowledge: Current Knowledge File contents; omitted from the directive
             when empty.
+        extra_context: Optional upstream context (e.g. a Flow's previous-stage
+            outputs). Injected after the header and before the knowledge section
+            when truthy. Default None leaves behavior unchanged.
 
     Returns:
         The fully composed directive string.
@@ -73,11 +82,17 @@ def compose_act_directive(blueprint: Blueprint, task: str, knowledge: str) -> st
         task=task,
     )
 
+    upstream_section = ""
+    if extra_context:
+        upstream_section = (
+            "## Upstream context (previous stages)\n\n" + extra_context + "\n\n---\n"
+        )
+
     knowledge_section = ""
     if knowledge:
         knowledge_section = _KNOWLEDGE_SECTION_HEADER + knowledge + "\n\n---\n"
 
-    return header + knowledge_section + blueprint.workflow
+    return header + upstream_section + knowledge_section + blueprint.workflow
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +187,7 @@ def run_specialist(
     task: str,
     engine_override: str | None = None,
     workdir: Path | None = None,
+    extra_context: str | None = None,
 ) -> SpecialistReport:
     """Orchestrate one Recall -> Act -> Learn cycle for a Specialist.
 
@@ -188,6 +204,8 @@ def run_specialist(
         engine_override: Use this engine name instead of manifest.default_engine.
         workdir: Directory the Act step runs checks in. Defaults to Path.cwd()
             (None = unchanged). Pass an IsolatedWorktree path to confine edits.
+        extra_context: Optional upstream context threaded into the Act directive
+            (e.g. a Flow's previous-stage outputs). Default None = unchanged.
 
     Returns:
         SpecialistReport with the Specialist name, Act RunReport, and whether
@@ -217,7 +235,7 @@ def run_specialist(
         )
 
     # Act: compose the directive and run the Single Mandate.
-    directive = compose_act_directive(blueprint, task, knowledge)
+    directive = compose_act_directive(blueprint, task, knowledge, extra_context)
     act = execute_mandate(manifest, blueprint, directive, engine_override, workdir)
 
     # Learn: only when Act succeeded.

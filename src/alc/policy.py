@@ -161,20 +161,31 @@ def has_errors(violations: list[Violation]) -> bool:
     return any(v.severity == "error" for v in violations)
 
 
-def lint_flow(flow: FlowDefinition, available_blueprints: set[str]) -> list[Violation]:
+def lint_flow(
+    flow: FlowDefinition,
+    available_blueprints: set[str],
+    available_specialists: set[str] | None = None,
+) -> list[Violation]:
     """Run Policy Gate rules specific to a FlowDefinition.
 
     Rules:
-    1. Flow must declare at least one stage             (error) — no Assurance Loop otherwise.
-    2. Every stage's blueprint must exist in the layer  (error) — resolvable execution.
+    1. Flow must declare at least one stage              (error) — no Assurance Loop otherwise.
+    2. Every blueprint stage's blueprint must exist      (error) — resolvable execution.
+    3. Every specialist stage's specialist must exist    (error) — resolvable execution.
+
+    The exactly-one-of blueprint/specialist rule (and verify_only requiring a
+    blueprint) is already enforced by the FlowStage pydantic validator at intake.
 
     Args:
         flow: The FlowDefinition to validate.
         available_blueprints: Set of blueprint names present in the Operator Layer.
+        available_specialists: Set of specialist names present in the Operator
+            Layer. None is treated as an empty set (no specialists available).
 
     Returns:
         List of Violations (may be empty).
     """
+    available_specialists = available_specialists or set()
     violations: list[Violation] = []
 
     # Rule 1: flow must have at least one stage.
@@ -189,11 +200,11 @@ def lint_flow(flow: FlowDefinition, available_blueprints: set[str]) -> list[Viol
                 ),
             )
         )
-        return violations  # no point checking stage blueprints if there are none
+        return violations  # no point checking stage refs if there are none
 
-    # Rule 2: every stage's blueprint must be available.
+    # Rule 2/3: every stage's referenced blueprint or specialist must exist.
     for stage in flow.stages:
-        if stage.blueprint not in available_blueprints:
+        if stage.blueprint is not None and stage.blueprint not in available_blueprints:
             violations.append(
                 Violation(
                     rule="flow-blueprint-exists",
@@ -202,6 +213,18 @@ def lint_flow(flow: FlowDefinition, available_blueprints: set[str]) -> list[Viol
                         f"Flow '{flow.name}', stage '{stage.name}': blueprint "
                         f"'{stage.blueprint}' does not exist in the Operator Layer "
                         f"(available: {sorted(available_blueprints)})."
+                    ),
+                )
+            )
+        if stage.specialist is not None and stage.specialist not in available_specialists:
+            violations.append(
+                Violation(
+                    rule="flow-specialist-exists",
+                    severity="error",
+                    message=(
+                        f"Flow '{flow.name}', stage '{stage.name}': specialist "
+                        f"'{stage.specialist}' does not exist in the Operator Layer "
+                        f"(available: {sorted(available_specialists)})."
                     ),
                 )
             )

@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from alc.intake import load_blueprint, resolve_checks
+from alc.intake import load_blueprint, load_specialist, resolve_checks
 from alc.models import (
     Blueprint,
     FlowDefinition,
@@ -16,9 +16,11 @@ from alc.models import (
     Manifest,
     RunReport,
     Scorecard,
+    Specialist,
 )
 from alc.policy import has_errors, lint, lint_flow
 from alc.runner import PolicyViolationError, execute_mandate
+from alc.specialist import run_specialist
 from alc.verifier import Verifier
 
 
@@ -150,11 +152,20 @@ class FlowRunner:
             PolicyViolationError: If the Flow Policy Gate finds error-level violations.
         """
         blueprints_dir = self._operator_layer.parent / self._manifest.blueprints_dir
+        specialists_dir = self._operator_layer.parent / self._manifest.specialists_dir
 
-        # Load every stage Blueprint upfront for the Policy Gate.
+        # Load every stage's effective Blueprint upfront for the Policy Gate. A
+        # blueprint stage names its Blueprint directly; a specialist stage resolves
+        # its Blueprint through the Specialist (whose Act step it will run).
         stage_blueprints: dict[str, Blueprint] = {}
+        stage_specialists: dict[str, Specialist] = {}
         for stage in flow.stages:
-            bp = load_blueprint(blueprints_dir, stage.blueprint)
+            if stage.specialist is not None:
+                specialist = load_specialist(specialists_dir, stage.specialist)
+                stage_specialists[stage.name] = specialist
+                bp = load_blueprint(blueprints_dir, specialist.blueprint)
+            else:
+                bp = load_blueprint(blueprints_dir, stage.blueprint)
             # Apply Compute Tier priority: tier_override > stage.compute_tier > blueprint default.
             bp = _stage_blueprint(bp, stage, tier_override)
             stage_blueprints[stage.name] = bp
@@ -162,8 +173,13 @@ class FlowRunner:
         # Flow Policy Gate: lint blueprints + lint the flow itself.
         all_blueprints = list(stage_blueprints.values())
         violations = lint(self._manifest, all_blueprints)
-        available_names = {stage.blueprint for stage in flow.stages}
-        violations += lint_flow(flow, available_names)
+        available_blueprints = {
+            stage.blueprint for stage in flow.stages if stage.blueprint is not None
+        }
+        available_specialists = {
+            stage.specialist for stage in flow.stages if stage.specialist is not None
+        }
+        violations += lint_flow(flow, available_blueprints, available_specialists)
 
         if has_errors(violations):
             error_msgs = [v.message for v in violations if v.severity == "error"]
@@ -182,7 +198,10 @@ class FlowRunner:
             blueprint = stage_blueprints[stage.name]
 
             # Announce the active stage before any engine or verifier work.
-            _stage_header = f"▶ stage {stage.name} — blueprint:{blueprint.name}"
+            if stage.specialist is not None:
+                _stage_header = f"▶ stage {stage.name} — specialist:{stage.specialist}"
+            else:
+                _stage_header = f"▶ stage {stage.name} — blueprint:{blueprint.name}"
             if stage.verify_only:
                 _stage_header += " (verify-only)"
             print(_stage_header, file=sys.stderr, flush=True)
@@ -211,6 +230,21 @@ class FlowRunner:
                     ),
                     output_text="\n".join(summary_lines),
                 )
+            elif stage.specialist is not None:
+                # Specialist stage: run its Recall -> Act -> Learn cycle in the
+                # flow's shared workdir (so it sees prior stages' edits and keeps
+                # its Knowledge File). The Act RunReport is this stage's report.
+                specialist = stage_specialists[stage.name]
+                specialist_report = run_specialist(
+                    manifest=self._manifest,
+                    operator_layer=self._operator_layer,
+                    specialist=specialist,
+                    task=task,
+                    engine_override=engine_override,
+                    workdir=workdir,
+                    extra_context="\n\n".join(upstream_outputs) or None,
+                )
+                report = specialist_report.act
             else:
                 directive = _compose_stage_directive(
                     flow_name=flow.name,

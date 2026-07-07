@@ -108,12 +108,34 @@ class RunReport(BaseModel):
 
 
 class FlowStage(BaseModel):
-    """One stage in a Flow — references a Blueprint by name."""
+    """One stage in a Flow — runs either a Blueprint or a Specialist.
+
+    Exactly one of ``blueprint`` or ``specialist`` must be set. A blueprint stage
+    runs a Single Mandate; a specialist stage runs the Specialist's Recall -> Act
+    -> Learn cycle (keeping its Knowledge File). A ``verify_only`` stage runs the
+    named Blueprint's checks as a pure gate, so it MUST reference a blueprint.
+    """
 
     name: str
-    blueprint: str             # name of an existing Blueprint
+    blueprint: str | None = None     # name of an existing Blueprint
+    specialist: str | None = None    # name of an existing Specialist
     compute_tier: str | None = None  # optional override of the Blueprint's tier
     verify_only: bool = False  # when True: run checks as a pure gate, no engine turn
+
+    @model_validator(mode="after")
+    def _exactly_one_ref(self) -> "FlowStage":
+        """Enforce exactly one of blueprint/specialist; verify_only needs a blueprint."""
+        if (self.blueprint is None) == (self.specialist is None):
+            raise ValueError(
+                f"FlowStage '{self.name}' must set exactly one of "
+                "'blueprint' or 'specialist'."
+            )
+        if self.verify_only and self.specialist is not None:
+            raise ValueError(
+                f"FlowStage '{self.name}' is verify_only and must reference a "
+                "'blueprint' (it runs that blueprint's checks), not a 'specialist'."
+            )
+        return self
 
 
 class FlowDefinition(BaseModel):
