@@ -110,10 +110,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Run `alc init [--force] [--setup]`: scaffold a default Operator Layer into cwd."""
-    from alc.scaffold import scaffold
+    from alc.scaffold import detect_stack, scaffold
 
+    project_root = Path.cwd()
     try:
-        created = scaffold(Path.cwd(), force=args.force)
+        created = scaffold(project_root, force=args.force)
     except FileExistsError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
@@ -121,6 +122,18 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("Initialised Operator Layer:")
     for path in created:
         print(f"  {path}")
+
+    stack_label, _checks_block = detect_stack(project_root)
+    if stack_label is not None:
+        # Derive a short description of the real checks from the stack label.
+        _stack_checks = {
+            "Go": "go build, go vet",
+            "Python": "pytest",
+            "Node": "npm test",
+            "Rust": "cargo check",
+        }
+        checks_desc = _stack_checks.get(stack_label, "real checks")
+        print(f"Detected {stack_label} — scaffolded real checks ({checks_desc}).")
 
     if args.setup:
         from alc.setup_skill import _resolve_version, install_skill

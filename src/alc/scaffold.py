@@ -34,15 +34,21 @@ queue_dir: .alc/queue
 specialists_dir: .alc/specialists
 """
 
+# Placeholder checks block used when no stack is detected.
+# The {checks_block} placeholder in chore/bug/feature templates is replaced
+# by detect_stack() output or this default at scaffold() time.
+_DEFAULT_CHECKS_BLOCK = """\
+  # Replace this with your real checks, e.g. ["ruff", "check", "."] and ["pytest", "-q"]
+  - name: smoke
+    command: ["true"]"""
+
 _CHORE = """\
 ---
 name: chore
 purpose: Apply a low-risk, well-scoped maintenance change.
 compute_tier: standard
 checks:
-  # Replace this with your real checks, e.g. ["ruff", "check", "."] and ["pytest", "-q"]
-  - name: smoke
-    command: ["true"]
+{checks_block}
 report:
   format: json
   schema:
@@ -58,7 +64,7 @@ report:
 4. Run the checks to verify correctness.
 5. Output a JSON report matching the schema:
    ```json
-   {"status": "ok", "summary": "<one sentence describing what was done>"}
+   {{"status": "ok", "summary": "<one sentence describing what was done>"}}
    ```
 """
 
@@ -68,9 +74,7 @@ name: bug
 purpose: Diagnose and fix a bug.
 compute_tier: standard
 checks:
-  # Replace this with your real checks, e.g. ["ruff", "check", "."] and ["pytest", "-q"]
-  - name: smoke
-    command: ["true"]
+{checks_block}
 report:
   format: json
   schema:
@@ -88,12 +92,12 @@ report:
 4. Validate the fix by running the checks.
 5. Output a JSON report matching the schema:
    ```json
-   {
+   {{
      "status": "ok",
      "root_cause": "<what caused the bug>",
      "fix": "<what was changed>",
      "summary": "<one sentence summary>"
-   }
+   }}
    ```
 """
 
@@ -103,9 +107,7 @@ name: feature
 purpose: Implement a new feature.
 compute_tier: deep
 checks:
-  # Replace this with your real checks, e.g. ["ruff", "check", "."] and ["pytest", "-q"]
-  - name: smoke
-    command: ["true"]
+{checks_block}
 report:
   format: json
   schema:
@@ -121,10 +123,11 @@ report:
 4. Verify the implementation by running the checks.
 5. Output a JSON report matching the schema:
    ```json
-   {"status": "ok", "summary": "<one sentence describing what was implemented>"}
+   {{"status": "ok", "summary": "<one sentence describing what was implemented>"}}
    ```
 """
 
+# plan.md always keeps the ["true"] smoke check — the planning stage produces no code.
 _PLAN = """\
 ---
 name: plan
@@ -164,6 +167,54 @@ stages:
 
 
 # ---------------------------------------------------------------------------
+# Stack detection
+# ---------------------------------------------------------------------------
+
+def detect_stack(project_root: Path) -> tuple[str | None, str]:
+    """Detect the project's technology stack from well-known marker files.
+
+    Checks for marker files in project_root in precedence order:
+      go.mod -> Go
+      pyproject.toml or setup.py -> Python
+      package.json -> Node
+      Cargo.toml -> Rust
+
+    Args:
+        project_root: Directory to inspect for marker files.
+
+    Returns:
+        A 2-tuple of (stack_label, checks_block) where:
+          - stack_label is a short label string (e.g. "Go") or None when
+            no known stack was detected.
+          - checks_block is a YAML snippet (correctly indented for blueprint
+            front-matter) representing the checks for that stack, or the
+            default placeholder block when no stack was detected.
+    """
+    if (project_root / "go.mod").exists():
+        return (
+            "Go",
+            "  - name: build\n    command: [\"go\", \"build\", \"./...\"]\n"
+            "  - name: vet\n    command: [\"go\", \"vet\", \"./...\"]",
+        )
+    if (project_root / "pyproject.toml").exists() or (project_root / "setup.py").exists():
+        return (
+            "Python",
+            "  - name: test\n    command: [\"pytest\", \"-q\"]",
+        )
+    if (project_root / "package.json").exists():
+        return (
+            "Node",
+            "  - name: test\n    command: [\"npm\", \"test\"]",
+        )
+    if (project_root / "Cargo.toml").exists():
+        return (
+            "Rust",
+            "  - name: check\n    command: [\"cargo\", \"check\"]",
+        )
+    return (None, _DEFAULT_CHECKS_BLOCK)
+
+
+# ---------------------------------------------------------------------------
 # Scaffolder
 # ---------------------------------------------------------------------------
 
@@ -173,6 +224,11 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     Creates the full directory structure and all default template files from
     the built-in constants. The generated layer is conformant with the Policy
     Gate (alc lint passes with no error-level violations).
+
+    The chore, bug, and feature blueprints receive real stack-specific checks
+    when detect_stack() identifies the project stack; otherwise they keep the
+    placeholder comment + smoke check.  plan.md always keeps the ["true"] smoke
+    check because the planning stage produces no executable code.
 
     Args:
         project_root: The project directory to initialise. .alc/ is created
@@ -194,6 +250,9 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
             "`.alc/` already exists; pass --force to overwrite"
         )
 
+    # Detect the project stack to provide real checks.
+    _stack_label, checks_block = detect_stack(project_root)
+
     # Create directory structure.
     (alc_dir / "blueprints").mkdir(parents=True, exist_ok=True)
     (alc_dir / "flows").mkdir(parents=True, exist_ok=True)
@@ -201,9 +260,9 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     # Map each relative path to its content.
     files: dict[str, str] = {
         ".alc/manifest.yaml": _MANIFEST,
-        ".alc/blueprints/chore.md": _CHORE,
-        ".alc/blueprints/bug.md": _BUG,
-        ".alc/blueprints/feature.md": _FEATURE,
+        ".alc/blueprints/chore.md": _CHORE.format(checks_block=checks_block),
+        ".alc/blueprints/bug.md": _BUG.format(checks_block=checks_block),
+        ".alc/blueprints/feature.md": _FEATURE.format(checks_block=checks_block),
         ".alc/blueprints/plan.md": _PLAN,
         ".alc/flows/ship.yaml": _SHIP,
     }
