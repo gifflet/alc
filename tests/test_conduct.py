@@ -246,6 +246,46 @@ class TestDispatchEnqueueWritesQueueTasks:
         ]
         assert tasks == ["first", "second", "third"]
 
+    def test_filename_carries_title_slug(self, operator_layer: Path) -> None:
+        # The filename embeds a slug of the task's first line, so the queue
+        # header (▶ <file> — …) and archived report are human-readable.
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[
+            PlannedUnit(
+                kind="flow",
+                name="ship",
+                task="Add sort control to the dashboard\n\ndetails here",
+            ),
+        ])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+
+        assert "add-sort-control-to-the-dashboard" in files[0]
+        # Only the first line becomes the slug — the body is never in the name.
+        assert "details" not in files[0]
+
+    def test_prefix_is_configurable(self, operator_layer: Path) -> None:
+        # The kind:plan replenish passes prefix="plan"; the default is "conduct".
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[
+            PlannedUnit(kind="flow", name="ship", task="alpha task"),
+            PlannedUnit(kind="flow", name="ship", task="beta task"),
+        ])
+
+        planned = dispatch_enqueue(plan, manifest, operator_layer, prefix="plan")
+        assert all(f.startswith("plan-") for f in planned)
+
+    def test_untitled_task_falls_back_to_uid(self, operator_layer: Path) -> None:
+        # A task whose first line has no usable characters still gets a valid,
+        # unique filename (prefix-index-uid), never an empty slug segment.
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[PlannedUnit(kind="flow", name="ship", task="!!! ???")])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+
+        assert files[0].startswith("conduct-000-")
+        assert "--" not in files[0]  # no empty slug segment
+
 
 # ---------------------------------------------------------------------------
 # dispatch_now — uses operator_layer fixture

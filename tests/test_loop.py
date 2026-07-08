@@ -1260,9 +1260,14 @@ class TestPlanReplenish:
 
         # Each written task re-loads as a demand QueueTask, isolate false, short title.
         queue_dir = operator_layer.parent / manifest.queue_dir
+        names = sorted(p.name for p in queue_dir.glob("*.yaml"))
+        # The queue filename is descriptive (prefix + title slug), not an opaque uid,
+        # so the drain header `▶ <file> — flow:demand` reads meaningfully.
+        assert names[0].startswith("plan-000-first-title-")
+        assert names[1].startswith("plan-001-second-title-")
         tasks = [
-            QueueTask.model_validate(yaml.safe_load(p.read_text()))
-            for p in sorted(queue_dir.glob("*.yaml"))
+            QueueTask.model_validate(yaml.safe_load((queue_dir / n).read_text()))
+            for n in names
         ]
         assert len(tasks) == 2
         titles = [t.task.splitlines()[0] for t in tasks]

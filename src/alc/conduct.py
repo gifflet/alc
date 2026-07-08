@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -33,6 +34,19 @@ from alc.models import (
 # ---------------------------------------------------------------------------
 # Pure parsing helpers
 # ---------------------------------------------------------------------------
+
+
+def _slugify(text: str, max_len: int = 40) -> str:
+    """Turn a task title into a filesystem-safe slug for a queue filename.
+
+    Lowercases, collapses any run of non-alphanumeric characters to a single
+    hyphen, trims leading/trailing hyphens, and caps the length. Returns ``""``
+    when the text has no usable characters (the caller falls back to the uid).
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    if len(slug) > max_len:
+        slug = slug[:max_len].rstrip("-")
+    return slug
 
 
 def parse_plan(
@@ -298,6 +312,7 @@ def dispatch_enqueue(
     operator_layer: Path,
     engine_override: str | None = None,
     isolate: bool = True,
+    prefix: str = "conduct",
 ) -> list[str]:
     """Write one queue task YAML file per PlannedUnit item.
 
@@ -305,8 +320,10 @@ def dispatch_enqueue(
     valid QueueTask files that ``alc tick`` can drain. Flow units keep the legacy
     ``flow:`` field for compatibility; specialist units carry ``kind`` and ``name``.
 
-    Filenames are index-first (``conduct-<NN>-<uid>.yaml``) so the drain order
-    (process_queue sorts ``*.yaml`` by name) follows plan order.
+    Filenames are index-first and carry a slug of the task's first line
+    (``<prefix>-<NN>-<slug>-<uid>.yaml``) so the drain order (process_queue sorts
+    ``*.yaml`` by name) follows plan order AND the queue header / archived report
+    name (``▶ <file> — …``) is human-readable instead of an opaque uid.
 
     Args:
         plan: The validated ConductorPlan.
@@ -316,6 +333,8 @@ def dispatch_enqueue(
         isolate: Value written as each task's ``isolate`` field. Default True keeps
             the Conductor byte-identical; the ``kind: plan`` replenish passes False
             so demand tasks share the workdir.
+        prefix: Filename prefix that records provenance. Default ``conduct`` (the
+            Conductor); the ``kind: plan`` replenish passes ``plan``.
 
     Returns:
         Sorted list of filenames (stems only, not full paths) that were written.
@@ -326,7 +345,10 @@ def dispatch_enqueue(
     written: list[str] = []
     for i, item in enumerate(plan.items):
         uid = uuid.uuid4().hex[:8]
-        filename = f"conduct-{i:03d}-{uid}.yaml"
+        lines = item.task.splitlines()
+        slug = _slugify(lines[0]) if lines else ""
+        stem = f"{prefix}-{i:03d}-{slug}-{uid}" if slug else f"{prefix}-{i:03d}-{uid}"
+        filename = f"{stem}.yaml"
         task_data: dict = {
             "task": item.task,
             "isolate": isolate,
