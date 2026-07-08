@@ -297,6 +297,7 @@ def dispatch_enqueue(
     manifest: Manifest,
     operator_layer: Path,
     engine_override: str | None = None,
+    isolate: bool = True,
 ) -> list[str]:
     """Write one queue task YAML file per PlannedUnit item.
 
@@ -304,11 +305,17 @@ def dispatch_enqueue(
     valid QueueTask files that ``alc tick`` can drain. Flow units keep the legacy
     ``flow:`` field for compatibility; specialist units carry ``kind`` and ``name``.
 
+    Filenames are index-first (``conduct-<NN>-<uid>.yaml``) so the drain order
+    (process_queue sorts ``*.yaml`` by name) follows plan order.
+
     Args:
         plan: The validated ConductorPlan.
         manifest: Loaded Manifest (provides queue_dir).
         operator_layer: Path to the ``.alc/`` directory.
         engine_override: If set, written as the ``engine`` field in the task file.
+        isolate: Value written as each task's ``isolate`` field. Default True keeps
+            the Conductor byte-identical; the ``kind: plan`` replenish passes False
+            so demand tasks share the workdir.
 
     Returns:
         Sorted list of filenames (stems only, not full paths) that were written.
@@ -319,10 +326,10 @@ def dispatch_enqueue(
     written: list[str] = []
     for i, item in enumerate(plan.items):
         uid = uuid.uuid4().hex[:8]
-        filename = f"conduct-{uid}-{i}.yaml"
+        filename = f"conduct-{i:03d}-{uid}.yaml"
         task_data: dict = {
             "task": item.task,
-            "isolate": True,
+            "isolate": isolate,
         }
         if item.kind == "specialist":
             task_data["kind"] = "specialist"

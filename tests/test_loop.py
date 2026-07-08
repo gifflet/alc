@@ -1096,6 +1096,302 @@ class TestFlowReplenishValidation:
             Replenish(kind="flow", ref=None, task="plan")
 
 
+# ---------------------------------------------------------------------------
+# Plan replenish (kind: plan) — run a planner Specialist, then reuse the
+# Conductor's parse + enqueue on the structured plan it returns.
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(repo: Path) -> None:
+    """Initialize a git repo with committed identity config inside *repo*."""
+    import subprocess
+
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "test@alc.local"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "ALC Test"],
+        check=True,
+        capture_output=True,
+    )
+    (repo / "README.md").write_text("seed\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "seed"],
+        check=True,
+        capture_output=True,
+    )
+
+
+class TestPlanReplenish:
+    """run_replenish with kind: plan runs a planner Specialist, commits its roadmap
+    change, then reuses the Conductor's parse_plan + dispatch_enqueue."""
+
+    def _write_pm(self, operator_layer: Path) -> None:
+        """Write a 'pm' planner Specialist definition."""
+        specialists_dir = operator_layer / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "pm.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "pm",
+                    "area": "planning",
+                    "blueprint": "chore",
+                    "knowledge_path": ".alc/specialists/pm.knowledge.md",
+                }
+            )
+        )
+
+    def _write_demand_flow(self, operator_layer: Path) -> None:
+        """Write a 'demand' flow so the catalog contains it (validated by parse_plan)."""
+        (operator_layer / "flows" / "demand.yaml").write_text(
+            "name: demand\n"
+            "description: A unit of demand work.\n"
+            "stages:\n"
+            "  - name: build\n"
+            "    blueprint: chore\n"
+        )
+
+    def _write_plan_replenish_loop(self, operator_layer: Path) -> None:
+        """Write a loop definition whose replenish is kind: plan, ref: pm."""
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nreplenish:\n  kind: plan\n  ref: pm\n  task: plan next\n"
+            "stop:\n  max_cycles: 20\n",
+        )
+
+    def _fake_planner(self, output_text: str, monkeypatch) -> None:
+        """Patch run_specialist so the planner writes a roadmap file and returns
+        the given output_text as its Act output (the structured plan)."""
+
+        def _run(*, manifest, operator_layer, specialist, task, engine_override, workdir):
+            from alc.models import RunReport, Scorecard, SpecialistReport
+
+            # Simulate the planner touching the roadmap so there is something to commit.
+            docs = operator_layer.parent / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            (docs / "ROADMAP.md").write_text("# Roadmap\n- next version\n")
+            act = RunReport(
+                blueprint="chore",
+                engine="mock",
+                success=True,
+                attempts=[],
+                scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+                output_text=output_text,
+            )
+            return SpecialistReport(
+                specialist=specialist.name, act=act, knowledge_updated=False
+            )
+
+        monkeypatch.setattr("alc.specialist.run_specialist", _run)
+
+    def test_plan_replenish_prints_header(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """run_replenish with kind:plan must print '▶ replenish — plan:<ref>'."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        self._fake_planner(
+            '[{"kind":"flow","name":"demand","task":"A\\n\\nx"}]', monkeypatch
+        )
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+        err = capsys.readouterr().err
+        assert any(
+            line.startswith("▶ replenish — plan:") and "pm" in line
+            for line in err.splitlines()
+        ), f"Expected '▶ replenish — plan:pm' in stderr, got: {err!r}"
+
+    def test_happy_path_enqueues_demands_and_commits_roadmap(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A valid Conductor plan -> the roadmap change is committed and N demand
+        tasks are written (each flow==demand, isolate false, title == first line)."""
+        import subprocess
+
+        from alc import loop as loop_mod
+        from alc.models import QueueTask
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        plan_json = (
+            '[{"kind":"flow","name":"demand","task":"First title\\n\\ndetails one"},'
+            '{"kind":"flow","name":"demand","task":"Second title\\n\\ndetails two"}]'
+        )
+        self._fake_planner(plan_json, monkeypatch)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 2
+
+        # The roadmap change was committed (tree is clean for the demand guard).
+        status = subprocess.run(
+            ["git", "-C", str(operator_layer.parent), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+        )
+        assert (operator_layer.parent / "docs" / "ROADMAP.md").exists()
+        assert "docs/ROADMAP.md" not in status.stdout
+
+        # The commit was made under the roadmap message (not merely a clean tree).
+        subjects = subprocess.run(
+            ["git", "-C", str(operator_layer.parent), "log", "--format=%s"],
+            capture_output=True,
+            text=True,
+        )
+        assert "chore(roadmap): plan next version" in subjects.stdout.splitlines()
+
+        # Each written task re-loads as a demand QueueTask, isolate false, short title.
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        tasks = [
+            QueueTask.model_validate(yaml.safe_load(p.read_text()))
+            for p in sorted(queue_dir.glob("*.yaml"))
+        ]
+        assert len(tasks) == 2
+        titles = [t.task.splitlines()[0] for t in tasks]
+        assert titles == ["First title", "Second title"]
+        for t in tasks:
+            assert t.flow == "demand"
+            assert t.isolate is False
+
+    def test_no_op_when_plan_invalid(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """A planner whose output is not valid JSON -> 0 tasks, no exception escapes."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        self._fake_planner("this is not a plan", monkeypatch)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 0
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        assert not list(queue_dir.glob("*.yaml"))
+        err = capsys.readouterr().err
+        assert "plan not enqueued" in err
+
+    def test_no_op_when_unknown_flow(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A plan referencing a flow not in the catalog -> clean no-op (0 tasks)."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        # 'nope' is not a flow in the catalog -> parse_plan raises ValueError.
+        self._fake_planner(
+            '[{"kind":"flow","name":"nope","task":"X\\n\\ny"}]', monkeypatch
+        )
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 0
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        assert not list(queue_dir.glob("*.yaml"))
+
+
+class TestPlanReplenishValidation:
+    """validate_loop and the model validator for kind: plan."""
+
+    def test_missing_specialist_ref_yields_error_violation(
+        self, operator_layer: Path
+    ) -> None:
+        """kind:plan with a ref that has no specialist YAML -> error violation."""
+        from alc.policy import validate_loop
+
+        loop_def = LoopDefinition.model_validate(
+            {
+                "name": "bad-loop",
+                "replenish": {"kind": "plan", "ref": "nonexistent", "task": "plan"},
+                "stop": {"max_cycles": 5},
+            }
+        )
+        manifest = load_manifest(operator_layer)
+        violations = validate_loop(manifest, operator_layer, loop_def)
+        error_rules = [v.rule for v in violations if v.severity == "error"]
+        assert "loop-replenish-specialist-exists" in error_rules, (
+            f"Expected specialist-exists error, got violations: {violations}"
+        )
+
+    def test_existing_specialist_ref_no_violation(
+        self, operator_layer: Path
+    ) -> None:
+        """kind:plan with a ref that resolves to an existing specialist -> no violation."""
+        from alc.policy import validate_loop
+
+        specialists_dir = operator_layer / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "pm.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "pm",
+                    "area": "planning",
+                    "blueprint": "chore",
+                    "knowledge_path": ".alc/specialists/pm.knowledge.md",
+                }
+            )
+        )
+        loop_def = LoopDefinition.model_validate(
+            {
+                "name": "ok-loop",
+                "replenish": {"kind": "plan", "ref": "pm", "task": "plan"},
+                "stop": {"max_cycles": 5},
+            }
+        )
+        manifest = load_manifest(operator_layer)
+        violations = validate_loop(manifest, operator_layer, loop_def)
+        error_rules = [v.rule for v in violations if v.severity == "error"]
+        assert "loop-replenish-specialist-exists" not in error_rules
+
+    def test_plan_kind_ref_required_at_model_level(self) -> None:
+        """Replenish with kind:plan and no ref must raise ValidationError."""
+        from pydantic import ValidationError
+
+        from alc.models import Replenish
+
+        with pytest.raises(ValidationError, match="ref"):
+            Replenish(kind="plan", ref=None, task="x")
+
+    def test_plan_kind_with_ref_is_valid(self) -> None:
+        """Replenish(kind='plan', ref='pm', task='x') is a valid model."""
+        from alc.models import Replenish
+
+        replenish = Replenish(kind="plan", ref="pm", task="x")
+        assert replenish.kind == "plan"
+        assert replenish.ref == "pm"
+
+
 class TestCliLoop:
     def test_loop_terminates_at_max_cycles(
         self, operator_layer: Path, monkeypatch, capsys

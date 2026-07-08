@@ -347,16 +347,19 @@ class Replenish(BaseModel):
     - ``flow``: run a named Flow directly as the planning step (e.g. a committing
       pm Flow that writes the roadmap and commits it before demand-flows run);
       ``ref`` is the flow name and is required.
+    - ``plan``: run a planner Specialist (keeps ROADMAP + Knowledge File), then
+      reuse the Conductor's parse + enqueue on the structured plan it returns;
+      ``ref`` is the specialist name and is required.
     """
 
-    kind: Literal["specialist", "conduct", "flow"]
+    kind: Literal["specialist", "conduct", "flow", "plan"]
     ref: str | None = None   # specialist/flow name; None allowed for a conduct replenish
     task: str
 
     @model_validator(mode="after")
     def _ref_required_for_specialist_and_flow(self) -> "Replenish":
-        """Enforce that ``ref`` is set when kind is 'specialist' or 'flow'."""
-        if self.kind in ("specialist", "flow") and not self.ref:
+        """Enforce that ``ref`` is set when kind is 'specialist', 'flow', or 'plan'."""
+        if self.kind in ("specialist", "flow", "plan") and not self.ref:
             raise ValueError(
                 f"Replenish with kind='{self.kind}' requires a non-empty 'ref'."
             )

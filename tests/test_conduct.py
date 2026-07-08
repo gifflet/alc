@@ -201,6 +201,51 @@ class TestDispatchEnqueueWritesQueueTasks:
         raw = yaml.safe_load((queue_dir / files[0]).read_text())
         assert "engine" not in raw
 
+    def test_default_isolate_is_true(self, operator_layer: Path) -> None:
+        # The Conductor path (no isolate arg) stays byte-identical: isolate True.
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[PlannedUnit(kind="flow", name="ship", task="x")])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        raw = yaml.safe_load((queue_dir / files[0]).read_text())
+        assert QueueTask.model_validate(raw).isolate is True
+
+    def test_isolate_false_written_to_each_file(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[
+            PlannedUnit(kind="flow", name="ship", task="alpha"),
+            PlannedUnit(kind="flow", name="ship", task="beta"),
+        ])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer, isolate=False)
+
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        for filename in files:
+            raw = yaml.safe_load((queue_dir / filename).read_text())
+            assert QueueTask.model_validate(raw).isolate is False
+
+    def test_filenames_sort_in_plan_order(self, operator_layer: Path) -> None:
+        # Drain order (process_queue sorts *.yaml by name) must follow plan order,
+        # so the written filenames must sort item 0 before item 1 before item 2.
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[
+            PlannedUnit(kind="flow", name="ship", task="first"),
+            PlannedUnit(kind="flow", name="ship", task="second"),
+            PlannedUnit(kind="flow", name="ship", task="third"),
+        ])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        sorted_names = sorted(f.name for f in queue_dir.glob("*.yaml"))
+        tasks = [
+            yaml.safe_load((queue_dir / name).read_text())["task"]
+            for name in sorted_names
+        ]
+        assert tasks == ["first", "second", "third"]
+
 
 # ---------------------------------------------------------------------------
 # dispatch_now — uses operator_layer fixture

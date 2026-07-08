@@ -253,7 +253,7 @@ def validate_loop(
     violations: list[Violation] = []
 
     replenish = loop_def.replenish
-    if replenish is not None and replenish.kind == "specialist":
+    if replenish is not None and replenish.kind in ("specialist", "plan"):
         specialists_dir = operator_layer.parent / manifest.specialists_dir
         ref = replenish.ref
         if not ref or not (specialists_dir / f"{ref}.yaml").exists():

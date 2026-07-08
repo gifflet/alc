@@ -210,6 +210,8 @@ def run_replenish(
 
     - specialist: load the Specialist, run it (its Act may self-enqueue work).
     - conduct: plan the goal and enqueue the resulting units.
+    - plan: run a planner Specialist, commit its roadmap change, then reuse the
+      Conductor's parse + enqueue on the structured plan it returns.
 
     The budget_delta carries the engine calls + Usage of the replenish itself so
     the cycle can charge them against the budget.
@@ -230,6 +232,12 @@ def run_replenish(
     elif replenish.kind == "flow":
         print(
             f"▶ replenish — flow:{replenish.ref}",
+            file=sys.stderr,
+            flush=True,
+        )
+    elif replenish.kind == "plan":
+        print(
+            f"▶ replenish — plan:{replenish.ref}",
             file=sys.stderr,
             flush=True,
         )
@@ -261,6 +269,50 @@ def run_replenish(
             manifest=manifest, operator_layer=operator_layer
         ).run(flow, task=replenish.task, engine_override=engine_override, workdir=None)
         _flow_usage(flow_report, delta)
+    elif replenish.kind == "plan":
+        from alc.commit import commit_workdir
+        from alc.conduct import dispatch_enqueue, parse_plan
+        from alc.intake import load_all_flows, load_all_specialists
+        from alc.specialist import run_specialist
+
+        specialists_dir = operator_layer.parent / manifest.specialists_dir
+        planner = load_specialist(specialists_dir, replenish.ref)
+        report = run_specialist(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            specialist=planner,
+            task=replenish.task,
+            engine_override=engine_override,
+            workdir=None,
+        )
+        _report_usage(report.act, delta)
+        # Commit the planner's roadmap change so the tree is clean for the
+        # demand-flows' clean-tree guard (this replaces the old plan-flow commit).
+        commit_workdir(operator_layer.parent, "chore(roadmap): plan next version")
+        # Reuse the Conductor: the planner only DECIDES (returns a structured plan);
+        # ALC enqueues deterministically. A malformed plan or an unknown flow/specialist
+        # name raises ValueError -> clean no-op (never a corrupt queue).
+        available_flows = {f.name for f in load_all_flows(manifest, operator_layer)}
+        available_specialists = {
+            s.name for s in load_all_specialists(manifest, operator_layer)
+        }
+        try:
+            plan = parse_plan(
+                report.act.output_text, available_flows, available_specialists
+            )
+            dispatch_enqueue(
+                plan,
+                manifest,
+                operator_layer,
+                engine_override=engine_override,
+                isolate=False,
+            )
+        except ValueError as exc:
+            print(
+                f"▶ replenish — plan not enqueued (invalid plan): {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
     else:  # conduct
         from alc.conduct import conduct
 
