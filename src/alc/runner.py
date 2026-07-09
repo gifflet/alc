@@ -83,6 +83,7 @@ def execute_mandate(
     directive: str,
     engine_override: str | None = None,
     workdir: Path | None = None,
+    operator_layer: Path | None = None,
 ) -> RunReport:
     """Resolve the engine, build the EngineRequest, and run the Assurance Loop.
 
@@ -97,6 +98,9 @@ def execute_mandate(
         workdir: Directory to run checks in. Defaults to Path.cwd().
             NOTE: Per-stage worktree isolation (one worktree per Flow stage) is deferred
             to the Detached maturity stage. All stages share cwd for the MVP.
+        operator_layer: Path to the ``.alc/`` directory. When set, the ``repair``
+            prompt is resolved through the override registry (so an operator override
+            replaces the built-in). None keeps the embedded default (backward compat).
 
     Returns:
         RunReport with blueprint=blueprint.name and full Scorecard.
@@ -131,6 +135,11 @@ def execute_mandate(
     loop_kwargs: dict = {}
     if blueprint.max_repairs is not None:
         loop_kwargs["max_repairs"] = blueprint.max_repairs
+    if operator_layer is not None:
+        # Resolve the reserved `repair` prompt through the override registry.
+        from alc.prompts import resolve_prompt
+
+        loop_kwargs["repair_template"] = resolve_prompt("repair", operator_layer, manifest)
     loop = AssuranceLoop(engine=engine, verifier=verifier, **loop_kwargs)
     report = loop.run(request=request, checks=resolve_checks(manifest, blueprint))
 
@@ -200,10 +209,22 @@ class MandateRunner:
                 "Policy Gate blocked this run:\n" + "\n".join(f"  - {m}" for m in error_msgs)
             )
 
-        # Compose the Single-Mandate directive.
-        directive = self._compose_directive(blueprint, task, extra_context=extra_context)
+        # Compose the Single-Mandate directive, then expand any {{prompt:<name>}}
+        # includes (compose stays pure; expansion happens here where we have the
+        # operator_layer). A workflow with no include token is returned unchanged.
+        from alc.prompts import expand_includes
 
-        return execute_mandate(self._manifest, blueprint, directive, engine_override, workdir)
+        directive = self._compose_directive(blueprint, task, extra_context=extra_context)
+        directive = expand_includes(directive, self._operator_layer, self._manifest)
+
+        return execute_mandate(
+            self._manifest,
+            blueprint,
+            directive,
+            engine_override,
+            workdir,
+            self._operator_layer,
+        )
 
     def _compose_directive(
         self,

@@ -155,12 +155,13 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
     from alc.intake import load_all_blueprints, load_manifest
-    from alc.policy import has_errors, lint
+    from alc.policy import has_errors, lint, validate_prompts
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
     blueprints = load_all_blueprints(manifest, operator_layer)
     violations = lint(manifest, blueprints)
+    violations += validate_prompts(manifest, operator_layer, blueprints)
 
     if not violations:
         print("No violations found. Operator Layer is conformant.")
@@ -556,6 +557,43 @@ def cmd_primer(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prompts(args: argparse.Namespace) -> int:
+    """Run `alc prompts <action>`: list or eject keyed prompt overrides."""
+    from alc.intake import load_manifest
+    from alc.prompts import eject_prompt, list_prompts
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    if args.action == "list":
+        entries = list_prompts(operator_layer, manifest)
+        reserved = [e for e in entries if e.kind == "reserved"]
+        free = [e for e in entries if e.kind == "free"]
+        print("Reserved prompts:")
+        for e in reserved:
+            print(f"  {e.name}: {e.source}")
+        print("Free prompts:")
+        if free:
+            for e in free:
+                print(f"  {e.name}")
+        else:
+            print("  (none)")
+        return 0
+
+    # action == "eject"
+    try:
+        path = eject_prompt(args.name, operator_layer, manifest, force=args.force)
+    except KeyError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+    except FileExistsError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    print(path)
+    return 0
+
+
 def cmd_specialist(args: argparse.Namespace) -> int:
     """Run `alc specialist <name> "<task>" [--engine NAME]`."""
     from alc.intake import load_manifest, load_specialist
@@ -921,6 +959,29 @@ def main() -> None:
         help="Overwrite an existing Primer file.",
     )
 
+    # alc prompts <action> [name] [--force]
+    prompts_parser = subparsers.add_parser(
+        "prompts",
+        help="Manage keyed prompt overrides (.alc/prompts/) — list or eject.",
+    )
+    prompts_parser.add_argument(
+        "action",
+        choices=["list", "eject"],
+        help="'list' the reserved/free prompts, or 'eject' a reserved default to a file.",
+    )
+    prompts_parser.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="Reserved prompt name to eject (required for 'eject').",
+    )
+    prompts_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite an existing prompt override file when ejecting.",
+    )
+
     # alc flow <flow_name> "<task>" [--engine NAME] [--isolate] [--primer NAME]
     #           [--bundle] [--from-bundle REF]
     flow_parser = subparsers.add_parser(
@@ -993,6 +1054,10 @@ def main() -> None:
         sys.exit(cmd_specialist(args))
     elif args.command == "primer":
         sys.exit(cmd_primer(args))
+    elif args.command == "prompts":
+        if args.action == "eject" and not args.name:
+            parser.error("prompts eject requires a prompt NAME")
+        sys.exit(cmd_prompts(args))
     else:
         parser.print_help()
         sys.exit(1)

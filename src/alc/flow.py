@@ -20,6 +20,7 @@ from alc.models import (
     Specialist,
 )
 from alc.policy import has_errors, lint, lint_flow
+from alc.prompts import expand_includes
 from alc.runner import PolicyViolationError, execute_mandate
 from alc.specialist import run_specialist
 from alc.verifier import Verifier
@@ -285,6 +286,12 @@ class FlowRunner:
                     upstream_outputs=upstream_outputs,
                     extra_context=extra_context,
                 )
+                # Expand any {{prompt:<name>}} includes (compose stays pure; the
+                # expansion happens here where we have the operator_layer). A
+                # workflow with no include token is returned unchanged.
+                directive = expand_includes(
+                    directive, self._operator_layer, self._manifest
+                )
 
                 report = execute_mandate(
                     manifest=self._manifest,
@@ -292,6 +299,7 @@ class FlowRunner:
                     directive=directive,
                     engine_override=engine_override,
                     workdir=workdir,
+                    operator_layer=self._operator_layer,
                 )
 
             stage_reports.append(report)

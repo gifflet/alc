@@ -15,6 +15,7 @@ from alc.engine import Engine, EngineRequest
 from alc.intake import load_blueprint
 from alc.models import Blueprint, Manifest, Specialist, SpecialistReport
 from alc.policy import has_errors, lint
+from alc.prompts import _LEARN_DIRECTIVE_TEMPLATE, expand_includes, resolve_prompt
 from alc.runner import PolicyViolationError, execute_mandate
 
 # ---------------------------------------------------------------------------
@@ -99,29 +100,6 @@ def compose_act_directive(
 # Learn
 # ---------------------------------------------------------------------------
 
-_LEARN_DIRECTIVE_TEMPLATE = """\
-You maintain a Knowledge File: a concise, durable working model of one area of a
-codebase (key files, patterns, gotchas). It is not a transcript or a changelog.
-
-Area: {area}
-
-Current Knowledge File (between the <<<BEGIN>>> and <<<END>>> markers):
-<<<BEGIN>>>
-{current_knowledge}
-<<<END>>>
-
-A task was just completed in this area. Use it only to decide what, if anything,
-is worth recording durably:
-- Task: {task}
-- What the agent did: {act_output}
-
-Produce the updated Knowledge File. If nothing durable changed, reproduce the
-current one unchanged. Keep it concise.
-
-Respond with ONLY the Knowledge File content itself — no preamble, no commentary,
-no code fences, and do NOT copy any of the headings or markers from this prompt.
-"""
-
 
 def learn(
     engine: Engine,
@@ -131,6 +109,7 @@ def learn(
     task: str,
     act_output: str,
     workdir: Path | None = None,
+    template: str = _LEARN_DIRECTIVE_TEMPLATE,
 ) -> str:
     """Ask the engine to update the Knowledge File and return the new text.
 
@@ -148,12 +127,14 @@ def learn(
         workdir: Directory the engine runs in. Defaults to Path.cwd() (None =
             unchanged). Pass an IsolatedWorktree path to keep the Learn turn
             confined to this unit's branch.
+        template: The Learn directive template. Defaults to the embedded ``learn``
+            prompt; ``run_specialist`` passes the resolved override when present.
 
     Returns:
         Updated Knowledge File text, or the original ``knowledge`` if the engine
         returns blank output.
     """
-    directive = _LEARN_DIRECTIVE_TEMPLATE.format(
+    directive = template.format(
         area=area,
         current_knowledge=knowledge if knowledge else "(empty — first run)",
         task=task,
@@ -234,9 +215,13 @@ def run_specialist(
             + "\n".join(f"  - {m}" for m in error_msgs)
         )
 
-    # Act: compose the directive and run the Single Mandate.
+    # Act: compose the directive, expand any {{prompt:<name>}} includes (keeping
+    # compose_act_directive pure), and run the Single Mandate.
     directive = compose_act_directive(blueprint, task, knowledge, extra_context)
-    act = execute_mandate(manifest, blueprint, directive, engine_override, workdir)
+    directive = expand_includes(directive, operator_layer, manifest)
+    act = execute_mandate(
+        manifest, blueprint, directive, engine_override, workdir, operator_layer
+    )
 
     # Learn: only when Act succeeded.
     knowledge_updated = False
@@ -245,6 +230,7 @@ def run_specialist(
         engine = resolve_engine(engine_name, manifest.engines)
         model: str | None = manifest.compute_tiers.get("standard", {}).get(engine_name)
 
+        learn_template = resolve_prompt("learn", operator_layer, manifest)
         new_knowledge = learn(
             engine=engine,
             model=model,
@@ -253,6 +239,7 @@ def run_specialist(
             task=task,
             act_output=act.output_text,
             workdir=workdir,
+            template=learn_template,
         )
 
         if new_knowledge != knowledge:

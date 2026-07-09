@@ -29,6 +29,11 @@ from alc.models import (
     Manifest,
     PlannedUnit,
 )
+from alc.prompts import (
+    _CONDUCTOR_DIRECTIVE_TEMPLATE,
+    _CORRECTIVE_SUFFIX,
+    resolve_prompt,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -159,37 +164,6 @@ def parse_plan(
 # Planning turn
 # ---------------------------------------------------------------------------
 
-_CONDUCTOR_DIRECTIVE_TEMPLATE = """\
-# ALC Conductor — Single Mandate
-
-You are the ALC Conductor. Your mandate is to decompose the operator's goal into
-independent units of work, assigning each to the best-matching target drawn
-exclusively from the Catalog below. Prefer a Specialist for area-scoped work; use
-a Flow for multi-stage pipelines.
-
-## Goal
-
-{goal}
-
-## Catalog
-
-{catalog_text}
-
-## Instructions
-
-Break the goal into independent parts. Output ONLY a JSON array — no prose, no
-markdown fences, no explanation. Each element must be an object with exactly
-three keys:
-  "kind": either "flow" or "specialist"
-  "name": one of the names listed in the Catalog (exact match, case-sensitive)
-  "task": a concise free-text task description for that unit
-
-Example output:
-[{{"kind": "flow", "name": "ship", "task": "implement the feature"}}]
-"""
-
-_CORRECTIVE_SUFFIX = "\n\nYour previous output was invalid: {err}. Output ONLY the JSON array."
-
 
 def plan_flows(
     engine: Engine,
@@ -199,6 +173,8 @@ def plan_flows(
     available_flows: set[str],
     available_specialists: set[str] | None = None,
     max_retries: int = 2,
+    directive_template: str = _CONDUCTOR_DIRECTIVE_TEMPLATE,
+    corrective_template: str = _CORRECTIVE_SUFFIX,
 ) -> ConductorPlan:
     """Ask the engine to produce a ConductorPlan for the given goal.
 
@@ -214,6 +190,12 @@ def plan_flows(
         available_flows: Set of valid flow names for validation.
         available_specialists: Set of valid specialist names for validation.
         max_retries: Number of corrective retries after an initial parse failure.
+        directive_template: The Conductor directive template. Defaults to the
+            embedded ``conductor`` prompt; ``conduct()`` passes the resolved
+            override (if any) so an operator can replace it.
+        corrective_template: The corrective-retry suffix template. Defaults to the
+            embedded ``corrective`` prompt; ``conduct()`` passes the resolved
+            override when present.
 
     Returns:
         Validated ConductorPlan.
@@ -222,7 +204,7 @@ def plan_flows(
         ValueError: If all attempts (1 + max_retries) are exhausted without a
                     valid plan.
     """
-    directive = _CONDUCTOR_DIRECTIVE_TEMPLATE.format(
+    directive = directive_template.format(
         goal=goal,
         catalog_text=catalog_text,
     )
@@ -230,7 +212,7 @@ def plan_flows(
     last_err: ValueError | None = None
     for attempt in range(1 + max_retries):
         if attempt > 0 and last_err is not None:
-            directive += _CORRECTIVE_SUFFIX.format(err=str(last_err))
+            directive += corrective_template.format(err=str(last_err))
 
         request = EngineRequest(
             directive=directive,
@@ -425,8 +407,20 @@ def conduct(
     available_flows: set[str] = {f.name for f in flows}
     available_specialists: set[str] = {s.name for s in specialists}
 
+    # Resolve the reserved planning prompts through the override registry so an
+    # operator override transparently replaces the built-in defaults.
+    directive_template = resolve_prompt("conductor", operator_layer, manifest)
+    corrective_template = resolve_prompt("corrective", operator_layer, manifest)
+
     plan = plan_flows(
-        engine, model, goal, catalog_text, available_flows, available_specialists
+        engine,
+        model,
+        goal,
+        catalog_text,
+        available_flows,
+        available_specialists,
+        directive_template=directive_template,
+        corrective_template=corrective_template,
     )
 
     if enqueue:

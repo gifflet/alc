@@ -7,6 +7,7 @@ import sys
 
 from alc.engine import Engine, EngineRequest, Usage
 from alc.models import AttemptRecord, Blueprint, Check, RunReport, Scorecard
+from alc.prompts import _REPAIR_TEMPLATE
 from alc.verifier import Verifier
 
 
@@ -48,12 +49,22 @@ class AssuranceLoop:
         verifier: A Verifier instance for running checks.
         max_repairs: Maximum number of repair attempts after the initial act.
                      Total engine turns = 1 (initial) + max_repairs.
+        repair_template: The repair addendum template with a single ``{failures}``
+                     placeholder. Defaults to the embedded ``repair`` prompt;
+                     execute_mandate passes the resolved override when present.
     """
 
-    def __init__(self, engine: Engine, verifier: Verifier, max_repairs: int = 3) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        verifier: Verifier,
+        max_repairs: int = 3,
+        repair_template: str = _REPAIR_TEMPLATE,
+    ) -> None:
         self._engine = engine
         self._verifier = verifier
         self._max_repairs = max_repairs
+        self._repair_template = repair_template
 
     def run(self, request: EngineRequest, checks: list[Check]) -> RunReport:
         """Execute the loop and return a RunReport with a Scorecard.
@@ -186,13 +197,14 @@ class AssuranceLoop:
             usage=usage_total,
         )
 
-    @staticmethod
-    def _build_failure_section(failed_checks) -> str:
-        """Build the repair addendum appended to the directive on failure."""
-        lines = [
-            "\n\n---\n## Repair Required\n",
-            "The following checks FAILED. Fix all issues and try again.\n",
-        ]
-        for cr in failed_checks:
-            lines.append(f"\n### Check: {cr.name}\n```\n{cr.output.strip()}\n```\n")
-        return "".join(lines)
+    def _build_failure_section(self, failed_checks) -> str:
+        """Build the repair addendum appended to the directive on failure.
+
+        ALC pre-renders the per-check ```-fenced blocks into ``{failures}`` and
+        the ``repair`` template controls the surrounding framing.
+        """
+        failures = "".join(
+            f"\n### Check: {cr.name}\n```\n{cr.output.strip()}\n```\n"
+            for cr in failed_checks
+        )
+        return self._repair_template.format(failures=failures)

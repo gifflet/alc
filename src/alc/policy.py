@@ -284,3 +284,90 @@ def validate_loop(
             )
 
     return violations
+
+
+def validate_prompts(
+    manifest: Manifest,
+    operator_layer: Path,
+    blueprints: list[Blueprint],
+) -> list[Violation]:
+    """Run Policy Gate rules for the keyed prompt-override store (prompts_dir).
+
+    Rules:
+    1. Every override file whose stem is a RESERVED name must (a) contain all of that
+       prompt's required placeholders and (b) render via ``.format()`` without a stray
+       unescaped brace                                   (error) — safe by construction.
+    2. Every ``{{prompt:X}}`` reference in a Blueprint workflow must resolve to an
+       existing prompt (reserved default or a free file)  (error).
+
+    Args:
+        manifest: The loaded Manifest (provides prompts_dir).
+        operator_layer: Path to the ``.alc/`` directory.
+        blueprints: Every Blueprint in the Operator Layer (their workflows are scanned).
+            Flow definitions carry no free-text workflow — their stages reference
+            Blueprints, already covered — so only Blueprint workflows hold include tokens.
+
+    Returns:
+        List of Violations (may be empty).
+    """
+    from alc.prompts import (
+        _DEFAULT_PROMPTS,
+        include_refs,
+        override_format_error,
+        resolve_prompt,
+        validate_prompt_override,
+    )
+
+    violations: list[Violation] = []
+
+    # Rule 1: reserved override files must keep their required placeholders AND render.
+    prompts_dir = operator_layer.parent / manifest.prompts_dir
+    if prompts_dir.exists():
+        for md_file in sorted(prompts_dir.glob("*.md")):
+            name = md_file.stem
+            if name not in _DEFAULT_PROMPTS:
+                continue
+            text = md_file.read_text()
+            missing = validate_prompt_override(name, text)
+            if missing:
+                violations.append(
+                    Violation(
+                        rule="prompt-override-placeholders",
+                        severity="error",
+                        message=(
+                            f"Prompt override '{name}' is missing required "
+                            f"placeholder(s): {missing}."
+                        ),
+                    )
+                )
+            fmt_error = override_format_error(name, text)
+            if fmt_error:
+                violations.append(
+                    Violation(
+                        rule="prompt-override-formattable",
+                        severity="error",
+                        message=(
+                            f"Prompt override '{name}' cannot be rendered: {fmt_error}"
+                        ),
+                    )
+                )
+
+    # Rule 2: every {{prompt:X}} reference in a Blueprint workflow must resolve.
+    for bp in blueprints:
+        for ref in include_refs(bp.workflow):
+            try:
+                resolve_prompt(ref, operator_layer, manifest)
+            except KeyError:
+                violations.append(
+                    Violation(
+                        rule="prompt-include-resolves",
+                        severity="error",
+                        message=(
+                            f"Blueprint '{bp.name}' references prompt '{{{{prompt:{ref}}}}}' "
+                            f"which does not resolve to a reserved default or a "
+                            f"prompt file in {prompts_dir}."
+                        ),
+                    )
+                )
+
+    return violations

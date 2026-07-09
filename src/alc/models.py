@@ -67,6 +67,7 @@ class Manifest(BaseModel):
     queue_dir: str = ".alc/queue"
     specialists_dir: str = ".alc/specialists"
     primers_dir: str = ".alc/primers"
+    prompts_dir: str = ".alc/prompts"
     bundles_dir: str = ".alc/bundles"
     loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
 

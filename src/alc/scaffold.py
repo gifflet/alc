@@ -257,6 +257,9 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     # Create directory structure.
     (alc_dir / "blueprints").mkdir(parents=True, exist_ok=True)
     (alc_dir / "flows").mkdir(parents=True, exist_ok=True)
+    # Empty keyed prompt-override store — reserved prompts resolve to their
+    # embedded defaults until an operator ejects/authors a file here.
+    (alc_dir / "prompts").mkdir(parents=True, exist_ok=True)
 
     # Map each relative path to its content.
     files: dict[str, str] = {
