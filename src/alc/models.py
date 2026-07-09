@@ -52,6 +52,7 @@ class Blueprint(BaseModel):
     workflow: str  # markdown body parsed from the Blueprint file
     max_repairs: int | None = None  # override AssuranceLoop repair budget; None -> default (3)
     permission_mode: str | None = None  # opt-in engine permission mode; None -> engine default
+    timeout_s: int | None = None  # per-turn engine kill timeout; None -> manifest.default_timeout_s
 
 
 class Manifest(BaseModel):
@@ -62,6 +63,11 @@ class Manifest(BaseModel):
     compute_tiers: dict[str, dict[str, str]]  # tier -> {engine_name: model_id}
     engines: dict[str, dict]                  # engine_name -> {type, ...}
     check_sets: dict[str, list[Check]] = {}   # reusable named check sets a Blueprint may reference
+    # Behavioral knobs — defaults equal the former hardcoded values (unset = identical).
+    default_timeout_s: int = 1800   # per-turn engine kill timeout when a Blueprint sets none
+    plan_retries: int = 2           # corrective retries for a malformed Conductor/plan output
+    fanout_concurrency: int = 4     # parallel workers for `alc conduct --parallel`
+    plan_tier: str = "standard"     # compute tier for Conductor planning turns
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"
@@ -150,6 +156,9 @@ class CommitSpec(BaseModel):
 
     enabled: bool = True
     message: str = "chore(cycle): {name}"
+    # Extra path prefixes to keep out of the terminal commit / revert. ``.alc/`` is
+    # ALWAYS protected regardless — these only ADD to it (effective = (".alc/",) + these).
+    exclude: list[str] = []
 
 
 class FlowDefinition(BaseModel):

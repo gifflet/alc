@@ -252,7 +252,11 @@ def run_specialist(
     if act.success:
         engine_name = engine_override or manifest.default_engine
         engine = resolve_engine(engine_name, manifest.engines)
-        model: str | None = manifest.compute_tiers.get("standard", {}).get(engine_name)
+        # Learn runs at the Specialist's own Blueprint tier (same as its Act), not a
+        # hardcoded "standard" — so a deep-tier Specialist self-tunes at its tier.
+        model: str | None = manifest.compute_tiers.get(
+            blueprint.compute_tier, {}
+        ).get(engine_name)
 
         learn_template = resolve_prompt("learn", operator_layer, manifest)
         new_knowledge = learn(

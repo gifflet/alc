@@ -956,3 +956,94 @@ class TestFlowRevertOnFailure:
         assert report.success is False
         # Tree NOT reverted — backward compat.
         assert (repo / "feature.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# Knob D — CommitSpec.exclude adds paths; .alc/ stays a protected invariant.
+# ---------------------------------------------------------------------------
+
+
+class TestCommitExcludeKnob:
+    def _two_file_engine(self):
+        from alc.engine import Capabilities, EngineResult
+
+        class _TwoFileEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                (request.workdir / "keep.txt").write_text("keep\n")
+                (request.workdir / "docs").mkdir(exist_ok=True)
+                (request.workdir / "docs" / "note.txt").write_text("skip\n")
+                (request.workdir / ".alc" / "scratch.txt").write_text("state\n")
+                return EngineResult(ok=True, output_text="[mock] wrote files")
+
+        return _TwoFileEngine()
+
+    def test_operator_exclude_kept_out_while_alc_protected(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        repo = _build_repo(tmp_path)
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: self._two_file_engine()
+        )
+        flow = FlowDefinition(
+            name="demand",
+            stages=[FlowStage(name="do", blueprint="chore")],
+            commit=CommitSpec(
+                enabled=True, message="feat(auto): {task}", exclude=["docs/"]
+            ),
+        )
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=flow, task="ship", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is True
+        assert report.commit_sha is not None
+        tree = subprocess.run(
+            ["git", "-C", str(repo), "show", "--name-only", "--format=", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "keep.txt" in tree               # committed
+        assert "docs/note.txt" not in tree      # operator-excluded
+        assert ".alc/scratch.txt" not in tree   # ALWAYS protected
+
+    def test_unset_exclude_only_protects_alc(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        # With exclude unset ([]) behavior is identical to today: everything but
+        # .alc/ is committed (docs/note.txt lands, .alc/scratch.txt does not).
+        repo = _build_repo(tmp_path)
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: self._two_file_engine()
+        )
+        flow = FlowDefinition(
+            name="demand",
+            stages=[FlowStage(name="do", blueprint="chore")],
+            commit=CommitSpec(enabled=True, message="feat(auto): {task}"),
+        )
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=flow, task="ship", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is True
+        tree = subprocess.run(
+            ["git", "-C", str(repo), "show", "--name-only", "--format=", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "keep.txt" in tree
+        assert "docs/note.txt" in tree          # NOT excluded now
+        assert ".alc/scratch.txt" not in tree   # still protected

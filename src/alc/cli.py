@@ -388,6 +388,8 @@ def cmd_conduct(args: argparse.Namespace) -> int:
             engine_override=args.engine,
             enqueue=args.enqueue,
             parallel=args.parallel,
+            concurrency=args.concurrency,
+            tier=args.tier,
         )
     except ValueError as exc:
         print(f"[ERROR] Conductor could not produce a valid plan: {exc}", file=sys.stderr)
@@ -879,6 +881,17 @@ def main() -> None:
             "Dispatch independent plan units concurrently, each in an isolated "
             "git worktree (requires a git repo)."
         ),
+    )
+    conduct_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Parallel fan-out width for --parallel (default: manifest.fanout_concurrency).",
+    )
+    conduct_parser.add_argument(
+        "--tier",
+        default=None,
+        help="Compute tier for the planning turn (default: manifest.plan_tier).",
     )
 
     # alc cycle <name> [--engine NAME] [--concurrency N] [--status] [--reset]

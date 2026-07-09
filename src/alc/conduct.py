@@ -453,6 +453,8 @@ def conduct(
     engine_override: str | None = None,
     enqueue: bool = False,
     parallel: bool = False,
+    concurrency: int | None = None,
+    tier: str | None = None,
 ) -> ConductReport:
     """Plan and dispatch a goal via the Conductor.
 
@@ -473,17 +475,20 @@ def conduct(
             If None, uses manifest.default_engine.
         enqueue: When True, write queue task files instead of running now.
         parallel: When True, dispatch independent units concurrently (requires git).
+        concurrency: Parallel fan-out width; None -> manifest.fanout_concurrency.
+        tier: Compute tier for the planning turn; None -> manifest.plan_tier.
 
     Returns:
         ConductReport capturing goal, mode, plan, and outcomes.
     """
     from alc.engines.registry import resolve_engine
 
-    # Resolve engine and model for the planning turn.
+    # Resolve engine and model for the planning turn (a configurable tier).
     engine_name = engine_override or manifest.default_engine
     engine = resolve_engine(engine_name, manifest.engines)
 
-    model: str | None = manifest.compute_tiers.get("standard", {}).get(engine_name)
+    plan_tier = tier or manifest.plan_tier
+    model: str | None = manifest.compute_tiers.get(plan_tier, {}).get(engine_name)
 
     # Build the catalog from all available Flows and Specialists.
     catalog_text, available_flows, available_specialists = build_catalog(
@@ -502,6 +507,7 @@ def conduct(
         catalog_text,
         available_flows,
         available_specialists,
+        max_retries=manifest.plan_retries,
         directive_template=directive_template,
         corrective_template=corrective_template,
     )
@@ -521,8 +527,15 @@ def conduct(
                 {"kind": item.kind, "name": item.name, "task": item.task}
                 for item in plan.items
             ]
+            max_workers = (
+                concurrency if concurrency is not None else manifest.fanout_concurrency
+            )
             fanout = run_fanout(
-                manifest, operator_layer, units, engine_override=engine_override
+                manifest,
+                operator_layer,
+                units,
+                engine_override=engine_override,
+                max_workers=max_workers,
             )
             return ConductReport(
                 goal=goal,

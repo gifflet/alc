@@ -199,6 +199,30 @@ class TestRunSpecialist:
         assert report.specialist == "db"
         assert report.act.blueprint == "chore"
 
+    def test_learn_uses_specialist_blueprint_tier(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        # Knob E: Learn runs at the Specialist's own Blueprint tier, not a hardcoded
+        # "standard". The fixture's `plan` blueprint is deep-tier (checks pass), so
+        # its Learn turn must resolve the deep model.
+        manifest = load_manifest(operator_layer)
+        specialist = self._write_specialist(operator_layer, blueprint="plan")
+        captured: dict = {}
+
+        def fake_learn(engine, model, *args, **kwargs):
+            captured["model"] = model
+            return "KNOWLEDGE"
+
+        monkeypatch.setattr("alc.specialist.learn", fake_learn)
+        run_specialist(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            specialist=specialist,
+            task="tune the area",
+            engine_override="mock",
+        )
+        assert captured["model"] == manifest.compute_tiers["deep"]["mock"]
+
     def test_knowledge_not_updated_on_failed_act(self, tmp_path: Path) -> None:
         """When Act fails, Learn must not run and Knowledge File must not be created."""
         # Build an operator layer where the chore blueprint's check always fails.

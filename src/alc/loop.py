@@ -320,7 +320,7 @@ def run_replenish(
                 report.act.output_text,
                 available_flows,
                 available_specialists,
-                max_retries=2,
+                max_retries=manifest.plan_retries,
                 corrective_template=corrective_template,
             )
             dispatch_enqueue(

@@ -29,6 +29,12 @@ engines:
     binary: claude
     # clean_config: true  # skip the host project's .claude/ settings and hooks
 
+# Behavioral knobs — defaults shown; uncomment a line to override:
+# default_timeout_s: 1800   # engine per-turn kill timeout (seconds)
+# plan_retries: 2           # corrective retries when a plan's JSON is malformed
+# fanout_concurrency: 4     # parallel workers for `alc conduct --parallel`
+# plan_tier: standard       # compute tier for Conductor planning turns
+
 blueprints_dir: .alc/blueprints
 flows_dir: .alc/flows
 queue_dir: .alc/queue

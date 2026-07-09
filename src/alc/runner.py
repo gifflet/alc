@@ -118,6 +118,12 @@ def execute_mandate(
     # Resolve effective workdir once so the same value is used for snapshots and the request.
     effective_workdir = workdir or Path.cwd()
 
+    # Per-turn kill timeout: a Blueprint override wins, else the manifest default.
+    timeout_s = (
+        blueprint.timeout_s
+        if blueprint.timeout_s is not None
+        else manifest.default_timeout_s
+    )
     # Build the EngineRequest. permission_mode is an opt-in Blueprint override
     # threaded through to the engine adapter without interpretation here (DIP).
     request = EngineRequest(
@@ -125,6 +131,7 @@ def execute_mandate(
         workdir=effective_workdir,
         model=model,
         permission_mode=blueprint.permission_mode,
+        timeout_s=timeout_s,
     )
 
     # Snapshot the git state before the Assurance Loop.

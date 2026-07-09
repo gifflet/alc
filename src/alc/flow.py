@@ -332,7 +332,9 @@ class FlowRunner:
             and not success
             and len(stage_reports) > 0
         ):
-            if revert_workdir(effective_workdir):
+            # `.alc/` is ALWAYS protected; the operator's commit.exclude only ADDS.
+            exclude = (".alc/", *flow.commit.exclude)
+            if revert_workdir(effective_workdir, exclude=exclude):
                 print(
                     "▶ flow reverted — discarded the failed demand's changes.",
                     file=sys.stderr,
@@ -359,7 +361,10 @@ class FlowRunner:
                     f"falling back to: {message!r}",
                     file=sys.stderr,
                 )
-            commit_sha = commit_workdir(effective_workdir, message)
+            # `.alc/` is ALWAYS protected; the operator's commit.exclude only ADDS.
+            commit_sha = commit_workdir(
+                effective_workdir, message, exclude=(".alc/", *flow.commit.exclude)
+            )
 
         return FlowReport(
             flow=flow.name,
