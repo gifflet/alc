@@ -648,13 +648,14 @@ class TestCliCycle:
         assert out["status"] == "pending"
         assert out["cycle"] == 0
 
-    def test_reset_writes_fresh_state(self, operator_layer: Path, monkeypatch, capsys) -> None:
+    def test_reset_then_runs_one_cycle(self, operator_layer: Path, monkeypatch, capsys) -> None:
         from alc.cli import cmd_cycle
 
         _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        _seed_queue(operator_layer, "t1")
         _chdir_to_project(operator_layer, monkeypatch)
 
-        # Pre-write a stopped state.
+        # Pre-write a stopped state at cycle 9 to prove --reset clears it AND runs.
         spath = state_path(loops_dir(load_manifest(operator_layer), operator_layer), "deliver")
         spath.parent.mkdir(parents=True, exist_ok=True)
         spath.write_text(
@@ -663,14 +664,16 @@ class TestCliCycle:
         )
 
         args = argparse.Namespace(
-            name="deliver", engine=None, concurrency=0, status=False, reset=True
+            name="deliver", engine="mock", concurrency=0, status=False, reset=True
         )
         assert cmd_cycle(args) == 0
-        assert "reset" in capsys.readouterr().out.lower()
+        out = capsys.readouterr().out
+        # It announced the reset AND ran a fresh cycle (not the reset-only no-op).
+        assert "reset" in out.lower()
+        assert "cycle 1:" in out
         reloaded = load_loop_state(spath, "deliver")
-        # --reset must return the state to "pending" (never-run).
-        assert reloaded.status == "pending"
-        assert reloaded.cycle == 0
+        # Started from a fresh state (cycle 0), then ran exactly one cycle.
+        assert reloaded.cycle == 1
 
     def test_stopped_loop_is_no_op(self, operator_layer: Path, monkeypatch, capsys) -> None:
         from alc.cli import cmd_cycle

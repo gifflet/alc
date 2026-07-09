@@ -186,13 +186,21 @@ class TestExpandIncludes:
         text = "plain workflow with no includes"
         assert expand_includes(text, operator_layer, manifest) == text
 
-    def test_single_pass_does_not_recurse(self, operator_layer: Path) -> None:
-        # An include token inside included text is left literal (resolved once).
+    def test_recursive_include_expands_nested(self, operator_layer: Path) -> None:
+        # An include token inside included text is expanded too (recursive).
         manifest = load_manifest(operator_layer)
         _write_prompt(operator_layer, "outer", "OUTER {{prompt:inner}}")
         _write_prompt(operator_layer, "inner", "INNER")
         result = expand_includes("{{prompt:outer}}", operator_layer, manifest)
-        assert result == "OUTER {{prompt:inner}}"
+        assert result == "OUTER INNER"
+
+    def test_cycle_raises_value_error(self, operator_layer: Path) -> None:
+        # A -> B -> A must be detected and named, not loop forever.
+        manifest = load_manifest(operator_layer)
+        _write_prompt(operator_layer, "a", "A {{prompt:b}}")
+        _write_prompt(operator_layer, "b", "B {{prompt:a}}")
+        with pytest.raises(ValueError, match="Cyclic prompt include"):
+            expand_includes("{{prompt:a}}", operator_layer, manifest)
 
 
 # ---------------------------------------------------------------------------

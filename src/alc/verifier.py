@@ -24,6 +24,11 @@ class CheckResult:
 class Verifier:
     """Runs Blueprint checks as subprocesses and collects pass/fail results."""
 
+    def __init__(self, max_output_chars: int = _MAX_OUTPUT_CHARS) -> None:
+        # Cap on a check's combined stdout+stderr fed into the repair context.
+        # Defaults to the former hardcoded value so an unset manifest is identical.
+        self._max_output_chars = max_output_chars
+
     def run(self, checks: list[Check], workdir: Path) -> list[CheckResult]:
         """Execute every check command in workdir and return results.
 
@@ -44,7 +49,7 @@ class Verifier:
                 capture_output=True,
                 text=True,
             )
-            combined = (proc.stdout + proc.stderr)[:_MAX_OUTPUT_CHARS]
+            combined = (proc.stdout + proc.stderr)[:self._max_output_chars]
             results.append(
                 CheckResult(
                     name=check.name,

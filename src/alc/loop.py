@@ -322,6 +322,9 @@ def run_replenish(
                 available_specialists,
                 max_retries=manifest.plan_retries,
                 corrective_template=corrective_template,
+                # Corrective turns are real engine calls — charge them against the
+                # cycle's engine_calls safety cap (and usd/tokens where reported).
+                usage_sink=delta,
             )
             dispatch_enqueue(
                 plan,

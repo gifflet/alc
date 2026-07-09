@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -44,10 +45,13 @@ from alc.prompts import (
 def _slugify(text: str, max_len: int = 40) -> str:
     """Turn a task title into a filesystem-safe slug for a queue filename.
 
-    Lowercases, collapses any run of non-alphanumeric characters to a single
-    hyphen, trims leading/trailing hyphens, and caps the length. Returns ``""``
-    when the text has no usable characters (the caller falls back to the uid).
+    Transliterates accented characters to their ASCII base (so Portuguese words
+    keep their letters instead of losing them), lowercases, collapses any run of
+    non-alphanumeric characters to a single hyphen, trims leading/trailing
+    hyphens, and caps the length. Returns ``""`` when the text has no usable
+    characters (the caller falls back to the uid).
     """
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     if len(slug) > max_len:
         slug = slug[:max_len].rstrip("-")
@@ -274,6 +278,7 @@ def finalize_plan(
     available_specialists: set[str],
     max_retries: int = 2,
     corrective_template: str = _CORRECTIVE_SUFFIX,
+    usage_sink: dict | None = None,
 ) -> ConductorPlan:
     """Parse a planner's first output, self-healing a malformed one via cheap retries.
 
@@ -293,6 +298,11 @@ def finalize_plan(
         corrective_template: The corrective-retry suffix template. Defaults to the
             embedded ``corrective`` prompt; the plan branch passes the resolved
             override when present.
+        usage_sink: Optional running budget delta. When not None, each corrective
+            ``engine.run`` folds its cost into it — ``engine_calls`` incremented per
+            turn, and ``usd``/``tokens`` accumulated from the EngineResult's Usage —
+            the same shape ``loop._report_usage`` uses. Default None leaves it
+            untouched (behavior identical to before).
 
     Returns:
         Validated ConductorPlan.
@@ -311,6 +321,16 @@ def finalize_plan(
         result = engine.run(
             EngineRequest(directive=directive, workdir=Path.cwd(), model=model)
         )
+        # A corrective turn is a real engine call — count it (and its Usage) against
+        # the loop's budget so these turns are not silently uncounted.
+        if usage_sink is not None:
+            usage_sink["engine_calls"] = usage_sink.get("engine_calls", 0) + 1
+            usage = getattr(result, "usage", None)
+            if usage is not None:
+                if usage.cost_usd is not None:
+                    usage_sink["usd"] = usage_sink.get("usd", 0.0) + usage.cost_usd
+                tokens = (usage.input_tokens or 0) + (usage.output_tokens or 0)
+                usage_sink["tokens"] = usage_sink.get("tokens", 0.0) + tokens
         try:
             return parse_plan(
                 result.output_text, available_flows, available_specialists

@@ -68,6 +68,9 @@ class Manifest(BaseModel):
     plan_retries: int = 2           # corrective retries for a malformed Conductor/plan output
     fanout_concurrency: int = 4     # parallel workers for `alc conduct --parallel`
     plan_tier: str = "standard"     # compute tier for Conductor planning turns
+    check_output_chars: int = 4096  # chars captured from a check's output into repair context
+    bundle_output_chars: int = 1500  # chars of output_text kept in a bundle replay summary
+    worktree_commit_message: str = "alc: {branch}"  # exit-commit template ({branch} placeholder)
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"

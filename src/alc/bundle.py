@@ -82,7 +82,7 @@ def write_bundle(bundles_dir: Path, label: str, task: str, report: RunReport | F
     return file_path
 
 
-def summarize_bundle(path: Path) -> str:
+def summarize_bundle(path: Path, max_output_chars: int = _MAX_OUTPUT_CHARS) -> str:
     """Produce a compact plain-text replay summary from a bundle JSONL file.
 
     The summary is intended to be prepended to a new run's directive as a
@@ -90,6 +90,8 @@ def summarize_bundle(path: Path) -> str:
 
     Args:
         path: Path to the bundle JSONL file produced by write_bundle.
+        max_output_chars: Cap on the final output_text kept in the summary.
+            Defaults to the former hardcoded value so an unset manifest is identical.
 
     Returns:
         A concise multi-line string describing the prior run's label, task,
@@ -123,8 +125,8 @@ def summarize_bundle(path: Path) -> str:
     output_text = result.get("output_text", "")
 
     # Truncate output to keep the replay summary compact.
-    truncated = output_text[:_MAX_OUTPUT_CHARS]
-    if len(output_text) > _MAX_OUTPUT_CHARS:
+    truncated = output_text[:max_output_chars]
+    if len(output_text) > max_output_chars:
         truncated += "… [truncated]"
 
     lines = [

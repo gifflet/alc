@@ -54,11 +54,16 @@ class IsolatedWorktree:
         committed: True after exit if changes were staged and committed.
     """
 
-    def __init__(self, repo_root: Path, label: str) -> None:
+    def __init__(
+        self, repo_root: Path, label: str, commit_message: str = "alc: {branch}"
+    ) -> None:
         self._repo_root = repo_root
         self.branch: str = f"alc/{label}-{uuid.uuid4().hex[:8]}"
         self.path: Path = Path(tempfile.mkdtemp(prefix="alc-wt-"))
         self.committed: bool = False
+        # Exit-commit message template with a `{branch}` placeholder. Defaults to
+        # the former hardcoded value so an unset manifest is byte-identical.
+        self._commit_message = commit_message
 
     def __enter__(self) -> Path:
         """Create the worktree and return the directory path.
@@ -119,6 +124,12 @@ class IsolatedWorktree:
                 has_changes = diff.returncode == 1  # returncode 1 => differences exist
 
                 if has_changes:
+                    # Render the template; a bad operator template must not crash
+                    # the exit-commit — fall back to the built-in default.
+                    try:
+                        message = self._commit_message.format(branch=self.branch)
+                    except (KeyError, IndexError, ValueError):
+                        message = f"alc: {self.branch}"
                     subprocess.run(
                         [
                             "git",
@@ -126,7 +137,7 @@ class IsolatedWorktree:
                             str(self.path),
                             "commit",
                             "-m",
-                            f"alc: {self.branch}",
+                            message,
                         ],
                         capture_output=True,
                         check=True,

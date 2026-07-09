@@ -75,7 +75,7 @@ _PLAN_CONTRACT_TEMPLATE = (
     """\
 # ALC Plan Output Contract (required — overrides any conflicting instruction)
 
-Emit each unit of demand as an object of the form
+Return a JSON array; each element is an object of the form
 {{"kind":"flow","name":"<a catalog name, e.g. demand>","task":"<title>\\n\\n<details>"}}.
 The valid target names are exactly those in the Catalog below.
 
@@ -275,13 +275,18 @@ def override_format_error(name: str, text: str) -> str | None:
 
 _INCLUDE_RE = re.compile(r"\{\{prompt:([^}]+)\}\}")
 
+# Maximum include nesting depth before expansion aborts (defence in depth beyond
+# the cycle guard, which already catches self-referential loops).
+_MAX_INCLUDE_DEPTH = 10
+
 
 def expand_includes(text: str, operator_layer: Path, manifest: Manifest) -> str:
-    """Expand every `{{prompt:<name>}}` token in *text* via resolve_prompt.
+    """Recursively expand every `{{prompt:<name>}}` token in *text*.
 
-    A single, non-recursive pass: an include token that appears inside the
-    resolved text of another include is left literal (resolved once). Text with
-    no `{{prompt:}}` token is returned unchanged.
+    A resolved prompt that itself contains `{{prompt:<name>}}` tokens is expanded
+    too, up to ``_MAX_INCLUDE_DEPTH`` levels. A cycle on the current expansion path
+    (e.g. A -> B -> A) raises ``ValueError`` naming the cycle. Text with no
+    `{{prompt:}}` token is returned unchanged and touches no filesystem.
 
     Args:
         text: The composed workflow/directive text.
@@ -289,23 +294,38 @@ def expand_includes(text: str, operator_layer: Path, manifest: Manifest) -> str:
         manifest: The loaded Manifest (provides prompts_dir).
 
     Returns:
-        The text with every include replaced by its resolved prompt.
+        The text with every include (transitively) replaced by its resolved prompt.
 
     Raises:
-        ValueError: If a referenced prompt name does not resolve (so lint/compose
-            fail loudly rather than silently dropping content).
+        ValueError: If a referenced prompt name does not resolve, a cycle is
+            detected, or the nesting depth is exceeded (so lint/compose fail
+            loudly rather than silently dropping content or looping forever).
     """
 
-    def _replace(match: re.Match[str]) -> str:
-        ref = match.group(1).strip()
-        try:
-            return resolve_prompt(ref, operator_layer, manifest)
-        except KeyError as exc:
+    def _expand(current: str, seen: tuple[str, ...], depth: int) -> str:
+        if depth > _MAX_INCLUDE_DEPTH:
             raise ValueError(
-                f"Unresolved prompt include '{{{{prompt:{ref}}}}}': {exc}"
-            ) from exc
+                f"Prompt include nesting exceeded {_MAX_INCLUDE_DEPTH} levels "
+                f"(path: {' -> '.join(seen)})."
+            )
 
-    return _INCLUDE_RE.sub(_replace, text)
+        def _replace(match: re.Match[str]) -> str:
+            ref = match.group(1).strip()
+            if ref in seen:
+                cycle = " -> ".join((*seen, ref))
+                raise ValueError(f"Cyclic prompt include detected: {cycle}.")
+            try:
+                resolved = resolve_prompt(ref, operator_layer, manifest)
+            except KeyError as exc:
+                raise ValueError(
+                    f"Unresolved prompt include '{{{{prompt:{ref}}}}}': {exc}"
+                ) from exc
+            # Recurse so a free prompt that itself references others expands fully.
+            return _expand(resolved, (*seen, ref), depth + 1)
+
+        return _INCLUDE_RE.sub(_replace, current)
+
+    return _expand(text, (), 0)
 
 
 def include_refs(text: str) -> list[str]:

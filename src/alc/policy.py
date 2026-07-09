@@ -299,6 +299,11 @@ def validate_prompts(
        unescaped brace                                   (error) — safe by construction.
     2. Every ``{{prompt:X}}`` reference in a Blueprint workflow must resolve to an
        existing prompt (reserved default or a free file)  (error).
+    3. Every ``{{prompt:X}}`` reference inside any prompt file in prompts_dir
+       (reserved overrides AND free prompts) must resolve  (error) — so a dangling
+       include is caught at lint time whether it lives in a workflow or a prompt.
+       NOTE: a reserved-prompt OVERRIDE is used verbatim at its call site and is NOT
+       itself run through expand_includes; this rule only lints its include refs.
 
     Args:
         manifest: The loaded Manifest (provides prompts_dir).
@@ -320,37 +325,57 @@ def validate_prompts(
 
     violations: list[Violation] = []
 
-    # Rule 1: reserved override files must keep their required placeholders AND render.
+    # Rule 1 + 3: scan every prompt file once. Reserved overrides get the
+    # placeholder/formattable checks; EVERY file's include refs are checked.
     prompts_dir = operator_layer.parent / manifest.prompts_dir
     if prompts_dir.exists():
         for md_file in sorted(prompts_dir.glob("*.md")):
             name = md_file.stem
-            if name not in _DEFAULT_PROMPTS:
-                continue
             text = md_file.read_text()
-            missing = validate_prompt_override(name, text)
-            if missing:
-                violations.append(
-                    Violation(
-                        rule="prompt-override-placeholders",
-                        severity="error",
-                        message=(
-                            f"Prompt override '{name}' is missing required "
-                            f"placeholder(s): {missing}."
-                        ),
+
+            # Rule 1: reserved override files must keep their required
+            # placeholders AND render via .format() without a stray brace.
+            if name in _DEFAULT_PROMPTS:
+                missing = validate_prompt_override(name, text)
+                if missing:
+                    violations.append(
+                        Violation(
+                            rule="prompt-override-placeholders",
+                            severity="error",
+                            message=(
+                                f"Prompt override '{name}' is missing required "
+                                f"placeholder(s): {missing}."
+                            ),
+                        )
                     )
-                )
-            fmt_error = override_format_error(name, text)
-            if fmt_error:
-                violations.append(
-                    Violation(
-                        rule="prompt-override-formattable",
-                        severity="error",
-                        message=(
-                            f"Prompt override '{name}' cannot be rendered: {fmt_error}"
-                        ),
+                fmt_error = override_format_error(name, text)
+                if fmt_error:
+                    violations.append(
+                        Violation(
+                            rule="prompt-override-formattable",
+                            severity="error",
+                            message=(
+                                f"Prompt override '{name}' cannot be rendered: {fmt_error}"
+                            ),
+                        )
                     )
-                )
+
+            # Rule 3: every {{prompt:X}} reference in the file itself must resolve.
+            for ref in include_refs(text):
+                try:
+                    resolve_prompt(ref, operator_layer, manifest)
+                except KeyError:
+                    violations.append(
+                        Violation(
+                            rule="prompt-include-resolves",
+                            severity="error",
+                            message=(
+                                f"Prompt '{name}' references prompt '{{{{prompt:{ref}}}}}' "
+                                f"which does not resolve to a reserved default or a "
+                                f"prompt file in {prompts_dir}."
+                            ),
+                        )
+                    )
 
     # Rule 2: every {{prompt:X}} reference in a Blueprint workflow must resolve.
     for bp in blueprints:

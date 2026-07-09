@@ -50,7 +50,11 @@ def run_unit(
 
     try:
         repo_root = git_toplevel(project_root)
-        wt = IsolatedWorktree(repo_root, label=f"fanout-{name}")
+        wt = IsolatedWorktree(
+            repo_root,
+            label=f"fanout-{name}",
+            commit_message=manifest.worktree_commit_message,
+        )
         # Use the context manager manually so we can inspect wt after __exit__
         # (mirrors cli.py: enter -> run -> __exit__ under try/finally).
         wt_path = wt.__enter__()

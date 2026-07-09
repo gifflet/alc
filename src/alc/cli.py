@@ -216,7 +216,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         if not ref.exists():
             ref = bundles_dir / f"{args.from_bundle}.jsonl"
         try:
-            parts.append("### Prior run (bundle)\n" + summarize_bundle(ref))
+            parts.append(
+                "### Prior run (bundle)\n"
+                + summarize_bundle(ref, max_output_chars=manifest.bundle_output_chars)
+            )
         except (FileNotFoundError, ValueError) as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             return 1
@@ -229,7 +232,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     if use_isolate:
         repo_root = git_toplevel(Path.cwd())
-        wt = IsolatedWorktree(repo_root, label="run")
+        wt = IsolatedWorktree(
+            repo_root, label="run", commit_message=manifest.worktree_commit_message
+        )
         # Use the context manager manually so we can inspect wt after __exit__.
         wt_path = wt.__enter__()
         exc_info = (None, None, None)
@@ -476,10 +481,12 @@ def cmd_cycle(args: argparse.Namespace) -> int:
         return 0
 
     if args.reset:
+        # Reset THEN run: replace the state with a fresh pending one, persist it,
+        # announce the reset, and fall through so this invocation runs one cycle on
+        # the fresh state (which proceeds normally from pending).
         state = LoopState(name=args.name)
         save_loop_state(spath, state)
         print(f"Loop '{args.name}' reset.")
-        return 0
 
     if state.status == "stopped":
         print(
@@ -664,7 +671,10 @@ def cmd_flow(args: argparse.Namespace) -> int:
         if not ref.exists():
             ref = bundles_dir / f"{args.from_bundle}.jsonl"
         try:
-            parts.append("### Prior run (bundle)\n" + summarize_bundle(ref))
+            parts.append(
+                "### Prior run (bundle)\n"
+                + summarize_bundle(ref, max_output_chars=manifest.bundle_output_chars)
+            )
         except (FileNotFoundError, ValueError) as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             return 1
@@ -687,7 +697,9 @@ def cmd_flow(args: argparse.Namespace) -> int:
 
     if use_isolate:
         repo_root = git_toplevel(Path.cwd())
-        wt = IsolatedWorktree(repo_root, label="flow")
+        wt = IsolatedWorktree(
+            repo_root, label="flow", commit_message=manifest.worktree_commit_message
+        )
         wt_path = wt.__enter__()
         exc_info = (None, None, None)
         report = None
@@ -920,7 +932,7 @@ def main() -> None:
         "--reset",
         action="store_true",
         default=False,
-        help="Clear a stopped state and start fresh (does not run a cycle).",
+        help="Reset the loop state, then run one cycle.",
     )
 
     # alc loop <name> [--engine NAME] [--interval S]

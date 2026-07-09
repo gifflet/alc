@@ -137,7 +137,9 @@ def _process_task(
 
         if qt.isolate and is_git_repo(project_root):
             repo_root = git_toplevel(project_root)
-            wt = IsolatedWorktree(repo_root, label="tick")
+            wt = IsolatedWorktree(
+                repo_root, label="tick", commit_message=manifest.worktree_commit_message
+            )
             wt_path = wt.__enter__()
             exc_info = (None, None, None)
             report: FlowReport | None = None
