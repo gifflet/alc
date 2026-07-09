@@ -1164,13 +1164,29 @@ class TestPlanReplenish:
             "stop:\n  max_cycles: 20\n",
         )
 
-    def _fake_planner(self, output_text: str, monkeypatch) -> None:
+    def _fake_planner(self, output_text: str, monkeypatch) -> dict:
         """Patch run_specialist so the planner writes a roadmap file and returns
-        the given output_text as its Act output (the structured plan)."""
+        the given output_text as its Act output (the structured plan).
 
-        def _run(*, manifest, operator_layer, specialist, task, engine_override, workdir):
+        Returns a dict that captures the output_contract the plan branch injected
+        into the Act call (under key "output_contract"), so tests can assert the
+        plan contract reached the planner directive.
+        """
+        captured: dict = {}
+
+        def _run(
+            *,
+            manifest,
+            operator_layer,
+            specialist,
+            task,
+            engine_override,
+            workdir,
+            output_contract=None,
+        ):
             from alc.models import RunReport, Scorecard, SpecialistReport
 
+            captured["output_contract"] = output_contract
             # Simulate the planner touching the roadmap so there is something to commit.
             docs = operator_layer.parent / "docs"
             docs.mkdir(parents=True, exist_ok=True)
@@ -1188,6 +1204,7 @@ class TestPlanReplenish:
             )
 
         monkeypatch.setattr("alc.specialist.run_specialist", _run)
+        return captured
 
     def test_plan_replenish_prints_header(
         self, operator_layer: Path, monkeypatch, capsys
@@ -1311,6 +1328,8 @@ class TestPlanReplenish:
         self._write_demand_flow(operator_layer)
         self._write_plan_replenish_loop(operator_layer)
         # 'nope' is not a flow in the catalog -> parse_plan raises ValueError.
+        # Force the corrective engine to also fail so this stays a clean no-op.
+        self._patch_corrective_engine("still bad", monkeypatch)
         self._fake_planner(
             '[{"kind":"flow","name":"nope","task":"X\\n\\ny"}]', monkeypatch
         )
@@ -1324,6 +1343,113 @@ class TestPlanReplenish:
         assert enqueued == 0
         queue_dir = operator_layer.parent / manifest.queue_dir
         assert not list(queue_dir.glob("*.yaml"))
+
+    def _patch_corrective_engine(self, output_text: str, monkeypatch) -> None:
+        """Patch resolve_engine so finalize_plan's corrective turn returns output_text.
+
+        The plan branch resolves the corrective engine via
+        alc.engines.registry.resolve_engine; a MockEngine with a fixed output lets a
+        test script whether the reformat turn heals (valid JSON) or fails (bad text).
+        """
+        from alc.engines.mock import MockEngine as _MockEngine
+
+        def _resolve(name, engines):
+            return _MockEngine(output=output_text)
+
+        monkeypatch.setattr("alc.engines.registry.resolve_engine", _resolve)
+
+    def test_self_heals_malformed_first_output(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """First planner output is malformed but the corrective turn is valid ->
+        the demands enqueue and the roadmap is committed (self-heal)."""
+        import subprocess
+
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        # The corrective engine turn returns two valid demands.
+        self._patch_corrective_engine(
+            '[{"kind":"flow","name":"demand","task":"A\\n\\nx"},'
+            '{"kind":"flow","name":"demand","task":"B\\n\\ny"}]',
+            monkeypatch,
+        )
+        # The planner's FIRST output is illegal JSON (a bare \' as dogfood hit).
+        self._fake_planner("[{'kind': 'flow'}]", monkeypatch)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 2
+        # The roadmap change was committed under its message (tree clean for demands).
+        subjects = subprocess.run(
+            ["git", "-C", str(operator_layer.parent), "log", "--format=%s"],
+            capture_output=True,
+            text=True,
+        )
+        assert "chore(roadmap): plan next version" in subjects.stdout.splitlines()
+
+    def test_no_op_when_unrecoverable_through_retries(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """Malformed through the first output and every corrective retry -> 0
+        enqueued, no exception escapes (clean no-op)."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        self._patch_corrective_engine("still not json", monkeypatch)
+        self._fake_planner("neither is this", monkeypatch)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 0
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        assert not list(queue_dir.glob("*.yaml"))
+        assert "plan not enqueued" in capsys.readouterr().err
+
+    def test_valid_first_output_injects_contract_no_corrective(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A valid first output enqueues with NO corrective turn, and the planner's
+        Act directive carried the injected plan contract."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        # If a corrective turn ran it would call this engine; make it fail loudly so
+        # a spurious retry would corrupt the (already-valid) plan and fail the test.
+        self._patch_corrective_engine("must-not-be-used", monkeypatch)
+        captured = self._fake_planner(
+            '[{"kind":"flow","name":"demand","task":"A\\n\\nx"}]', monkeypatch
+        )
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 1
+        # The plan contract was injected into the planner's Act directive.
+        contract = captured["output_contract"]
+        assert contract is not None
+        assert "JSON array" in contract
+        assert "demand (flow)" in contract  # the catalog was rendered in
 
 
 class TestPlanReplenishValidation:

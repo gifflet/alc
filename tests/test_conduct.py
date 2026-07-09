@@ -7,7 +7,15 @@ from pathlib import Path
 
 import yaml
 
-from alc.conduct import conduct, dispatch_enqueue, dispatch_now, parse_plan, plan_flows
+from alc.conduct import (
+    build_catalog,
+    conduct,
+    dispatch_enqueue,
+    dispatch_now,
+    finalize_plan,
+    parse_plan,
+    plan_flows,
+)
 from alc.engines.mock import MockEngine
 from alc.intake import load_manifest
 from alc.models import ConductorPlan, PlannedFlow, PlannedUnit, QueueTask
@@ -139,6 +147,128 @@ class TestPlanFlowsHappyPath:
                 catalog_text="- ship: ...",
                 available_flows={"ship"},
                 max_retries=1,
+            )
+
+
+# ---------------------------------------------------------------------------
+# build_catalog — equivalence with conduct()'s former inline logic
+# ---------------------------------------------------------------------------
+
+
+class TestBuildCatalog:
+    def test_returns_catalog_text_and_name_sets(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        catalog_text, flows, specialists = build_catalog(manifest, operator_layer)
+
+        # The demo operator_layer ships a single 'ship' flow, no specialists.
+        assert flows == {"ship"}
+        assert specialists == set()
+        assert catalog_text == (
+            "- ship (flow): Plan a change, then implement it — each stage its "
+            "own mandate. (stages: plan, chore)"
+        )
+
+    def test_equivalence_with_former_inline_logic(self, operator_layer: Path) -> None:
+        # Reproduce the exact inline logic conduct() used before build_catalog and
+        # assert the helper returns the same tuple.
+        from alc.intake import load_all_flows, load_all_specialists
+
+        manifest = load_manifest(operator_layer)
+        flows = load_all_flows(manifest, operator_layer)
+        specialists = load_all_specialists(manifest, operator_layer)
+        lines = [
+            f"- {f.name} (flow): {f.description} "
+            f"(stages: {', '.join(s.blueprint for s in f.stages)})"
+            for f in flows
+        ]
+        lines += [f"- {s.name} (specialist): {s.area}" for s in specialists]
+        expected_text = "\n".join(lines) if lines else "(no targets available)"
+        expected = (
+            expected_text,
+            {f.name for f in flows},
+            {s.name for s in specialists},
+        )
+        assert build_catalog(manifest, operator_layer) == expected
+
+
+# ---------------------------------------------------------------------------
+# finalize_plan — parse + cheap corrective retry
+# ---------------------------------------------------------------------------
+
+
+class TestFinalizePlan:
+    def test_valid_first_output_no_extra_turn(self) -> None:
+        # A parseable first output returns immediately, never touching the engine.
+        class _NeverCalled:
+            name = "mock"
+
+            def capabilities(self):
+                from alc.engine import Capabilities
+
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):  # pragma: no cover - must not run
+                raise AssertionError("engine.run must not be called on valid output")
+
+        plan = finalize_plan(
+            engine=_NeverCalled(),  # type: ignore[arg-type]
+            model=None,
+            first_output='[{"kind":"flow","name":"ship","task":"x"}]',
+            available_flows={"ship"},
+            available_specialists=set(),
+        )
+        assert len(plan.items) == 1
+        assert plan.items[0].name == "ship"
+
+    def test_invalid_then_valid_self_heals(self) -> None:
+        # First output is bad; one corrective engine turn returns valid JSON.
+        call_count = 0
+
+        class _CorrectiveEngine:
+            name = "mock"
+
+            def capabilities(self):
+                from alc.engine import Capabilities
+
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                nonlocal call_count
+                from alc.engine import EngineResult
+
+                call_count += 1
+                return EngineResult(
+                    ok=True, output_text='[{"kind":"flow","name":"ship","task":"x"}]'
+                )
+
+        plan = finalize_plan(
+            engine=_CorrectiveEngine(),  # type: ignore[arg-type]
+            model=None,
+            first_output="not json at all",
+            available_flows={"ship"},
+            available_specialists=set(),
+        )
+        assert call_count == 1  # exactly one corrective turn healed it
+        assert plan.items[0].name == "ship"
+
+    def test_invalid_through_all_retries_raises(self) -> None:
+        import pytest
+
+        engine = MockEngine(output="still not json")
+        with pytest.raises(ValueError, match="could not be parsed"):
+            finalize_plan(
+                engine=engine,
+                model=None,
+                first_output="bad start",
+                available_flows={"ship"},
+                available_specialists=set(),
+                max_retries=2,
             )
 
 

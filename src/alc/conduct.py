@@ -161,6 +161,38 @@ def parse_plan(
 
 
 # ---------------------------------------------------------------------------
+# Catalog
+# ---------------------------------------------------------------------------
+
+
+def build_catalog(
+    manifest: Manifest, operator_layer: Path
+) -> tuple[str, set[str], set[str]]:
+    """Build the Conductor catalog from all available Flows and Specialists.
+
+    Args:
+        manifest: Loaded Manifest.
+        operator_layer: Path to the ``.alc/`` directory.
+
+    Returns:
+        Tuple of (catalog_text, available_flows, available_specialists): the
+        human-readable catalog listing and the two name sets used for validation.
+    """
+    flows = load_all_flows(manifest, operator_layer)
+    specialists = load_all_specialists(manifest, operator_layer)
+    catalog_lines = [
+        f"- {f.name} (flow): {f.description} "
+        f"(stages: {', '.join(s.blueprint for s in f.stages)})"
+        for f in flows
+    ]
+    catalog_lines += [f"- {s.name} (specialist): {s.area}" for s in specialists]
+    catalog_text = "\n".join(catalog_lines) if catalog_lines else "(no targets available)"
+    available_flows: set[str] = {f.name for f in flows}
+    available_specialists: set[str] = {s.name for s in specialists}
+    return catalog_text, available_flows, available_specialists
+
+
+# ---------------------------------------------------------------------------
 # Planning turn
 # ---------------------------------------------------------------------------
 
@@ -228,6 +260,65 @@ def plan_flows(
     # Exhausted all retries.
     raise ValueError(
         f"Conductor could not produce a valid plan after {1 + max_retries} attempt(s). "
+        f"Last error: {last_err}"
+    )
+
+
+def finalize_plan(
+    engine: Engine,
+    model: str | None,
+    first_output: str,
+    available_flows: set[str],
+    available_specialists: set[str],
+    max_retries: int = 2,
+    corrective_template: str = _CORRECTIVE_SUFFIX,
+) -> ConductorPlan:
+    """Parse a planner's first output, self-healing a malformed one via cheap retries.
+
+    Tries to parse ``first_output`` directly. On ``ValueError``, runs up to
+    ``max_retries`` FORMAT-ONLY corrective engine turns — each turn re-feeds the prior
+    bad output plus the corrective instruction and re-parses. A corrective turn is a
+    pure reformat: no checks, knowledge, or roadmap re-run, so it is cheap and does not
+    disturb the already-committed roadmap.
+
+    Args:
+        engine: Injected Engine instance (DIP — no concrete import here).
+        model: Concrete model id resolved from the Compute Tier (may be None).
+        first_output: The planner Specialist's raw Act output.
+        available_flows: Set of valid flow names for validation.
+        available_specialists: Set of valid specialist names for validation.
+        max_retries: Number of corrective retries after the initial parse failure.
+        corrective_template: The corrective-retry suffix template. Defaults to the
+            embedded ``corrective`` prompt; the plan branch passes the resolved
+            override when present.
+
+    Returns:
+        Validated ConductorPlan.
+
+    Raises:
+        ValueError: If the first output and every corrective retry fail to parse.
+    """
+    try:
+        return parse_plan(first_output, available_flows, available_specialists)
+    except ValueError as exc:
+        last_err: ValueError = exc
+
+    prior_output = first_output
+    for _ in range(max_retries):
+        directive = prior_output + corrective_template.format(err=str(last_err))
+        result = engine.run(
+            EngineRequest(directive=directive, workdir=Path.cwd(), model=model)
+        )
+        try:
+            return parse_plan(
+                result.output_text, available_flows, available_specialists
+            )
+        except ValueError as exc:
+            last_err = exc
+            prior_output = result.output_text
+
+    raise ValueError(
+        f"Plan could not be parsed after {1 + max_retries} attempt(s). "
         f"Last error: {last_err}"
     )
 
@@ -395,17 +486,9 @@ def conduct(
     model: str | None = manifest.compute_tiers.get("standard", {}).get(engine_name)
 
     # Build the catalog from all available Flows and Specialists.
-    flows = load_all_flows(manifest, operator_layer)
-    specialists = load_all_specialists(manifest, operator_layer)
-    catalog_lines = [
-        f"- {f.name} (flow): {f.description} "
-        f"(stages: {', '.join(s.blueprint for s in f.stages)})"
-        for f in flows
-    ]
-    catalog_lines += [f"- {s.name} (specialist): {s.area}" for s in specialists]
-    catalog_text = "\n".join(catalog_lines) if catalog_lines else "(no targets available)"
-    available_flows: set[str] = {f.name for f in flows}
-    available_specialists: set[str] = {s.name for s in specialists}
+    catalog_text, available_flows, available_specialists = build_catalog(
+        manifest, operator_layer
+    )
 
     # Resolve the reserved planning prompts through the override registry so an
     # operator override transparently replaces the built-in defaults.

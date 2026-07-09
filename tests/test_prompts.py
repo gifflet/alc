@@ -15,6 +15,7 @@ from alc.prompts import (
     expand_includes,
     list_prompts,
     override_format_error,
+    render_plan_contract,
     resolve_prompt,
     validate_prompt_override,
 )
@@ -90,6 +91,40 @@ class TestReservedDefaultsRender:
             assert isinstance(rendered, str)
             for ph in required:
                 assert f"<{ph}>" in rendered
+
+
+# ---------------------------------------------------------------------------
+# plan-contract (Part A)
+# ---------------------------------------------------------------------------
+
+
+class TestPlanContract:
+    def test_is_reserved(self) -> None:
+        assert "plan-contract" in _DEFAULT_PROMPTS
+        assert _DEFAULT_PROMPTS["plan-contract"][1] == frozenset({"catalog"})
+
+    def test_resolves_and_renders_with_catalog(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        rendered = render_plan_contract("- demand (flow): work", operator_layer, manifest)
+        # The catalog substitution landed and the placeholder is gone.
+        assert "- demand (flow): work" in rendered
+        assert "{catalog}" not in rendered
+
+    def test_states_key_format_rules(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        rendered = render_plan_contract("(catalog)", operator_layer, manifest)
+        # It names the JSON-array contract, forbids \' and object-wrapping.
+        assert "JSON array" in rendered
+        assert "NEVER emit \\'" in rendered
+        assert "BARE JSON array" in rendered
+        assert "never wrapped in an object" in rendered
+        # The three-key example survived one .format() as single braces.
+        assert '{"kind": "flow", "name": "ship", "task": "implement the feature"}' in rendered
+
+    def test_override_wins(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        _write_prompt(operator_layer, "plan-contract", "MY CONTRACT {catalog}")
+        assert render_plan_contract("CAT", operator_layer, manifest) == "MY CONTRACT CAT"
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +281,22 @@ class TestConductorByteIdentity:
             ),
         )
         assert engine.seen_directive == expected
+
+    def test_directive_anchored_to_literal_bytes(self, operator_layer: Path) -> None:
+        # Anchor the recomposed `<prefix> + _PLAN_OUTPUT_CONTRACT + "\n"` seam and tail
+        # to LITERAL bytes, so a future edit cannot silently drift a newline at the
+        # concatenation (the equality test above uses the live constant — self-referential).
+        manifest = load_manifest(operator_layer)
+        rendered = _DEFAULT_PROMPTS["conductor"][0].format(goal="G", catalog_text="C")
+        # The seam between the prefix and the shared contract, byte-for-byte.
+        assert (
+            "## Instructions\n\nBreak the goal into independent parts. "
+            "Output ONLY a JSON array — no prose, no\nmarkdown fences" in rendered
+        )
+        # The tail: the JSON example (single braces after one .format()) + trailing "\n".
+        assert rendered.endswith(
+            '[{"kind": "flow", "name": "ship", "task": "implement the feature"}]\n'
+        )
 
     def test_override_directive_uses_override(self, operator_layer: Path) -> None:
         from alc.conduct import conduct

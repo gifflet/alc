@@ -70,6 +70,26 @@ class TestComposeActDirective:
         assert blueprint.workflow in directive_with
         assert blueprint.workflow in directive_without
 
+    def test_output_contract_appended_last(self, operator_layer: Path) -> None:
+        blueprint = self._make_blueprint(operator_layer)
+
+        directive = compose_act_directive(
+            blueprint, "task", "some knowledge", output_contract="MY CONTRACT"
+        )
+
+        # The contract lands after the workflow and under the required header.
+        assert "## Output contract (required by ALC" in directive
+        assert directive.endswith("MY CONTRACT")
+        assert directive.index(blueprint.workflow) < directive.index("MY CONTRACT")
+
+    def test_none_output_contract_is_byte_identical(self, operator_layer: Path) -> None:
+        blueprint = self._make_blueprint(operator_layer)
+
+        with_none = compose_act_directive(blueprint, "task", "kn", output_contract=None)
+        without_arg = compose_act_directive(blueprint, "task", "kn")
+
+        assert with_none == without_arg
+
 
 # ---------------------------------------------------------------------------
 # learn — uses MockEngine with canned output

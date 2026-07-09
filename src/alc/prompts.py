@@ -28,7 +28,23 @@ from alc.models import Manifest
 # replaces the built-in. Templates that embed literal `{`/`}` (JSON examples,
 # ```-fences) keep the `{{ }}` escaping the call sites' `.format()` requires.
 
-_CONDUCTOR_DIRECTIVE_TEMPLATE = """\
+# The JSON-array output contract shared by the Conductor directive and the
+# `plan-contract` prompt — the SINGLE source of truth for the plan output format.
+# It embeds literal braces in the JSON example, so it keeps the `{{ }}` escaping
+# every `.format()` call site needs (one `.format()` renders single braces).
+_PLAN_OUTPUT_CONTRACT = """\
+Output ONLY a JSON array — no prose, no
+markdown fences, no explanation. Each element must be an object with exactly
+three keys:
+  "kind": either "flow" or "specialist"
+  "name": one of the names listed in the Catalog (exact match, case-sensitive)
+  "task": a concise free-text task description for that unit
+
+Example output:
+[{{"kind": "flow", "name": "ship", "task": "implement the feature"}}]"""
+
+_CONDUCTOR_DIRECTIVE_TEMPLATE = (
+    """\
 # ALC Conductor — Single Mandate
 
 You are the ALC Conductor. Your mandate is to decompose the operator's goal into
@@ -46,16 +62,43 @@ a Flow for multi-stage pipelines.
 
 ## Instructions
 
-Break the goal into independent parts. Output ONLY a JSON array — no prose, no
-markdown fences, no explanation. Each element must be an object with exactly
-three keys:
-  "kind": either "flow" or "specialist"
-  "name": one of the names listed in the Catalog (exact match, case-sensitive)
-  "task": a concise free-text task description for that unit
+Break the goal into independent parts. """
+    + _PLAN_OUTPUT_CONTRACT
+    + "\n"
+)
 
-Example output:
-[{{"kind": "flow", "name": "ship", "task": "implement the feature"}}]
+# The `plan-contract` prompt — injected into a planner Specialist's directive for a
+# `kind: plan` replenish so the plan output format is embedded by ALC (not left to
+# blueprint prose). It names the valid targets ({catalog}) and shares the same
+# JSON-array contract as the Conductor. Phrased for a planner that emits demands.
+_PLAN_CONTRACT_TEMPLATE = (
+    """\
+# ALC Plan Output Contract (required — overrides any conflicting instruction)
+
+Emit each unit of demand as an object of the form
+{{"kind":"flow","name":"<a catalog name, e.g. demand>","task":"<title>\\n\\n<details>"}}.
+The valid target names are exactly those in the Catalog below.
+
+## Catalog
+
+{catalog}
+
+## Format rules
+
 """
+    + _PLAN_OUTPUT_CONTRACT
+    + """
+
+Additional hard requirements:
+- The top level MUST be a BARE JSON array (never wrapped in an object such as
+  {{"plan": [...]}}).
+- Emit VALID JSON only: use standard escapes (\\n, \\", \\\\); NEVER emit \\' — a
+  single quote inside a string is written literally as '.
+- No prose, headings, or ``` fences around the array.
+- The FIRST line of each "task" is a short title (it becomes the commit subject);
+  put any details after a blank line.
+"""
+)
 
 _CORRECTIVE_SUFFIX = "\n\nYour previous output was invalid: {err}. Output ONLY the JSON array."
 
@@ -95,6 +138,7 @@ _REPAIR_TEMPLATE = (
 
 
 _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
+    "plan-contract": (_PLAN_CONTRACT_TEMPLATE, frozenset({"catalog"})),
     "conductor": (_CONDUCTOR_DIRECTIVE_TEMPLATE, frozenset({"goal", "catalog_text"})),
     "corrective": (_CORRECTIVE_SUFFIX, frozenset({"err"})),
     "learn": (
@@ -142,6 +186,28 @@ def resolve_prompt(name: str, operator_layer: Path, manifest: Manifest) -> str:
     raise KeyError(
         f"No prompt named '{name}': it is not a reserved prompt and no "
         f"{override} file exists."
+    )
+
+
+def render_plan_contract(
+    catalog_text: str, operator_layer: Path, manifest: Manifest
+) -> str:
+    """Render the `plan-contract` prompt with the catalog of valid targets.
+
+    Resolves the reserved (or overridden) ``plan-contract`` template and fills in
+    ``{catalog}``. Used by the ``kind: plan`` replenish to inject ALC's plan-output
+    contract into the planner Specialist's directive.
+
+    Args:
+        catalog_text: The catalog of available Flows/Specialists (from build_catalog).
+        operator_layer: Path to the ``.alc/`` directory.
+        manifest: The loaded Manifest (provides prompts_dir).
+
+    Returns:
+        The rendered plan contract, ready to append as an Act output-contract section.
+    """
+    return resolve_prompt("plan-contract", operator_layer, manifest).format(
+        catalog=catalog_text
     )
 
 

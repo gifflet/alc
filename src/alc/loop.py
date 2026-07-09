@@ -271,12 +271,19 @@ def run_replenish(
         _flow_usage(flow_report, delta)
     elif replenish.kind == "plan":
         from alc.commit import commit_workdir
-        from alc.conduct import dispatch_enqueue, parse_plan
-        from alc.intake import load_all_flows, load_all_specialists
+        from alc.conduct import build_catalog, dispatch_enqueue, finalize_plan
+        from alc.engines.registry import resolve_engine
+        from alc.intake import load_blueprint
+        from alc.prompts import render_plan_contract, resolve_prompt
         from alc.specialist import run_specialist
 
         specialists_dir = operator_layer.parent / manifest.specialists_dir
         planner = load_specialist(specialists_dir, replenish.ref)
+        # Build the catalog once; it names the valid targets in the injected contract
+        # and validates the plan the planner returns.
+        catalog_text, available_flows, available_specialists = build_catalog(
+            manifest, operator_layer
+        )
         report = run_specialist(
             manifest=manifest,
             operator_layer=operator_layer,
@@ -284,21 +291,37 @@ def run_replenish(
             task=replenish.task,
             engine_override=engine_override,
             workdir=None,
+            output_contract=render_plan_contract(
+                catalog_text, operator_layer, manifest
+            ),
         )
         _report_usage(report.act, delta)
         # Commit the planner's roadmap change so the tree is clean for the
         # demand-flows' clean-tree guard (this replaces the old plan-flow commit).
+        # Corrective turns below are file-free, so this stays before the parse.
         commit_workdir(operator_layer.parent, "chore(roadmap): plan next version")
+        # Resolve the engine + model for any format-only corrective turns. The model
+        # comes from the planner blueprint's compute_tier so the retry matches the
+        # planner's tier.
+        engine_name = engine_override or manifest.default_engine
+        engine = resolve_engine(engine_name, manifest.engines)
+        blueprints_dir = operator_layer.parent / manifest.blueprints_dir
+        planner_bp = load_blueprint(blueprints_dir, planner.blueprint)
+        model = manifest.compute_tiers.get(planner_bp.compute_tier, {}).get(engine_name)
+        corrective_template = resolve_prompt("corrective", operator_layer, manifest)
         # Reuse the Conductor: the planner only DECIDES (returns a structured plan);
-        # ALC enqueues deterministically. A malformed plan or an unknown flow/specialist
-        # name raises ValueError -> clean no-op (never a corrupt queue).
-        available_flows = {f.name for f in load_all_flows(manifest, operator_layer)}
-        available_specialists = {
-            s.name for s in load_all_specialists(manifest, operator_layer)
-        }
+        # ALC enqueues deterministically. A malformed first output self-heals via
+        # cheap corrective turns; a still-invalid plan raises ValueError -> clean
+        # no-op (never a corrupt queue).
         try:
-            plan = parse_plan(
-                report.act.output_text, available_flows, available_specialists
+            plan = finalize_plan(
+                engine,
+                model,
+                report.act.output_text,
+                available_flows,
+                available_specialists,
+                max_retries=2,
+                corrective_template=corrective_template,
             )
             dispatch_enqueue(
                 plan,

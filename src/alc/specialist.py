@@ -58,13 +58,15 @@ def compose_act_directive(
     task: str,
     knowledge: str,
     extra_context: str | None = None,
+    output_contract: str | None = None,
 ) -> str:
     """Compose the Act directive for a Specialist invocation.
 
     Produces a header naming the Specialist's blueprint and task, an optional
     upstream-context section (only when ``extra_context`` is truthy), an optional
-    knowledge section (only when ``knowledge`` is non-empty), then the blueprint's
-    workflow body.
+    knowledge section (only when ``knowledge`` is non-empty), the blueprint's
+    workflow body, then an optional output-contract section appended LAST (so it is
+    authoritative by recency).
 
     Args:
         blueprint: The Blueprint providing the workflow.
@@ -74,6 +76,9 @@ def compose_act_directive(
         extra_context: Optional upstream context (e.g. a Flow's previous-stage
             outputs). Injected after the header and before the knowledge section
             when truthy. Default None leaves behavior unchanged.
+        output_contract: Optional output-format contract (e.g. ALC's plan-output
+            contract). Appended as the last directive section when truthy. Default
+            None leaves behavior byte-identical.
 
     Returns:
         The fully composed directive string.
@@ -93,7 +98,20 @@ def compose_act_directive(
     if knowledge:
         knowledge_section = _KNOWLEDGE_SECTION_HEADER + knowledge + "\n\n---\n"
 
-    return header + upstream_section + knowledge_section + blueprint.workflow
+    contract_section = ""
+    if output_contract:
+        contract_section = (
+            "\n\n---\n## Output contract (required by ALC — overrides any "
+            "conflicting instruction above)\n\n" + output_contract
+        )
+
+    return (
+        header
+        + upstream_section
+        + knowledge_section
+        + blueprint.workflow
+        + contract_section
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +187,7 @@ def run_specialist(
     engine_override: str | None = None,
     workdir: Path | None = None,
     extra_context: str | None = None,
+    output_contract: str | None = None,
 ) -> SpecialistReport:
     """Orchestrate one Recall -> Act -> Learn cycle for a Specialist.
 
@@ -187,6 +206,9 @@ def run_specialist(
             (None = unchanged). Pass an IsolatedWorktree path to confine edits.
         extra_context: Optional upstream context threaded into the Act directive
             (e.g. a Flow's previous-stage outputs). Default None = unchanged.
+        output_contract: Optional output-format contract appended as the last Act
+            directive section (e.g. ALC's plan-output contract). Default None =
+            unchanged.
 
     Returns:
         SpecialistReport with the Specialist name, Act RunReport, and whether
@@ -217,7 +239,9 @@ def run_specialist(
 
     # Act: compose the directive, expand any {{prompt:<name>}} includes (keeping
     # compose_act_directive pure), and run the Single Mandate.
-    directive = compose_act_directive(blueprint, task, knowledge, extra_context)
+    directive = compose_act_directive(
+        blueprint, task, knowledge, extra_context, output_contract
+    )
     directive = expand_includes(directive, operator_layer, manifest)
     act = execute_mandate(
         manifest, blueprint, directive, engine_override, workdir, operator_layer
