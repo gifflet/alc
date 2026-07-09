@@ -19,6 +19,34 @@ import subprocess
 
 from alc.engine import Capabilities, EngineRequest, EngineResult, Usage
 
+# Map ALC's (claude-code-flavored) permission_mode intent onto the Gemini CLI's
+# --approval-mode. Keeps a Blueprint's permission_mode portable across engines:
+# `bypassPermissions` (auto-approve everything, incl. shell) -> `yolo`;
+# `acceptEdits` / unset (auto-approve edits only) -> `auto_edit` (the default).
+_APPROVAL_MODE_MAP = {
+    "bypassPermissions": "yolo",
+    "acceptEdits": "auto_edit",
+}
+# Gemini's own --approval-mode values (verified against the CLI docs), accepted
+# verbatim so an operator may also name a Gemini mode directly (e.g. "plan").
+_GEMINI_APPROVAL_MODES = {"default", "auto_edit", "yolo", "plan"}
+
+
+def _approval_mode(permission_mode: str | None) -> str:
+    """Resolve the Gemini --approval-mode for a request's permission_mode.
+
+    None -> "auto_edit" (byte-identical to the former hardcoded default); a known
+    ALC intent is mapped; a raw Gemini mode passes through; anything else falls
+    back to the safe "auto_edit" (edits allowed, no interactive prompt).
+    """
+    if permission_mode is None:
+        return "auto_edit"
+    if permission_mode in _APPROVAL_MODE_MAP:
+        return _APPROVAL_MODE_MAP[permission_mode]
+    if permission_mode in _GEMINI_APPROVAL_MODES:
+        return permission_mode
+    return "auto_edit"
+
 
 class GeminiEngine:
     """Execution-plane adapter for the Gemini CLI (`gemini`)."""
@@ -57,23 +85,22 @@ class GeminiEngine:
 
         Does NOT retry — that is the Assurance Loop's job. `-p/--prompt` carries
         the directive and triggers headless mode; `--skip-trust` trusts the
-        isolated sandbox; `--approval-mode auto_edit` auto-approves edit tools so
-        edits happen without a prompt (the analog of Claude Code's acceptEdits).
-        The control plane isolates each run, so both are safe.
+        isolated sandbox; `--approval-mode` is resolved from the Blueprint's
+        permission_mode (unset -> `auto_edit`, the analog of Claude Code's
+        acceptEdits; `bypassPermissions` -> `yolo`). The control plane isolates
+        each run, so auto-approval is safe.
         """
         cmd = [
             "gemini",
             "--skip-trust",
             "--approval-mode",
-            "auto_edit",
+            _approval_mode(request.permission_mode),
             "--prompt",
             request.directive,
         ]
 
         if request.model:
             cmd += ["--model", request.model]
-
-        # request.permission_mode is claude-code-specific and is not mapped here.
 
         # system_append and tool scoping are NOT passed: capabilities() reports
         # them as unsupported, so the control plane already folded system_append
