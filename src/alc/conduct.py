@@ -180,9 +180,11 @@ def build_catalog(
     """
     flows = load_all_flows(manifest, operator_layer)
     specialists = load_all_specialists(manifest, operator_layer)
+    # A FlowStage sets exactly one of blueprint/specialist, so render whichever
+    # is present (a specialist stage has blueprint=None).
     catalog_lines = [
         f"- {f.name} (flow): {f.description} "
-        f"(stages: {', '.join(s.blueprint for s in f.stages)})"
+        f"(stages: {', '.join(s.blueprint or s.specialist for s in f.stages)})"
         for f in flows
     ]
     catalog_lines += [f"- {s.name} (specialist): {s.area}" for s in specialists]

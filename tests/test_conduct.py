@@ -190,6 +190,30 @@ class TestBuildCatalog:
         )
         assert build_catalog(manifest, operator_layer) == expected
 
+    def test_specialist_stage_renders_without_crash(self, operator_layer: Path) -> None:
+        # Regression: a flow with a specialist stage (blueprint=None) must not crash
+        # the catalog builder (dogfood: the linkedin-vagas `demand` flow is dev + qa).
+        import yaml
+
+        (operator_layer / "flows" / "demand.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "demand",
+                    "description": "implement then validate",
+                    "stages": [
+                        {"name": "impl", "specialist": "dev"},
+                        {"name": "check", "blueprint": "chore"},
+                    ],
+                }
+            )
+        )
+        manifest = load_manifest(operator_layer)
+        catalog_text, flows, _ = build_catalog(manifest, operator_layer)
+
+        assert "demand" in flows
+        # The specialist stage renders by its specialist name; the blueprint stage by its blueprint.
+        assert "(stages: dev, chore)" in catalog_text
+
 
 # ---------------------------------------------------------------------------
 # finalize_plan — parse + cheap corrective retry
