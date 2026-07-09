@@ -3,6 +3,8 @@
 # Engines do NOT subclass anything — they only need to match this structural shape.
 from __future__ import annotations
 
+import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -51,6 +53,66 @@ class EngineResult:
     output_text: str                        # final message / stdout
     usage: Usage = field(default_factory=Usage)
     raw: dict = field(default_factory=dict)  # engine-specific payload
+
+
+class ProgressPrinter:
+    """Surface an engine's live progress lines to stderr with generic, content-agnostic
+    noise control.
+
+    Any adapter streaming a subprocess's stdout/stderr routes lines through ``emit``;
+    the authoritative, full output still lives in the returned ``EngineResult`` (so the
+    live view can be bounded without losing anything). Three filters, none of which
+    inspect meaning — so this is engine-agnostic and error-type-agnostic, not a
+    per-tool or per-error heuristic:
+
+    - **truncate** each line to ``max_width`` (keeps the terminal readable),
+    - **collapse** a line identical to the one just printed (kills repeat spam),
+    - **cap** the total to ``max_lines``; further lines are counted and summarised by
+      ``close`` as "… (N more lines suppressed)".
+
+    Use a generous ``max_lines`` for a real progress stream (tool calls) and a tight one
+    for diagnostic stderr (verbose error dumps). Thread-safe: an adapter may feed one
+    printer from both a stdout loop and a stderr drain thread.
+    """
+
+    def __init__(
+        self, prefix: str = "    • ", max_width: int = 100, max_lines: int = 500
+    ) -> None:
+        self._prefix = prefix
+        self._max_width = max_width
+        self._max_lines = max_lines
+        self._lock = threading.Lock()
+        self._printed = 0
+        self._suppressed = 0
+        self._last: str | None = None
+
+    def emit(self, line: str) -> None:
+        """Print one progress line, subject to truncate / collapse-repeat / cap."""
+        line = line.strip()
+        if not line:
+            return
+        line = line[: self._max_width]
+        with self._lock:
+            if line == self._last:
+                return
+            self._last = line
+            if self._printed >= self._max_lines:
+                self._suppressed += 1
+                return
+            self._printed += 1
+        print(f"{self._prefix}{line}", file=sys.stderr, flush=True)
+
+    def close(self) -> None:
+        """Emit a one-line summary if the cap suppressed any lines. Idempotent."""
+        with self._lock:
+            n = self._suppressed
+            self._suppressed = 0
+        if n:
+            print(
+                f"{self._prefix}… ({n} more line(s) suppressed)",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 @runtime_checkable

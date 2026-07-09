@@ -331,6 +331,12 @@ def finalize_plan(
                     usage_sink["usd"] = usage_sink.get("usd", 0.0) + usage.cost_usd
                 tokens = (usage.input_tokens or 0) + (usage.output_tokens or 0)
                 usage_sink["tokens"] = usage_sink.get("tokens", 0.0) + tokens
+        if not result.ok:
+            # The engine itself failed (API error, quota, timeout) — a reformat can't
+            # succeed against a down engine; stop retrying rather than hammer it.
+            raise ValueError(
+                f"engine failed during a corrective plan retry: {result.output_text}"
+            )
         try:
             return parse_plan(
                 result.output_text, available_flows, available_specialists

@@ -1167,9 +1167,12 @@ class TestPlanReplenish:
             "stop:\n  max_cycles: 20\n",
         )
 
-    def _fake_planner(self, output_text: str, monkeypatch) -> dict:
+    def _fake_planner(self, output_text: str, monkeypatch, success: bool = True) -> dict:
         """Patch run_specialist so the planner writes a roadmap file and returns
         the given output_text as its Act output (the structured plan).
+
+        ``success`` sets the Act's success flag — pass False to simulate a planner
+        whose engine turn failed (e.g. a 503/quota error).
 
         Returns a dict that captures the output_contract the plan branch injected
         into the Act call (under key "output_contract"), so tests can assert the
@@ -1197,7 +1200,7 @@ class TestPlanReplenish:
             act = RunReport(
                 blueprint="chore",
                 engine="mock",
-                success=True,
+                success=success,
                 attempts=[],
                 scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
                 output_text=output_text,
@@ -1208,6 +1211,35 @@ class TestPlanReplenish:
 
         monkeypatch.setattr("alc.specialist.run_specialist", _run)
         return captured
+
+    def test_act_failure_skips_enqueue(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """When the planner's Act FAILS (engine/API error), the branch must NOT try
+        to parse/heal or hammer the engine — a clean no-op, 0 enqueued."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        # A perfectly VALID plan output, but the Act failed -> it must be ignored.
+        self._fake_planner(
+            '[{"kind":"flow","name":"demand","task":"T\\n\\nd"}]',
+            monkeypatch,
+            success=False,
+        )
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 0
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        assert not list(queue_dir.glob("*.yaml"))
+        assert "planner Act failed" in capsys.readouterr().err
 
     def test_plan_replenish_prints_header(
         self, operator_layer: Path, monkeypatch, capsys

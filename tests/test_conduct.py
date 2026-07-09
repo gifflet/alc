@@ -295,6 +295,42 @@ class TestFinalizePlan:
                 max_retries=2,
             )
 
+    def test_engine_failure_stops_retrying(self) -> None:
+        # A corrective turn whose engine returns ok=False (API error / quota) must
+        # stop immediately, not hammer the dead engine for every retry.
+        import pytest
+
+        call_count = 0
+
+        class _FailingEngine:
+            name = "mock"
+
+            def capabilities(self):
+                from alc.engine import Capabilities
+
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                nonlocal call_count
+                from alc.engine import EngineResult
+
+                call_count += 1
+                return EngineResult(ok=False, output_text="[gemini] 429 quota exceeded")
+
+        with pytest.raises(ValueError, match="engine failed"):
+            finalize_plan(
+                engine=_FailingEngine(),  # type: ignore[arg-type]
+                model=None,
+                first_output="not json",
+                available_flows={"ship"},
+                available_specialists=set(),
+                max_retries=3,
+            )
+        assert call_count == 1  # stopped after the first failed corrective, not 3
+
 
 # ---------------------------------------------------------------------------
 # dispatch_enqueue — uses operator_layer fixture

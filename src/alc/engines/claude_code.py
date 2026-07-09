@@ -10,7 +10,13 @@ import sys
 import threading
 import time
 
-from alc.engine import Capabilities, EngineRequest, EngineResult, Usage
+from alc.engine import (
+    Capabilities,
+    EngineRequest,
+    EngineResult,
+    ProgressPrinter,
+    Usage,
+)
 
 
 class ClaudeCodeEngine:
@@ -98,6 +104,9 @@ class ClaudeCodeEngine:
             flush=True,
         )
         start = time.monotonic()
+        # Route tool-call notes through the shared progress printer (collapse repeats,
+        # truncate, and a generous cap) — the same generic noise control every engine uses.
+        printer = ProgressPrinter()
 
         try:
             proc = subprocess.Popen(
@@ -156,7 +165,7 @@ class ClaudeCodeEngine:
                     continue
                 if event.get("type") == "assistant":
                     for note in self._progress_notes(event):
-                        print(f"    • {note}", file=sys.stderr, flush=True)
+                        printer.emit(note)
                 elif event.get("type") == "result":
                     output_text = event.get("result", "")
                     # Usage is best-effort: token counts live under "usage" and the
@@ -173,6 +182,7 @@ class ClaudeCodeEngine:
             timer.cancel()
 
         elapsed = int(time.monotonic() - start)
+        printer.close()
 
         if timed_out["v"]:
             return EngineResult(ok=False, output_text="[claude-code] timed out")

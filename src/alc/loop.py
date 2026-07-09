@@ -296,50 +296,61 @@ def run_replenish(
             ),
         )
         _report_usage(report.act, delta)
-        # Commit the planner's roadmap change so the tree is clean for the
-        # demand-flows' clean-tree guard (this replaces the old plan-flow commit).
-        # Corrective turns below are file-free, so this stays before the parse.
-        commit_workdir(operator_layer.parent, "chore(roadmap): plan next version")
-        # Resolve the engine + model for any format-only corrective turns. The model
-        # comes from the planner blueprint's compute_tier so the retry matches the
-        # planner's tier.
-        engine_name = engine_override or manifest.default_engine
-        engine = resolve_engine(engine_name, manifest.engines)
-        blueprints_dir = operator_layer.parent / manifest.blueprints_dir
-        planner_bp = load_blueprint(blueprints_dir, planner.blueprint)
-        model = manifest.compute_tiers.get(planner_bp.compute_tier, {}).get(engine_name)
-        corrective_template = resolve_prompt("corrective", operator_layer, manifest)
-        # Reuse the Conductor: the planner only DECIDES (returns a structured plan);
-        # ALC enqueues deterministically. A malformed first output self-heals via
-        # cheap corrective turns; a still-invalid plan raises ValueError -> clean
-        # no-op (never a corrupt queue).
-        try:
-            plan = finalize_plan(
-                engine,
-                model,
-                report.act.output_text,
-                available_flows,
-                available_specialists,
-                max_retries=manifest.plan_retries,
-                corrective_template=corrective_template,
-                # Corrective turns are real engine calls — charge them against the
-                # cycle's engine_calls safety cap (and usd/tokens where reported).
-                usage_sink=delta,
-            )
-            dispatch_enqueue(
-                plan,
-                manifest,
-                operator_layer,
-                engine_override=engine_override,
-                isolate=False,
-                prefix="plan",
-            )
-        except ValueError as exc:
+        if not report.act.success:
+            # The planner's Act failed (engine/API error — e.g. a 503 or a quota
+            # limit). There is no plan to parse or heal, so skip the enqueue entirely:
+            # a clean no-op (the cycle makes no progress and its own stop conditions
+            # handle it) instead of hammering a failed engine with corrective turns.
             print(
-                f"▶ replenish — plan not enqueued (invalid plan): {exc}",
+                "▶ replenish — planner Act failed; nothing to enqueue.",
                 file=sys.stderr,
                 flush=True,
             )
+        else:
+            # Commit the planner's roadmap change so the tree is clean for the
+            # demand-flows' clean-tree guard (this replaces the old plan-flow commit).
+            # Corrective turns below are file-free, so this stays before the parse.
+            commit_workdir(operator_layer.parent, "chore(roadmap): plan next version")
+            # Resolve the engine + model for any format-only corrective turns. The
+            # model comes from the planner blueprint's compute_tier so the retry
+            # matches the planner's tier.
+            engine_name = engine_override or manifest.default_engine
+            engine = resolve_engine(engine_name, manifest.engines)
+            blueprints_dir = operator_layer.parent / manifest.blueprints_dir
+            planner_bp = load_blueprint(blueprints_dir, planner.blueprint)
+            model = manifest.compute_tiers.get(planner_bp.compute_tier, {}).get(engine_name)
+            corrective_template = resolve_prompt("corrective", operator_layer, manifest)
+            # Reuse the Conductor: the planner only DECIDES (returns a structured
+            # plan); ALC enqueues deterministically. A malformed first output
+            # self-heals via cheap corrective turns; a still-invalid plan raises
+            # ValueError -> clean no-op (never a corrupt queue).
+            try:
+                plan = finalize_plan(
+                    engine,
+                    model,
+                    report.act.output_text,
+                    available_flows,
+                    available_specialists,
+                    max_retries=manifest.plan_retries,
+                    corrective_template=corrective_template,
+                    # Corrective turns are real engine calls — charge them against
+                    # the cycle's engine_calls safety cap (and usd/tokens if reported).
+                    usage_sink=delta,
+                )
+                dispatch_enqueue(
+                    plan,
+                    manifest,
+                    operator_layer,
+                    engine_override=engine_override,
+                    isolate=False,
+                    prefix="plan",
+                )
+            except ValueError as exc:
+                print(
+                    f"▶ replenish — plan not enqueued (invalid plan): {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
     else:  # conduct
         from alc.conduct import conduct
 
