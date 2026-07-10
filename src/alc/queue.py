@@ -97,16 +97,22 @@ class FailedTask:
     retries: int   # qt.retries of the latest failed attempt
 
 
-def _reason_line(report: FlowReport, max_chars: int = 120) -> str:
-    """Return a short single-line tail of the failing-stage output for a list entry.
+def _failure_reason(report: FlowReport) -> str:
+    """A short, RELIABLE failure reason from the report's structured record: the
+    failing stage and the check(s) that failed — not free-text prose.
 
-    Reuses ``failure_feedback`` (the failing stage's output), takes its last
-    non-empty line, and truncates to ``max_chars``.
+    ``stages[-1]`` is the stage that failed; its last attempt's ``failed_checks``
+    are the gate(s) that never passed. Falls back to an engine-error note when no
+    check was recorded (e.g. the engine itself failed), or a generic note when the
+    report carries no stage.
     """
-    feedback = failure_feedback(report)
-    lines = [line.strip() for line in feedback.splitlines() if line.strip()]
-    tail = lines[-1] if lines else ""
-    return tail[:max_chars]
+    if not report.stages:
+        return "no captured failure"
+    stage = report.stages[-1]
+    checks = stage.attempts[-1].failed_checks if stage.attempts else []
+    if checks:
+        return f"failed at {stage.blueprint}: check(s) {', '.join(checks)}"
+    return f"failed at {stage.blueprint}: engine error"
 
 
 def outstanding_failures(done_dir: Path) -> list[FailedTask]:
@@ -116,16 +122,18 @@ def outstanding_failures(done_dir: Path) -> list[FailedTask]:
     their lineage root (``qt.retry_of or <stem>``), and drops any root whose
     lineage already contains a successful attempt (resolved by a later retry).
     For each remaining root the LATEST failed attempt (highest ``qt.retries``) is
-    returned, since that is what a fresh retry would descend from. Sorted by stem.
+    returned, since that is what a fresh retry would descend from. Sorted by
+    recency (most recently failed first).
 
     An absent or empty ``done_dir`` yields an empty list.
     """
     if not done_dir.exists():
         return []
 
-    # Per-root state: whether any attempt succeeded, and the latest failed attempt.
+    # Per-root state: whether any attempt succeeded, and the latest failed attempt
+    # (with its report file mtime, used to sort the list by recency).
     resolved: dict[str, bool] = {}
-    latest_failed: dict[str, tuple[str, QueueTask, FlowReport]] = {}
+    latest_failed: dict[str, tuple[str, QueueTask, FlowReport, float]] = {}
 
     for report_file in sorted(done_dir.glob("*.report.json")):
         stem = report_file.name[: -len(".report.json")]
@@ -148,24 +156,25 @@ def outstanding_failures(done_dir: Path) -> list[FailedTask]:
         # Keep the highest-retries failed attempt for this root (ties -> any).
         current = latest_failed.get(root)
         if current is None or qt.retries > current[1].retries:
-            latest_failed[root] = (stem, qt, report)
+            latest_failed[root] = (stem, qt, report, report_file.stat().st_mtime)
 
-    entries: list[FailedTask] = []
-    for root, (stem, qt, report) in latest_failed.items():
+    ranked: list[tuple[float, FailedTask]] = []
+    for root, (stem, qt, report, mtime) in latest_failed.items():
         if resolved.get(root):
             continue  # a later attempt in this lineage succeeded -> not outstanding
         title = qt.task.splitlines()[0] if qt.task else ""
-        entries.append(
+        ranked.append((
+            mtime,
             FailedTask(
                 stem=stem,
                 title=title,
-                reason=_reason_line(report),
+                reason=_failure_reason(report),
                 retries=qt.retries,
-            )
-        )
+            ),
+        ))
 
-    entries.sort(key=lambda e: e.stem)
-    return entries
+    ranked.sort(key=lambda r: r[0], reverse=True)  # most recently failed first
+    return [ft for _, ft in ranked]
 
 
 def _error_flow_report(flow_name: str, engine: str, message: str) -> FlowReport:

@@ -831,12 +831,11 @@ def cmd_retry(args: argparse.Namespace) -> int:
             _retry_one(failure.stem, manifest, operator_layer)
         return 0
 
-    # List path — print a readable block per outstanding failure.
+    # List path — one clean block per outstanding failure (most recent first).
     for failure in failures:
-        print(failure.stem)
+        print(f"{failure.stem}   (attempt {failure.retries})")
         print(f"  {failure.title}")
         print(f"  {failure.reason}")
-        print(f"  (attempt {failure.retries})")
         print()
     print("Run: alc retry <stem>   (or: alc retry --all)")
     return 0

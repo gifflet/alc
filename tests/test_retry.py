@@ -460,9 +460,10 @@ def _archive_task(
     success: bool = False,
     retries: int = 0,
     retry_of: str | None = None,
+    checks: tuple[str, ...] = ("verdict-pass",),
 ) -> None:
     """Write a done/<stem>.yaml + done/<stem>.report.json pair for a test archive."""
-    from alc.models import FlowReport, RunReport, Scorecard
+    from alc.models import AttemptRecord, FlowReport, RunReport, Scorecard
 
     done_dir.mkdir(parents=True, exist_ok=True)
     qt = QueueTask(
@@ -470,10 +471,14 @@ def _archive_task(
     )
     (done_dir / f"{stem}.yaml").write_text(yaml.safe_dump(qt.model_dump()))
     sc = Scorecard(span=0, passes=0, streak=0, touch=0)
+    failed = [] if success else list(checks)
     report = FlowReport(
         flow="demand", engine="mock", success=success,
-        stages=[RunReport(blueprint="qa", engine="mock", success=success,
-                          attempts=[], scorecard=sc, output_text=verdict)],
+        stages=[RunReport(
+            blueprint="qa", engine="mock", success=success,
+            attempts=[AttemptRecord(index=0, engine_ok=True, failed_checks=failed)],
+            scorecard=sc, output_text=verdict,
+        )],
         scorecard=sc,
     )
     (done_dir / f"{stem}.report.json").write_text(report.model_dump_json(indent=2))
@@ -490,7 +495,8 @@ class TestOutstandingFailures:
         entry = failures[0]
         assert entry.stem == "job1"
         assert entry.title == "Add mineral shadows"
-        assert entry.reason == "VERDICT: FAIL — contrast too low"
+        # reason is the structured failing stage + check(s), not free-text prose.
+        assert entry.reason == "failed at qa: check(s) verdict-pass"
         assert entry.retries == 0
 
     def test_resolved_lineage_is_not_listed(self, tmp_path: Path) -> None:
@@ -508,20 +514,35 @@ class TestOutstandingFailures:
         _archive_task(done, "job2", "Second task", "boom two", retries=0)
 
         failures = outstanding_failures(done)
-        assert [e.stem for e in failures] == ["job1", "job2"]
+        # Two distinct roots; order is by recency (asserted separately), so compare sorted.
+        assert sorted(e.stem for e in failures) == ["job1", "job2"]
+
+    def test_sorted_by_recency_most_recent_first(self, tmp_path: Path) -> None:
+        import os
+
+        done = tmp_path / "done"
+        _archive_task(done, "older", "Old task", "boom", retries=0)
+        _archive_task(done, "newer", "New task", "boom", retries=0)
+        # Force distinct mtimes: 'newer' more recently failed than 'older'.
+        os.utime(done / "older.report.json", (1000, 1000))
+        os.utime(done / "newer.report.json", (2000, 2000))
+
+        assert [e.stem for e in outstanding_failures(done)] == ["newer", "older"]
 
     def test_latest_attempt_per_root_is_returned(self, tmp_path: Path) -> None:
         done = tmp_path / "done"
         # Same lineage (root job1), two failed attempts — the highest-retries wins.
-        _archive_task(done, "job1", "Add shadows", "first failure", retries=0)
+        _archive_task(done, "job1", "Add shadows", "first failure",
+                      retries=0, checks=("verdict-pass",))
         _archive_task(done, "retry-01-add-shadows-abc12345", "Add shadows",
-                      "latest failure", retries=2, retry_of="job1")
+                      "latest failure", retries=2, retry_of="job1", checks=("typecheck",))
 
         failures = outstanding_failures(done)
         assert len(failures) == 1
         assert failures[0].stem == "retry-01-add-shadows-abc12345"
         assert failures[0].retries == 2
-        assert failures[0].reason == "latest failure"
+        # The reason comes from the LATEST attempt's report (its check), not the first.
+        assert failures[0].reason == "failed at qa: check(s) typecheck"
 
     def test_absent_or_empty_done_dir_is_empty(self, tmp_path: Path) -> None:
         assert outstanding_failures(tmp_path / "missing") == []
