@@ -3,8 +3,10 @@
 # and serial tasks are present, it prints a demotion notice to stderr.
 from __future__ import annotations
 
+import re
 import sys
 import traceback
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -14,7 +16,56 @@ from alc.flow import FlowRunner
 from alc.intake import load_flow, load_specialist
 from alc.models import FlowReport, Manifest, QueueTask, RunReport, Scorecard, TickResult
 from alc.specialist import run_specialist
+from alc.textutil import slugify as _slugify
 from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
+
+
+# Feedback section appended to a re-enqueued task's body when the prior attempt
+# failed. Kept as a module constant so tests can assert the exact wording.
+_RETRY_FEEDBACK_HEADER = "## Previous attempt failed — fix the specific reason below"
+_RETRY_FEEDBACK_INTRO = (
+    "The prior attempt of this task failed validation. Address this exact issue "
+    "so it passes this time; do not repeat it:"
+)
+
+
+def build_retry_task(
+    qt: QueueTask, failure_output: str, max_feedback_chars: int = 2000
+) -> QueueTask:
+    """Return a new QueueTask that re-runs ``qt`` carrying the failure feedback.
+
+    The returned task is a copy of ``qt`` with its ``task`` body extended by a
+    clearly-delimited feedback section (the truncated failure output) and its
+    ``retries`` counter incremented. Every other field (flow/kind/name/isolate/
+    engine) is preserved — this is a forward-only, more-context version of the
+    same unit, not an intra-flow loop.
+    """
+    feedback = failure_output.strip()[:max_feedback_chars]
+    task = (
+        f"{qt.task}\n\n"
+        f"{_RETRY_FEEDBACK_HEADER}\n"
+        f"{_RETRY_FEEDBACK_INTRO}\n\n"
+        f"{feedback}"
+    )
+    return qt.model_copy(update={"task": task, "retries": qt.retries + 1})
+
+
+def write_retry_task(retry_qt: QueueTask, queue_dir: Path, original_stem: str) -> Path:
+    """Write ``retry_qt`` as a new PENDING task YAML in ``queue_dir``; return its path.
+
+    The file lands directly in ``queue_dir`` (not under done/) so the next drain
+    pass picks it up. The filename is derived from ``original_stem`` (with any
+    leading ``retry-…`` marker stripped so retries don't accrete prefixes) plus a
+    short slug of the task's first line and a uuid, making it recognisable as a
+    retry and unique across passes.
+    """
+    base = re.sub(r"^retry-\d+-", "", original_stem)
+    first_line = retry_qt.task.splitlines()[0] if retry_qt.task else ""
+    slug = _slugify(first_line) or _slugify(base) or "task"
+    uid = uuid.uuid4().hex[:8]
+    path = queue_dir / f"retry-{retry_qt.retries:02d}-{slug}-{uid}.yaml"
+    path.write_text(yaml.safe_dump(retry_qt.model_dump(), sort_keys=True))
+    return path
 
 
 def _error_flow_report(flow_name: str, engine: str, message: str) -> FlowReport:
@@ -85,6 +136,9 @@ def _process_task(
     project_root = operator_layer.parent
     flow_name = "(unknown)"
     engine_name = manifest.default_engine
+    # Captured outside the try so the auto-retry below can read it even if an
+    # early exception happened. It stays None when parsing failed -> no retry.
+    qt: QueueTask | None = None
     try:
         raw = yaml.safe_load(task_file.read_text())
         qt = QueueTask.model_validate(raw)
@@ -173,6 +227,25 @@ def _process_task(
         report.model_dump_json(indent=2)
     )
     task_file.rename(done_dir / task_file.name)
+
+    # Auto-retry with feedback: a failed task whose lineage has retries left is
+    # re-enqueued (forward-only) carrying the failure output so the next drain
+    # pass can fix the specific reason. With max_task_retries == 0 (default) this
+    # whole block is skipped -> byte-identical to the pre-feature behavior.
+    if not success and qt is not None and qt.retries < manifest.max_task_retries:
+        feedback = (
+            report.stages[-1].output_text
+            if report.stages
+            else "The previous attempt failed without a captured stage output."
+        )
+        retry_qt = build_retry_task(qt, feedback)
+        write_retry_task(retry_qt, queue_dir, task_file.stem)
+        print(
+            f"▶ retry queued (attempt {retry_qt.retries}/{manifest.max_task_retries})"
+            " — carrying the failure feedback",
+            file=sys.stderr,
+            flush=True,
+        )
 
     return TickResult(
         task_file=task_file.name,

@@ -70,6 +70,9 @@ class Manifest(BaseModel):
     plan_tier: str = "standard"     # compute tier for Conductor planning turns
     check_output_chars: int = 4096  # chars captured from a check's output into repair context
     bundle_output_chars: int = 1500  # chars of output_text kept in a bundle replay summary
+    # Per-task retry cap for the queue drain. 0 = OFF = current behavior: a failed
+    # task is re-enqueued with the failure feedback only while qt.retries < this.
+    max_task_retries: int = 0
     worktree_commit_message: str = "alc: {branch}"  # exit-commit template ({branch} placeholder)
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
@@ -205,6 +208,9 @@ class QueueTask(BaseModel):
     isolate: bool = True
     kind: Literal["flow", "specialist"] = "flow"
     name: str | None = None
+    # How many times THIS task lineage has already been retried. Legacy task
+    # files omit this and default to 0 (backward compat).
+    retries: int = 0
 
     def unit_name(self) -> str:
         """Return the unit name to dispatch: ``name`` when set, else ``flow``."""

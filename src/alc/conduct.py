@@ -7,9 +7,7 @@
 from __future__ import annotations
 
 import json
-import re
 import sys
-import unicodedata
 import uuid
 from pathlib import Path
 
@@ -35,27 +33,12 @@ from alc.prompts import (
     _CORRECTIVE_SUFFIX,
     resolve_prompt,
 )
+from alc.textutil import slugify as _slugify
 
 
 # ---------------------------------------------------------------------------
 # Pure parsing helpers
 # ---------------------------------------------------------------------------
-
-
-def _slugify(text: str, max_len: int = 40) -> str:
-    """Turn a task title into a filesystem-safe slug for a queue filename.
-
-    Transliterates accented characters to their ASCII base (so Portuguese words
-    keep their letters instead of losing them), lowercases, collapses any run of
-    non-alphanumeric characters to a single hyphen, trims leading/trailing
-    hyphens, and caps the length. Returns ``""`` when the text has no usable
-    characters (the caller falls back to the uid).
-    """
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    if len(slug) > max_len:
-        slug = slug[:max_len].rstrip("-")
-    return slug
 
 
 def parse_plan(
