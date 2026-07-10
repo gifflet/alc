@@ -331,3 +331,82 @@ class TestRetryBackwardCompat:
         # Identical to pre-feature behavior: queue empty, only the archive remains.
         assert _pending_yaml(queue_dir) == []
         assert (queue_dir / "done" / "job1.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
+# (5) Manual `alc retry <stem>` — reuses build_retry_task/failure_feedback.
+# ---------------------------------------------------------------------------
+
+
+class TestManualRetry:
+    def _archive(self, operator_layer: Path, stem: str, task: str,
+                 verdict: str, success: bool = False) -> None:
+        from alc.models import FlowReport, RunReport, Scorecard
+
+        manifest = load_manifest(operator_layer)
+        done = operator_layer.parent / manifest.queue_dir / "done"
+        done.mkdir(parents=True, exist_ok=True)
+        (done / f"{stem}.yaml").write_text(
+            yaml.safe_dump({"flow": "demand", "task": task, "isolate": False})
+        )
+        sc = Scorecard(span=0, passes=0, streak=0, touch=0)
+        report = FlowReport(
+            flow="demand", engine="mock", success=success,
+            stages=[RunReport(blueprint="qa", engine="mock", success=success,
+                              attempts=[], scorecard=sc, output_text=verdict)],
+            scorecard=sc,
+        )
+        (done / f"{stem}.report.json").write_text(report.model_dump_json(indent=2))
+
+    def test_reenqueues_failed_task_with_feedback(self, operator_layer, monkeypatch) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        stem = "plan-001-sombras-d1d54fe1"
+        self._archive(operator_layer, stem, "Add mineral shadows",
+                      "VERDICT: FAIL — contrast too low on dark mode")
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_retry(argparse.Namespace(stem=stem)) == 0
+
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        pending = sorted(queue_dir.glob("*.yaml"))
+        assert len(pending) == 1
+        qt = QueueTask.model_validate(yaml.safe_load(pending[0].read_text()))
+        assert qt.retries == 1
+        assert qt.flow == "demand"
+        assert "Add mineral shadows" in qt.task
+        assert "VERDICT: FAIL — contrast too low on dark mode" in qt.task
+
+    def test_stem_with_extension_is_tolerated(self, operator_layer, monkeypatch) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        stem = "demand-x"
+        self._archive(operator_layer, stem, "t", "why it failed")
+        monkeypatch.chdir(operator_layer.parent)
+        # Passing the archived report filename is stripped to the stem.
+        assert cmd_retry(argparse.Namespace(stem=f"{stem}.report.json")) == 0
+
+    def test_succeeded_task_refuses(self, operator_layer, monkeypatch, capsys) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        stem = "ok"
+        self._archive(operator_layer, stem, "t", "VERDICT: PASS", success=True)
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_retry(argparse.Namespace(stem=stem)) == 1
+        assert "nothing to retry" in capsys.readouterr().err
+
+    def test_missing_archive_errors(self, operator_layer, monkeypatch, capsys) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_retry(argparse.Namespace(stem="nope")) == 1
+        assert "no archived task" in capsys.readouterr().err

@@ -50,6 +50,18 @@ def build_retry_task(
     return qt.model_copy(update={"task": task, "retries": qt.retries + 1})
 
 
+def failure_feedback(report: FlowReport) -> str:
+    """Return the feedback text for a retry: the failing stage's output.
+
+    A Flow stops at its first failing stage, so ``stages[-1]`` is that stage; the
+    ``_error_flow_report`` path also carries a single stage with the traceback.
+    Shared by the automatic (drain) and manual (`alc retry`) retry paths.
+    """
+    if report.stages:
+        return report.stages[-1].output_text
+    return "The previous attempt failed without a captured stage output."
+
+
 def write_retry_task(retry_qt: QueueTask, queue_dir: Path, original_stem: str) -> Path:
     """Write ``retry_qt`` as a new PENDING task YAML in ``queue_dir``; return its path.
 
@@ -233,12 +245,7 @@ def _process_task(
     # pass can fix the specific reason. With max_task_retries == 0 (default) this
     # whole block is skipped -> byte-identical to the pre-feature behavior.
     if not success and qt is not None and qt.retries < manifest.max_task_retries:
-        feedback = (
-            report.stages[-1].output_text
-            if report.stages
-            else "The previous attempt failed without a captured stage output."
-        )
-        retry_qt = build_retry_task(qt, feedback)
+        retry_qt = build_retry_task(qt, failure_feedback(report))
         write_retry_task(retry_qt, queue_dir, task_file.stem)
         print(
             f"▶ retry queued (attempt {retry_qt.retries}/{manifest.max_task_retries})"

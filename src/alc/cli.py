@@ -755,6 +755,53 @@ def cmd_flow(args: argparse.Namespace) -> int:
     return 0 if report.success else 1
 
 
+def cmd_retry(args: argparse.Namespace) -> int:
+    """Run `alc retry <stem>`: re-enqueue a failed task carrying its failure feedback.
+
+    Reads the archived task + report under ``<queue_dir>/done/`` for the given
+    filename stem, appends the failing stage's output to the task, and writes a new
+    pending queue file. Run `alc tick` / `alc cycle <name>` afterwards to execute it.
+    """
+    import yaml
+
+    from alc.intake import load_manifest
+    from alc.models import FlowReport, QueueTask
+    from alc.queue import build_retry_task, failure_feedback, write_retry_task
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    done_dir = operator_layer.parent / manifest.queue_dir / "done"
+
+    stem = args.stem
+    for suffix in (".report.json", ".yaml"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+
+    task_file = done_dir / f"{stem}.yaml"
+    report_file = done_dir / f"{stem}.report.json"
+    if not task_file.exists() or not report_file.exists():
+        print(
+            f"[ERROR] no archived task + report for '{stem}' under {done_dir}",
+            file=sys.stderr,
+        )
+        return 1
+
+    qt = QueueTask.model_validate(yaml.safe_load(task_file.read_text()))
+    report = FlowReport.model_validate_json(report_file.read_text())
+    if report.success:
+        print(f"[ERROR] task '{stem}' succeeded; nothing to retry.", file=sys.stderr)
+        return 1
+
+    queue_dir = operator_layer.parent / manifest.queue_dir
+    retry_qt = build_retry_task(qt, failure_feedback(report))
+    path = write_retry_task(retry_qt, queue_dir, stem)
+    print(
+        f"Re-enqueued '{stem}' as {path.name} (attempt {retry_qt.retries}) with the "
+        f"failure feedback. Run 'alc tick' or 'alc cycle <name>' to execute it."
+    )
+    return 0
+
+
 def main() -> None:
     """Console-script entrypoint."""
     parser = argparse.ArgumentParser(
@@ -867,6 +914,19 @@ def main() -> None:
             "Process up to N queue tasks in parallel; each isolated task gets "
             "its own git worktree."
         ),
+    )
+
+    # alc retry <stem>
+    retry_parser = subparsers.add_parser(
+        "retry",
+        help=(
+            "Re-enqueue a failed task (by its done/ filename stem) with the failure "
+            "feedback appended, so the next drain fixes the specific reason."
+        ),
+    )
+    retry_parser.add_argument(
+        "stem",
+        help="Filename stem of the failed task under queue/done/ (e.g. plan-001-...-<uid>).",
     )
 
     # alc conduct "<goal>" [--engine NAME] [--enqueue]
@@ -1069,6 +1129,8 @@ def main() -> None:
         sys.exit(cmd_flow(args))
     elif args.command == "tick":
         sys.exit(cmd_tick(args))
+    elif args.command == "retry":
+        sys.exit(cmd_retry(args))
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
     elif args.command == "cycle":
