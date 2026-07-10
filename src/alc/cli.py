@@ -163,6 +163,15 @@ def cmd_lint(args: argparse.Namespace) -> int:
     violations = lint(manifest, blueprints)
     violations += validate_prompts(manifest, operator_layer, blueprints)
 
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json([
+            {"rule": v.rule, "severity": v.severity, "message": v.message}
+            for v in violations
+        ])
+        return 1 if has_errors(violations) else 0
+
     if not violations:
         print("No violations found. Operator Layer is conformant.")
         return 0
@@ -477,7 +486,20 @@ def cmd_cycle(args: argparse.Namespace) -> int:
     state = load_loop_state(spath, args.name)
 
     if args.status:
-        print(state.model_dump_json(indent=2))
+        if getattr(args, "json", False):
+            from alc.output import emit_json
+
+            emit_json(state.model_dump())
+            return 0
+        print(f"Loop:                    {state.name}")
+        print(f"Status:                  {state.status}")
+        print(f"Cycle:                   {state.cycle}")
+        print(f"Consecutive no-progress: {state.consecutive_no_progress}")
+        if state.budget_used:
+            used = ", ".join(f"{k}={v}" for k, v in state.budget_used.items())
+            print(f"Budget used:             {used}")
+        if state.stopped_reason:
+            print(f"Stopped reason:          {state.stopped_reason}")
         return 0
 
     if args.reset:
@@ -907,7 +929,15 @@ def main() -> None:
     )
 
     # alc lint
-    subparsers.add_parser("lint", help="Check the Operator Layer for Policy Gate violations.")
+    lint_parser = subparsers.add_parser(
+        "lint", help="Check the Operator Layer for Policy Gate violations."
+    )
+    lint_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the violations as JSON (machine-readable).",
+    )
 
     # alc run <blueprint> "<task>" [--engine NAME] [--isolate] [--primer NAME]
     #          [--bundle] [--from-bundle REF]
@@ -1068,6 +1098,12 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Reset the loop state, then run one cycle.",
+    )
+    cycle_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="With --status, print the loop state as JSON (machine-readable).",
     )
 
     # alc loop <name> [--engine NAME] [--interval S]

@@ -449,3 +449,17 @@ def test_prompts_list_json_output(operator_layer, monkeypatch, capsys) -> None:
     names = {e["name"] for e in data}
     assert "conductor" in names  # a reserved prompt is present
     assert all({"name", "kind", "source"} <= set(e) for e in data)
+
+
+def test_lint_json_output(operator_layer, monkeypatch, capsys) -> None:
+    """`alc lint --json` emits the violations list via the shared emit_json helper."""
+    import argparse
+    import json as _json
+
+    from alc.cli import cmd_lint
+
+    monkeypatch.chdir(operator_layer.parent)
+    cmd_lint(argparse.Namespace(json=True))
+    data = _json.loads(capsys.readouterr().out)
+    assert isinstance(data, list)
+    assert all({"rule", "severity", "message"} <= set(v) for v in data)

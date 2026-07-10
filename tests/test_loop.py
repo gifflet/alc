@@ -639,12 +639,26 @@ class TestCliCycle:
         _chdir_to_project(operator_layer, monkeypatch)
 
         args = argparse.Namespace(
-            name="deliver", engine=None, concurrency=0, status=True, reset=False
+            name="deliver", engine=None, concurrency=0, status=True, reset=False, json=False
+        )
+        assert cmd_cycle(args) == 0
+        out = capsys.readouterr().out
+        # Human-readable by default (the uniform convention): name + status appear.
+        assert "deliver" in out
+        assert "pending" in out  # a never-run loop reports "pending"
+
+    def test_status_json(self, operator_layer: Path, monkeypatch, capsys) -> None:
+        from alc.cli import cmd_cycle
+
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        _chdir_to_project(operator_layer, monkeypatch)
+
+        args = argparse.Namespace(
+            name="deliver", engine=None, concurrency=0, status=True, reset=False, json=True
         )
         assert cmd_cycle(args) == 0
         out = json.loads(capsys.readouterr().out)
         assert out["name"] == "deliver"
-        # A never-run loop reports "pending", not "running".
         assert out["status"] == "pending"
         assert out["cycle"] == 0
 
