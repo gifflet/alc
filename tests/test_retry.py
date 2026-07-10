@@ -606,3 +606,39 @@ class TestRetryListAndAll:
         monkeypatch.chdir(operator_layer.parent)
         assert cmd_retry(argparse.Namespace(stem=None, all=False)) == 0
         assert "No failed tasks to retry." in capsys.readouterr().out
+
+    def test_json_output_is_machine_readable(
+        self, operator_layer, monkeypatch, capsys
+    ) -> None:
+        import argparse
+        import json as _json
+
+        from alc.cli import cmd_retry
+
+        manifest = load_manifest(operator_layer)
+        done = operator_layer.parent / manifest.queue_dir / "done"
+        _archive_task(done, "plan-001-sombras-d1d54fe1", "Add mineral shadows",
+                      "VERDICT: FAIL", checks=("verdict-pass",))
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_retry(argparse.Namespace(stem=None, all=False, json=True)) == 0
+        data = _json.loads(capsys.readouterr().out)
+        assert isinstance(data, list) and len(data) == 1
+        assert data[0] == {
+            "stem": "plan-001-sombras-d1d54fe1",
+            "title": "Add mineral shadows",
+            "reason": "failed at qa: check(s) verdict-pass",
+            "retries": 0,
+        }
+
+    def test_json_output_empty_is_a_json_array(
+        self, operator_layer, monkeypatch, capsys
+    ) -> None:
+        import argparse
+        import json as _json
+
+        from alc.cli import cmd_retry
+
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_retry(argparse.Namespace(stem=None, all=False, json=True)) == 0
+        assert _json.loads(capsys.readouterr().out) == []

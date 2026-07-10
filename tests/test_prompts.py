@@ -118,6 +118,9 @@ class TestPlanContract:
         assert "NEVER emit \\'" in rendered
         assert "BARE JSON array" in rendered
         assert "never wrapped in an object" in rendered
+        # The title must be a bare imperative — no "Implement:"-style prefix.
+        assert "BARE imperative title" in rendered
+        assert 'do NOT prefix it with "Implement:"' in rendered
         # The three-key example survived one .format() as single braces.
         assert '{"kind": "flow", "name": "ship", "task": "implement the feature"}' in rendered
 
@@ -427,3 +430,22 @@ class TestRepairByteIdentity:
         section = loop._build_failure_section([_CR("c", "boom")])
         assert section.startswith("REPAIR-OVERRIDE\n")
         assert "### Check: c" in section
+
+
+def test_prompts_list_json_output(operator_layer, monkeypatch, capsys) -> None:
+    """`alc prompts list --json` emits the entries via the shared emit_json helper."""
+    import argparse
+    import json as _json
+
+    from alc.cli import cmd_prompts
+
+    monkeypatch.chdir(operator_layer.parent)
+    rc = cmd_prompts(
+        argparse.Namespace(action="list", name=None, force=False, json=True)
+    )
+    assert rc == 0
+    data = _json.loads(capsys.readouterr().out)
+    assert isinstance(data, list)
+    names = {e["name"] for e in data}
+    assert "conductor" in names  # a reserved prompt is present
+    assert all({"name", "kind", "source"} <= set(e) for e in data)

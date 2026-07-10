@@ -576,6 +576,13 @@ def cmd_prompts(args: argparse.Namespace) -> int:
 
     if args.action == "list":
         entries = list_prompts(operator_layer, manifest)
+        if getattr(args, "json", False):
+            from dataclasses import asdict
+
+            from alc.output import emit_json
+
+            emit_json([asdict(e) for e in entries])
+            return 0
         reserved = [e for e in entries if e.kind == "reserved"]
         free = [e for e in entries if e.kind == "free"]
         print("Reserved prompts:")
@@ -821,17 +828,28 @@ def cmd_retry(args: argparse.Namespace) -> int:
     done_dir = operator_layer.parent / manifest.queue_dir / "done"
     failures = outstanding_failures(done_dir)
 
-    if not failures:
-        print("No failed tasks to retry.")
-        return 0
-
-    # --all path — re-enqueue every outstanding failure.
+    # --all path — re-enqueue every outstanding failure (even if none, harmless).
     if args.all:
+        if not failures:
+            print("No failed tasks to retry.")
+            return 0
         for failure in failures:
             _retry_one(failure.stem, manifest, operator_layer)
         return 0
 
-    # List path — one clean block per outstanding failure (most recent first).
+    # List path — machine-readable (--json) or human-readable (default).
+    if getattr(args, "json", False):
+        from dataclasses import asdict
+
+        from alc.output import emit_json
+
+        emit_json([asdict(f) for f in failures])
+        return 0
+
+    if not failures:
+        print("No failed tasks to retry.")
+        return 0
+    # One clean block per outstanding failure (most recent first).
     for failure in failures:
         print(f"{failure.stem}   (attempt {failure.retries})")
         print(f"  {failure.title}")
@@ -979,6 +997,12 @@ def main() -> None:
         default=False,
         help="Re-enqueue every outstanding failure at once (ignored when a stem is given).",
     )
+    retry_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="List the outstanding failures as JSON (machine-readable).",
+    )
 
     # alc conduct "<goal>" [--engine NAME] [--enqueue]
     conduct_parser = subparsers.add_parser(
@@ -1116,6 +1140,12 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Overwrite an existing prompt override file when ejecting.",
+    )
+    prompts_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output 'prompts list' as JSON (machine-readable).",
     )
 
     # alc flow <flow_name> "<task>" [--engine NAME] [--isolate] [--primer NAME]

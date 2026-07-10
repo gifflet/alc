@@ -95,8 +95,9 @@ Additional hard requirements:
 - Emit VALID JSON only: use standard escapes (\\n, \\", \\\\); NEVER emit \\' — a
   single quote inside a string is written literally as '.
 - No prose, headings, or ``` fences around the array.
-- The FIRST line of each "task" is a short title (it becomes the commit subject);
-  put any details after a blank line.
+- The FIRST line of each "task" is a short, BARE imperative title that becomes the
+  commit subject directly — do NOT prefix it with "Implement:", "Add:", "Feature:"
+  or any label; put any details after a blank line.
 """
 )
 
