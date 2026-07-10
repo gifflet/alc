@@ -19,7 +19,12 @@ import yaml
 
 from alc.intake import load_manifest
 from alc.models import QueueTask
-from alc.queue import build_retry_task, process_queue, write_retry_task
+from alc.queue import (
+    build_retry_task,
+    outstanding_failures,
+    process_queue,
+    write_retry_task,
+)
 
 # ---------------------------------------------------------------------------
 # Harness — mirrors tests/test_cycle_standard.py (local git + Mock engine).
@@ -232,6 +237,35 @@ class TestWriteRetryTask:
         assert path.name.startswith("retry-02-")
         assert "retry-01" not in path.name
 
+    def test_stamps_root_when_retrying_an_original(self, tmp_path: Path) -> None:
+        """Retrying an ORIGINAL (retry_of=None) roots the lineage at its own stem."""
+        queue_dir = tmp_path / "queue"
+        queue_dir.mkdir()
+        qt = QueueTask(flow="demand", task="ship the widget", isolate=False)
+        retry = build_retry_task(qt, "it failed")
+
+        path = write_retry_task(retry, queue_dir, original_stem="job1")
+
+        reloaded = QueueTask.model_validate(yaml.safe_load(path.read_text()))
+        assert reloaded.retry_of == "job1"
+
+    def test_propagates_root_across_multi_level_lineage(self, tmp_path: Path) -> None:
+        """Retrying a RETRY propagates the SAME root, so the chain shares one root."""
+        queue_dir = tmp_path / "queue"
+        queue_dir.mkdir()
+        # A retry already carrying the lineage root.
+        retry1 = QueueTask(
+            flow="demand", task="ship the widget", isolate=False, retries=1, retry_of="job1"
+        )
+        retry2 = build_retry_task(retry1, "failed again")
+
+        path = write_retry_task(retry2, queue_dir, original_stem="retry-01-ship-abc12345")
+
+        reloaded = QueueTask.model_validate(yaml.safe_load(path.read_text()))
+        # Root is the ORIGINAL's stem, not the intermediate retry's stem.
+        assert reloaded.retry_of == "job1"
+        assert reloaded.retries == 2
+
 
 # ---------------------------------------------------------------------------
 # (3) Drain auto-retry — end-to-end.
@@ -368,7 +402,7 @@ class TestManualRetry:
                       "VERDICT: FAIL — contrast too low on dark mode")
         monkeypatch.chdir(operator_layer.parent)
 
-        assert cmd_retry(argparse.Namespace(stem=stem)) == 0
+        assert cmd_retry(argparse.Namespace(stem=stem, all=False)) == 0
 
         manifest = load_manifest(operator_layer)
         queue_dir = operator_layer.parent / manifest.queue_dir
@@ -389,7 +423,7 @@ class TestManualRetry:
         self._archive(operator_layer, stem, "t", "why it failed")
         monkeypatch.chdir(operator_layer.parent)
         # Passing the archived report filename is stripped to the stem.
-        assert cmd_retry(argparse.Namespace(stem=f"{stem}.report.json")) == 0
+        assert cmd_retry(argparse.Namespace(stem=f"{stem}.report.json", all=False)) == 0
 
     def test_succeeded_task_refuses(self, operator_layer, monkeypatch, capsys) -> None:
         import argparse
@@ -399,7 +433,7 @@ class TestManualRetry:
         stem = "ok"
         self._archive(operator_layer, stem, "t", "VERDICT: PASS", success=True)
         monkeypatch.chdir(operator_layer.parent)
-        assert cmd_retry(argparse.Namespace(stem=stem)) == 1
+        assert cmd_retry(argparse.Namespace(stem=stem, all=False)) == 1
         assert "nothing to retry" in capsys.readouterr().err
 
     def test_missing_archive_errors(self, operator_layer, monkeypatch, capsys) -> None:
@@ -408,5 +442,146 @@ class TestManualRetry:
         from alc.cli import cmd_retry
 
         monkeypatch.chdir(operator_layer.parent)
-        assert cmd_retry(argparse.Namespace(stem="nope")) == 1
+        assert cmd_retry(argparse.Namespace(stem="nope", all=False)) == 1
         assert "no archived task" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# (6) outstanding_failures — the retryable-list query with lineage resolution.
+# ---------------------------------------------------------------------------
+
+
+def _archive_task(
+    done_dir: Path,
+    stem: str,
+    task: str,
+    verdict: str,
+    *,
+    success: bool = False,
+    retries: int = 0,
+    retry_of: str | None = None,
+) -> None:
+    """Write a done/<stem>.yaml + done/<stem>.report.json pair for a test archive."""
+    from alc.models import FlowReport, RunReport, Scorecard
+
+    done_dir.mkdir(parents=True, exist_ok=True)
+    qt = QueueTask(
+        flow="demand", task=task, isolate=False, retries=retries, retry_of=retry_of
+    )
+    (done_dir / f"{stem}.yaml").write_text(yaml.safe_dump(qt.model_dump()))
+    sc = Scorecard(span=0, passes=0, streak=0, touch=0)
+    report = FlowReport(
+        flow="demand", engine="mock", success=success,
+        stages=[RunReport(blueprint="qa", engine="mock", success=success,
+                          attempts=[], scorecard=sc, output_text=verdict)],
+        scorecard=sc,
+    )
+    (done_dir / f"{stem}.report.json").write_text(report.model_dump_json(indent=2))
+
+
+class TestOutstandingFailures:
+    def test_lone_failure_is_listed_once(self, tmp_path: Path) -> None:
+        done = tmp_path / "done"
+        _archive_task(done, "job1", "Add mineral shadows",
+                      "line one\nVERDICT: FAIL — contrast too low", retries=0)
+
+        failures = outstanding_failures(done)
+        assert len(failures) == 1
+        entry = failures[0]
+        assert entry.stem == "job1"
+        assert entry.title == "Add mineral shadows"
+        assert entry.reason == "VERDICT: FAIL — contrast too low"
+        assert entry.retries == 0
+
+    def test_resolved_lineage_is_not_listed(self, tmp_path: Path) -> None:
+        done = tmp_path / "done"
+        # An original failure, then a retry (same root) that SUCCEEDED.
+        _archive_task(done, "job1", "Add shadows", "VERDICT: FAIL", retries=0)
+        _archive_task(done, "retry-01-add-shadows-abc12345", "Add shadows",
+                      "VERDICT: PASS", success=True, retries=1, retry_of="job1")
+
+        assert outstanding_failures(done) == []
+
+    def test_two_independent_roots_yield_two_entries(self, tmp_path: Path) -> None:
+        done = tmp_path / "done"
+        _archive_task(done, "job1", "First task", "boom one", retries=0)
+        _archive_task(done, "job2", "Second task", "boom two", retries=0)
+
+        failures = outstanding_failures(done)
+        assert [e.stem for e in failures] == ["job1", "job2"]
+
+    def test_latest_attempt_per_root_is_returned(self, tmp_path: Path) -> None:
+        done = tmp_path / "done"
+        # Same lineage (root job1), two failed attempts — the highest-retries wins.
+        _archive_task(done, "job1", "Add shadows", "first failure", retries=0)
+        _archive_task(done, "retry-01-add-shadows-abc12345", "Add shadows",
+                      "latest failure", retries=2, retry_of="job1")
+
+        failures = outstanding_failures(done)
+        assert len(failures) == 1
+        assert failures[0].stem == "retry-01-add-shadows-abc12345"
+        assert failures[0].retries == 2
+        assert failures[0].reason == "latest failure"
+
+    def test_absent_or_empty_done_dir_is_empty(self, tmp_path: Path) -> None:
+        assert outstanding_failures(tmp_path / "missing") == []
+        empty = tmp_path / "done"
+        empty.mkdir()
+        assert outstanding_failures(empty) == []
+
+
+# ---------------------------------------------------------------------------
+# (7) `alc retry` with no stem — list / --all paths.
+# ---------------------------------------------------------------------------
+
+
+class TestRetryListAndAll:
+    def test_no_stem_lists_outstanding_failures(
+        self, operator_layer, monkeypatch, capsys
+    ) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        manifest = load_manifest(operator_layer)
+        done = operator_layer.parent / manifest.queue_dir / "done"
+        _archive_task(done, "plan-001-sombras-d1d54fe1", "Add mineral shadows",
+                      "VERDICT: FAIL — contrast too low")
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_retry(argparse.Namespace(stem=None, all=False)) == 0
+        out = capsys.readouterr().out
+        assert "plan-001-sombras-d1d54fe1" in out
+        assert "Add mineral shadows" in out
+        assert "alc retry --all" in out
+
+    def test_all_reenqueues_every_outstanding_failure(
+        self, operator_layer, monkeypatch
+    ) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        manifest = load_manifest(operator_layer)
+        done = operator_layer.parent / manifest.queue_dir / "done"
+        _archive_task(done, "job1", "First task", "boom one")
+        _archive_task(done, "job2", "Second task", "boom two")
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_retry(argparse.Namespace(stem=None, all=True)) == 0
+
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        pending = _pending_yaml(queue_dir)
+        assert len(pending) == 2
+        assert all(p.name.startswith("retry-") for p in pending)
+
+    def test_no_failures_prints_message(
+        self, operator_layer, monkeypatch, capsys
+    ) -> None:
+        import argparse
+
+        from alc.cli import cmd_retry
+
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_retry(argparse.Namespace(stem=None, all=False)) == 0
+        assert "No failed tasks to retry." in capsys.readouterr().out

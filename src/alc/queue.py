@@ -8,6 +8,7 @@ import sys
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -70,7 +71,13 @@ def write_retry_task(retry_qt: QueueTask, queue_dir: Path, original_stem: str) -
     leading ``retry-…`` marker stripped so retries don't accrete prefixes) plus a
     short slug of the task's first line and a uuid, making it recognisable as a
     retry and unique across passes.
+
+    Lineage: the whole retry chain shares ONE root stem. Retrying an original
+    (retry_of=None) roots the lineage at its own ``original_stem``; retrying a
+    retry (which already carries retry_of) propagates that same root forward.
     """
+    root = retry_qt.retry_of or original_stem
+    retry_qt = retry_qt.model_copy(update={"retry_of": root})
     base = re.sub(r"^retry-\d+-", "", original_stem)
     first_line = retry_qt.task.splitlines()[0] if retry_qt.task else ""
     slug = _slugify(first_line) or _slugify(base) or "task"
@@ -78,6 +85,87 @@ def write_retry_task(retry_qt: QueueTask, queue_dir: Path, original_stem: str) -
     path = queue_dir / f"retry-{retry_qt.retries:02d}-{slug}-{uid}.yaml"
     path.write_text(yaml.safe_dump(retry_qt.model_dump(), sort_keys=True))
     return path
+
+
+@dataclass
+class FailedTask:
+    """One outstanding failure an operator could retry (see ``outstanding_failures``)."""
+
+    stem: str      # filename stem of the latest failed attempt (what `alc retry <stem>` takes)
+    title: str     # first line of the archived task body
+    reason: str    # short single-line tail of the failing-stage output
+    retries: int   # qt.retries of the latest failed attempt
+
+
+def _reason_line(report: FlowReport, max_chars: int = 120) -> str:
+    """Return a short single-line tail of the failing-stage output for a list entry.
+
+    Reuses ``failure_feedback`` (the failing stage's output), takes its last
+    non-empty line, and truncates to ``max_chars``.
+    """
+    feedback = failure_feedback(report)
+    lines = [line.strip() for line in feedback.splitlines() if line.strip()]
+    tail = lines[-1] if lines else ""
+    return tail[:max_chars]
+
+
+def outstanding_failures(done_dir: Path) -> list[FailedTask]:
+    """Return the failed tasks an operator could retry — one per UNRESOLVED lineage.
+
+    Scans every ``done/<stem>.report.json`` archive, groups archived tasks by
+    their lineage root (``qt.retry_of or <stem>``), and drops any root whose
+    lineage already contains a successful attempt (resolved by a later retry).
+    For each remaining root the LATEST failed attempt (highest ``qt.retries``) is
+    returned, since that is what a fresh retry would descend from. Sorted by stem.
+
+    An absent or empty ``done_dir`` yields an empty list.
+    """
+    if not done_dir.exists():
+        return []
+
+    # Per-root state: whether any attempt succeeded, and the latest failed attempt.
+    resolved: dict[str, bool] = {}
+    latest_failed: dict[str, tuple[str, QueueTask, FlowReport]] = {}
+
+    for report_file in sorted(done_dir.glob("*.report.json")):
+        stem = report_file.name[: -len(".report.json")]
+        task_file = done_dir / f"{stem}.yaml"
+        if not task_file.exists():
+            continue  # orphan report with no archived task -> skip
+
+        try:
+            qt = QueueTask.model_validate(yaml.safe_load(task_file.read_text()))
+            report = FlowReport.model_validate_json(report_file.read_text())
+        except Exception:
+            continue  # unreadable / invalid archive -> skip
+
+        root = qt.retry_of or stem
+        if report.success:
+            resolved[root] = True
+            continue
+        resolved.setdefault(root, False)
+
+        # Keep the highest-retries failed attempt for this root (ties -> any).
+        current = latest_failed.get(root)
+        if current is None or qt.retries > current[1].retries:
+            latest_failed[root] = (stem, qt, report)
+
+    entries: list[FailedTask] = []
+    for root, (stem, qt, report) in latest_failed.items():
+        if resolved.get(root):
+            continue  # a later attempt in this lineage succeeded -> not outstanding
+        title = qt.task.splitlines()[0] if qt.task else ""
+        entries.append(
+            FailedTask(
+                stem=stem,
+                title=title,
+                reason=_reason_line(report),
+                retries=qt.retries,
+            )
+        )
+
+    entries.sort(key=lambda e: e.stem)
+    return entries
 
 
 def _error_flow_report(flow_name: str, engine: str, message: str) -> FlowReport:

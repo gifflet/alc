@@ -211,6 +211,10 @@ class QueueTask(BaseModel):
     # How many times THIS task lineage has already been retried. Legacy task
     # files omit this and default to 0 (backward compat).
     retries: int = 0
+    # Root stem this task's retry lineage descends from. None for an original
+    # task; a retry carries the root of the whole lineage so every attempt in a
+    # retry chain shares ONE root. Legacy files omit it -> None (backward compat).
+    retry_of: str | None = None
 
     def unit_name(self) -> str:
         """Return the unit name to dispatch: ``name`` when set, else ``flow``."""

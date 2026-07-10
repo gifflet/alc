@@ -755,24 +755,20 @@ def cmd_flow(args: argparse.Namespace) -> int:
     return 0 if report.success else 1
 
 
-def cmd_retry(args: argparse.Namespace) -> int:
-    """Run `alc retry <stem>`: re-enqueue a failed task carrying its failure feedback.
+def _retry_one(stem: str, manifest, operator_layer: Path) -> int:
+    """Re-enqueue one failed task by its done/ filename stem; return an exit code.
 
-    Reads the archived task + report under ``<queue_dir>/done/`` for the given
-    filename stem, appends the failing stage's output to the task, and writes a new
-    pending queue file. Run `alc tick` / `alc cycle <name>` afterwards to execute it.
+    Reads the archived task + report under ``<queue_dir>/done/``, appends the
+    failing stage's output to the task, and writes a new pending queue file.
+    Shared by the single-stem (`alc retry <stem>`) and `--all` paths.
     """
     import yaml
 
-    from alc.intake import load_manifest
     from alc.models import FlowReport, QueueTask
     from alc.queue import build_retry_task, failure_feedback, write_retry_task
 
-    operator_layer = _find_operator_layer()
-    manifest = load_manifest(operator_layer)
     done_dir = operator_layer.parent / manifest.queue_dir / "done"
 
-    stem = args.stem
     for suffix in (".report.json", ".yaml"):
         if stem.endswith(suffix):
             stem = stem[: -len(suffix)]
@@ -799,6 +795,50 @@ def cmd_retry(args: argparse.Namespace) -> int:
         f"Re-enqueued '{stem}' as {path.name} (attempt {retry_qt.retries}) with the "
         f"failure feedback. Run 'alc tick' or 'alc cycle <name>' to execute it."
     )
+    return 0
+
+
+def cmd_retry(args: argparse.Namespace) -> int:
+    """Run `alc retry [stem] [--all]`: retry failed tasks carrying their feedback.
+
+    - ``<stem>`` given: re-enqueue that single archived failure (unchanged).
+    - ``--all`` (no stem): re-enqueue every outstanding failure at once.
+    - neither: LIST the outstanding failures (unresolved lineages) so an operator
+      doesn't have to know the opaque stem.
+
+    Run `alc tick` / `alc cycle <name>` afterwards to execute re-enqueued tasks.
+    """
+    from alc.intake import load_manifest
+    from alc.queue import outstanding_failures
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    # Single-stem path — the original behavior, unchanged.
+    if args.stem:
+        return _retry_one(args.stem, manifest, operator_layer)
+
+    done_dir = operator_layer.parent / manifest.queue_dir / "done"
+    failures = outstanding_failures(done_dir)
+
+    if not failures:
+        print("No failed tasks to retry.")
+        return 0
+
+    # --all path — re-enqueue every outstanding failure.
+    if args.all:
+        for failure in failures:
+            _retry_one(failure.stem, manifest, operator_layer)
+        return 0
+
+    # List path — print a readable block per outstanding failure.
+    for failure in failures:
+        print(failure.stem)
+        print(f"  {failure.title}")
+        print(f"  {failure.reason}")
+        print(f"  (attempt {failure.retries})")
+        print()
+    print("Run: alc retry <stem>   (or: alc retry --all)")
     return 0
 
 
@@ -916,17 +956,29 @@ def main() -> None:
         ),
     )
 
-    # alc retry <stem>
+    # alc retry [stem] [--all]
     retry_parser = subparsers.add_parser(
         "retry",
         help=(
             "Re-enqueue a failed task (by its done/ filename stem) with the failure "
-            "feedback appended, so the next drain fixes the specific reason."
+            "feedback appended, so the next drain fixes the specific reason. With no "
+            "stem, lists the outstanding failures; with --all, re-enqueues all of them."
         ),
     )
     retry_parser.add_argument(
         "stem",
-        help="Filename stem of the failed task under queue/done/ (e.g. plan-001-...-<uid>).",
+        nargs="?",
+        default=None,
+        help=(
+            "Filename stem of the failed task under queue/done/ (e.g. "
+            "plan-001-...-<uid>). Omit to list the outstanding failures."
+        ),
+    )
+    retry_parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Re-enqueue every outstanding failure at once (ignored when a stem is given).",
     )
 
     # alc conduct "<goal>" [--engine NAME] [--enqueue]
