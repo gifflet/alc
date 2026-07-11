@@ -171,16 +171,6 @@ def _branch_exists(repo: Path, branch: str) -> bool:
     return result.stdout.strip() != ""
 
 
-def _branch_tip_subject(repo: Path, branch: str) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(repo), "log", "-1", "--format=%s", branch],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
-
-
 def _branch_tree_files(repo: Path, branch: str) -> list[str]:
     result = subprocess.run(
         ["git", "-C", str(repo), "ls-tree", "-r", "--name-only", branch],
@@ -189,16 +179,6 @@ def _branch_tree_files(repo: Path, branch: str) -> list[str]:
         check=True,
     )
     return result.stdout.splitlines()
-
-
-def _commit_count(repo: Path, branch: str) -> int:
-    result = subprocess.run(
-        ["git", "-C", str(repo), "rev-list", "--count", branch],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return int(result.stdout.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +199,6 @@ class TestCommittingDemandSuccess:
         monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine())
 
         manifest = load_manifest(repo / ".alc")
-        base_commits = _commit_count(repo, "HEAD")
 
         queue_dir = repo / ".alc" / "queue"
         (queue_dir / "job1.yaml").write_text(_DEMAND_TASK_ISOLATE)
@@ -229,29 +208,51 @@ class TestCommittingDemandSuccess:
         assert len(results) == 1
         r = results[0]
         assert r.success is True
-        # The branch was recorded (the worktree committed).
+        # The branch was recorded (the worktree committed) and is auto-mergeable.
         assert r.branch is not None
         branch = r.branch
-        assert _branch_exists(repo, branch)
+        # Part E: the passed committing-demand branch was auto-merged into the
+        # current branch and deleted — its work now lives on the current branch.
+        assert r.auto_merge is True
+        assert not _branch_exists(repo, branch)
 
-        # Exactly ONE new commit on the branch (base + 1) — not the double-commit.
-        assert _commit_count(repo, branch) == base_commits + 1
+        # The exit-commit is ONE non-merge commit — asserted on the demand's commit
+        # that the merge brought in (found by its rendered flow.commit.message
+        # subject; --no-merges excludes the auto-merge commit, which reuses it).
+        rev = subprocess.run(
+            ["git", "-C", str(repo), "rev-list", "--all", "--no-merges", "--grep",
+             "^feat(auto): ship the widget$"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        assert len(rev) == 1
+        demand_commit = rev[0]
 
-        # The commit message equals the rendered flow.commit.message.
-        assert _branch_tip_subject(repo, branch) == "feat(auto): ship the widget"
-
-        # The feature file IS in the commit; the `.alc/` change is NOT.
-        tree = _branch_tree_files(repo, branch)
+        # The feature file IS in the exit-commit; the `.alc/` change is NOT.
+        tree = _branch_tree_files(repo, demand_commit)
         assert "feature.txt" in tree
         # `.alc/state.txt` exists in the tree (it was tracked), but its mutation
         # must NOT be part of this commit — assert the committed blob is the seed.
         show = subprocess.run(
-            ["git", "-C", str(repo), "show", f"{branch}:.alc/state.txt"],
+            ["git", "-C", str(repo), "show", f"{demand_commit}:.alc/state.txt"],
             capture_output=True,
             text=True,
             check=True,
         )
         assert show.stdout == "seed state\n"
+
+        # The merged feature landed on the current branch; the `.alc/` mutation
+        # never did (it is excluded from the demand commit).
+        head_tree = _branch_tree_files(repo, "HEAD")
+        assert "feature.txt" in head_tree
+        head_state = subprocess.run(
+            ["git", "-C", str(repo), "show", "HEAD:.alc/state.txt"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert head_state.stdout == "seed state\n"
 
 
 # ---------------------------------------------------------------------------

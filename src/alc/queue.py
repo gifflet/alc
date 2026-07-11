@@ -15,6 +15,7 @@ import yaml
 
 from alc.flow import FlowRunner
 from alc.intake import load_flow, load_specialist
+from alc.merge import auto_merge_branches
 from alc.models import FlowReport, Manifest, QueueTask, RunReport, Scorecard, TickResult
 from alc.specialist import run_specialist
 from alc.textutil import slugify as _slugify
@@ -298,6 +299,10 @@ def _process_task(
             )
 
         branch: str | None = None
+        # True only for a SUCCESSFUL committing demand run in a worktree — its
+        # branch is eligible for the post-batch auto-merge (Part E). The
+        # non-isolate/serial path and the outer-except path default it False.
+        demand_committed = False
 
         if qt.isolate and is_git_repo(project_root):
             repo_root = git_toplevel(project_root)
@@ -373,6 +378,10 @@ def _process_task(
                 raise exc_info[1]
 
             branch = wt.branch if wt.committed else None
+            # A committing demand that committed to its branch is auto-mergeable
+            # post-batch. A failed demand has wt.committed False -> branch None ->
+            # demand_committed False -> nothing to merge (Part C's discard).
+            demand_committed = is_committing_demand and wt.committed
         else:
             report = _run(None)
 
@@ -412,6 +421,7 @@ def _process_task(
         flow=flow_name,
         success=success,
         branch=branch,
+        auto_merge=demand_committed,
         report=report,
     )
 
@@ -504,44 +514,59 @@ def process_queue(
 
     if max_workers == 1:
         # Serial path — behaviourally identical to the original drain loop.
-        return [
+        results: list[TickResult] = [
             _process_task(manifest, operator_layer, flows_dir, queue_dir, task_file)
             for task_file in pending
         ]
+    else:
+        # Parallel path — only isolated tasks (isolate:true + git repo) may run
+        # concurrently; all others share the working directory and run serially.
+        is_git = is_git_repo(project_root)
+        parallel_tasks, serial_tasks = _partition_tasks(pending, is_git)
 
-    # Parallel path — only isolated tasks (isolate:true + git repo) may run
-    # concurrently; all others share the working directory and run serially.
-    is_git = is_git_repo(project_root)
-    parallel_tasks, serial_tasks = _partition_tasks(pending, is_git)
+        if serial_tasks:
+            n = len(serial_tasks)
+            print(f"{n} non-isolated task(s) will run serially", file=sys.stderr)
 
-    if serial_tasks:
-        n = len(serial_tasks)
-        print(f"{n} non-isolated task(s) will run serially", file=sys.stderr)
+        # Map original pending index -> TickResult so we can restore order.
+        pending_index: dict[Path, int] = {p: i for i, p in enumerate(pending)}
+        results = [None] * len(pending)  # type: ignore[list-item]
 
-    # Map original pending index -> TickResult so we can restore order.
-    pending_index: dict[Path, int] = {p: i for i, p in enumerate(pending)}
-    results: list[TickResult] = [None] * len(pending)  # type: ignore[list-item]
+        # Run parallel-eligible tasks concurrently.
+        if parallel_tasks:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                future_to_index = {
+                    pool.submit(
+                        _process_task,
+                        manifest,
+                        operator_layer,
+                        flows_dir,
+                        queue_dir,
+                        task_file,
+                    ): pending_index[task_file]
+                    for task_file in parallel_tasks
+                }
+                for future in future_to_index:
+                    results[future_to_index[future]] = future.result()
 
-    # Run parallel-eligible tasks concurrently.
-    if parallel_tasks:
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            future_to_index = {
-                pool.submit(
-                    _process_task,
-                    manifest,
-                    operator_layer,
-                    flows_dir,
-                    queue_dir,
-                    task_file,
-                ): pending_index[task_file]
-                for task_file in parallel_tasks
-            }
-            for future in future_to_index:
-                results[future_to_index[future]] = future.result()
+        # Run serial tasks one by one, preserving their original positions.
+        for task_file in serial_tasks:
+            result = _process_task(
+                manifest, operator_layer, flows_dir, queue_dir, task_file
+            )
+            results[pending_index[task_file]] = result
 
-    # Run serial tasks one by one, preserving their original positions.
-    for task_file in serial_tasks:
-        result = _process_task(manifest, operator_layer, flows_dir, queue_dir, task_file)
-        results[pending_index[task_file]] = result
+    # Part E: auto-merge the passed committing-demand branches into the current
+    # branch (Part D), sequentially, AFTER the concurrent batch. Branches from
+    # ordinary non-committing isolate tasks (auto_merge False) are NOT merged —
+    # they are left for manual review (existing contract). When no committing
+    # demand ran in a worktree this list is empty -> no-op -> byte-identical.
+    merge_branches = [
+        r.branch for r in results if r is not None and r.branch and r.auto_merge
+    ]
+    if merge_branches:
+        repo_root = git_toplevel(project_root)
+        merge_report = auto_merge_branches(repo_root, merge_branches)
+        print(merge_report.summary(), file=sys.stderr, flush=True)
 
     return results

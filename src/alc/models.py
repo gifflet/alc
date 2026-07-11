@@ -289,6 +289,10 @@ class TickResult(BaseModel):
     flow: str
     success: bool
     branch: str | None = None   # set when IsolatedWorktree committed changes
+    # True only when this result's ``branch`` is a SUCCESSFUL committing-demand
+    # branch eligible for the post-batch auto-merge (Part D); a non-committing
+    # isolate branch stays False and is left for the operator to review.
+    auto_merge: bool = False
     report: FlowReport
 
 
