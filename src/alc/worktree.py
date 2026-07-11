@@ -4,11 +4,16 @@
 # working tree.
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
 from pathlib import Path
+
+from alc.models import ProvisionSpec
 
 # Serialises every git mutation (worktree add/remove, branch -D). `git worktree
 # add`/`remove` are not concurrency-safe on a single repo, so concurrent fan-out
@@ -188,3 +193,76 @@ class IsolatedWorktree:
                 )
                 raise
         # Return None (falsy) — do not suppress exceptions from the body.
+
+
+def _deep_copy(src: Path, dst: Path) -> None:
+    """Deep-copy *src* to *dst* — a directory tree (symlinks preserved) or a file."""
+    if src.is_dir():
+        shutil.copytree(src, dst, symlinks=True)
+    else:
+        shutil.copy2(src, dst)
+
+
+def _cow_copy(src: Path, dst: Path) -> None:
+    """Copy-on-write clone *src* to *dst*, falling back to a deep copy.
+
+    Uses ``cp -c`` on macOS (APFS) and ``cp --reflink=auto`` on Linux. When the
+    filesystem lacks COW support the ``cp`` exits non-zero (or ``cp`` is missing
+    and raises); either way we fall back to a plain deep copy so the result is
+    always an ISOLATED copy — never a raise on COW-unsupported.
+    """
+    if sys.platform == "darwin":
+        cmd = ["cp", "-c", "-R", str(src), str(dst)]
+    else:
+        cmd = ["cp", "--reflink=auto", "-R", str(src), str(dst)]
+    try:
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode == 0:
+            return
+    except Exception:
+        pass  # cp missing / unusable -> fall through to the deep copy
+    # COW unsupported or cp failed: a partial dst may exist from a failed cp.
+    if dst.exists():
+        if dst.is_dir() and not dst.is_symlink():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink()
+    _deep_copy(src, dst)
+
+
+def provision_worktree(
+    worktree: Path, project_root: Path, provisions: list[ProvisionSpec]
+) -> None:
+    """Provision gitignored runtime deps from *project_root* into *worktree*.
+
+    For each spec, ``src = project_root / spec.path`` and ``dst = worktree /
+    spec.path``. A missing source is skipped (nothing to provision). Any existing
+    ``dst`` (a worktree may carry a tracked placeholder) is removed first, then:
+      - ``link``  -> symlink ``src`` into the worktree (SHARED — read-only-safe only).
+      - ``copy``  -> an isolated deep copy.
+      - ``clone`` -> a copy-on-write clone, falling back to a deep copy.
+
+    Handles both a directory (node_modules, data) and a single file (.env). With
+    an empty *provisions* list this loops zero times, so a worktree run is
+    byte-identical to today's behavior. Pure helper — no git access needed.
+    """
+    for spec in provisions:
+        src = project_root / spec.path
+        if not src.exists():
+            continue  # nothing to provision for this path
+        dst = worktree / spec.path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        # Remove any existing dst (e.g. a tracked placeholder) so the provision
+        # is deterministic regardless of what the worktree checked out.
+        if dst.exists() or dst.is_symlink():
+            if dst.is_dir() and not dst.is_symlink():
+                shutil.rmtree(dst)
+            else:
+                dst.unlink()
+
+        if spec.kind == "link":
+            os.symlink(src, dst)
+        elif spec.kind == "copy":
+            _deep_copy(src, dst)
+        else:  # "clone"
+            _cow_copy(src, dst)

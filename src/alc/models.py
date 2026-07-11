@@ -2,6 +2,7 @@
 # Covers the Operator Layer (Manifest, Blueprint) and run-time records (RunReport, Scorecard).
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -55,6 +56,57 @@ class Blueprint(BaseModel):
     timeout_s: int | None = None  # per-turn engine kill timeout; None -> manifest.default_timeout_s
 
 
+class ProvisionSpec(BaseModel):
+    """Declares one gitignored runtime dependency to provision into a worktree.
+
+    Exactly one of ``link`` / ``copy`` / ``clone`` must be set; its value is a
+    path relative to the project root, choosing the isolation/cost trade-off:
+      - ``link``: symlink the project-root path in (SHARED across worktrees —
+        read-only-safe only; a mutation corrupts siblings).
+      - ``copy``: a full, isolated deep copy per worktree.
+      - ``clone``: a copy-on-write clone (fast AND isolated), falling back to a
+        plain deep copy when the filesystem has no COW support.
+    """
+
+    link: str | None = None
+    # `copy_`/alias="copy": the YAML key stays `copy`, but the field name avoids
+    # shadowing the deprecated BaseModel.copy (the ReportSpec.schema_ precedent).
+    copy_: str | None = Field(default=None, alias="copy")
+    clone: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _exactly_one_mode(self) -> "ProvisionSpec":
+        """Exactly one of link/copy/clone; the path stays inside the project tree."""
+        set_count = sum(v is not None for v in (self.link, self.copy_, self.clone))
+        if set_count != 1:
+            raise ValueError(
+                "ProvisionSpec must declare exactly one of 'link', 'copy', or 'clone'."
+            )
+        parts = Path(self.path).parts
+        if Path(self.path).is_absolute() or ".." in parts:
+            raise ValueError(
+                f"ProvisionSpec path '{self.path}' must be a relative path within the "
+                "project (no absolute paths, no '..') — it is provisioned INTO a worktree."
+            )
+        return self
+
+    @property
+    def kind(self) -> str:
+        """Return the provisioning mode: 'link', 'copy', or 'clone'."""
+        if self.link is not None:
+            return "link"
+        if self.copy_ is not None:
+            return "copy"
+        return "clone"
+
+    @property
+    def path(self) -> str:
+        """Return the project-root-relative path this spec provisions."""
+        return self.link or self.copy_ or self.clone  # type: ignore[return-value]
+
+
 class Manifest(BaseModel):
     """Root of the Operator Layer — loaded from .alc/manifest.yaml."""
 
@@ -74,6 +126,10 @@ class Manifest(BaseModel):
     # task is re-enqueued with the failure feedback only while qt.retries < this.
     max_task_retries: int = 0
     worktree_commit_message: str = "alc: {branch}"  # exit-commit template ({branch} placeholder)
+    # Gitignored runtime deps provisioned INTO each worktree before the engine turn
+    # (node_modules/.env/data). Empty = today's behavior (a worktree carries only
+    # tracked files). Each entry declares a link/copy/clone mode per path.
+    worktree_provision: list[ProvisionSpec] = []
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"

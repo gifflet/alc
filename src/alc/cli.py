@@ -155,13 +155,14 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
     from alc.intake import load_all_blueprints, load_manifest
-    from alc.policy import has_errors, lint, validate_prompts
+    from alc.policy import has_errors, lint, validate_provisions, validate_prompts
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
     blueprints = load_all_blueprints(manifest, operator_layer)
     violations = lint(manifest, blueprints)
     violations += validate_prompts(manifest, operator_layer, blueprints)
+    violations += validate_provisions(manifest, operator_layer.parent)
 
     if getattr(args, "json", False):
         from alc.output import emit_json

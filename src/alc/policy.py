@@ -3,6 +3,7 @@
 # An error violation blocks alc run; a warn is advisory only.
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 
 from pathlib import Path
@@ -394,5 +395,53 @@ def validate_prompts(
                         ),
                     )
                 )
+
+    return violations
+
+
+def validate_provisions(manifest: Manifest, project_root: Path) -> list[Violation]:
+    """Run Policy Gate rules for manifest.worktree_provision.
+
+    Rule (error): a provisioned path must be GITIGNORED — provisioning a TRACKED
+    path would leak the runtime dep into the demand's exit-commit. Best-effort:
+    ``git -C <project_root> ls-files --error-unmatch <path>`` exiting 0 means the
+    path is tracked -> violation ``worktree-provision-tracked``.
+
+    If git is unavailable or the project root is not a repository, the check is
+    skipped entirely (no false errors).
+
+    Args:
+        manifest: The loaded Manifest (provides worktree_provision).
+        project_root: The project root (the parent of the ``.alc/`` directory).
+
+    Returns:
+        List of Violations (may be empty).
+    """
+    violations: list[Violation] = []
+    if not manifest.worktree_provision:
+        return violations
+
+    for spec in manifest.worktree_provision:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(project_root), "ls-files", "--error-unmatch", spec.path],
+                capture_output=True,
+            )
+        except FileNotFoundError:
+            return violations  # git not installed -> skip the whole check
+        # A non-zero exit means "not tracked" OR "not a git repo"; either way,
+        # only a clean exit (0 = tracked) is a violation.
+        if result.returncode == 0:
+            violations.append(
+                Violation(
+                    rule="worktree-provision-tracked",
+                    severity="error",
+                    message=(
+                        f"worktree_provision path '{spec.path}' is tracked by git — "
+                        "provisioning a tracked path would leak the runtime dep into "
+                        "the demand's commit. Provision gitignored runtime deps only."
+                    ),
+                )
+            )
 
     return violations

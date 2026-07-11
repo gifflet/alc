@@ -18,7 +18,12 @@ from alc.intake import load_flow, load_specialist
 from alc.models import FlowReport, Manifest, QueueTask, RunReport, Scorecard, TickResult
 from alc.specialist import run_specialist
 from alc.textutil import slugify as _slugify
-from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
+from alc.worktree import (
+    IsolatedWorktree,
+    git_toplevel,
+    is_git_repo,
+    provision_worktree,
+)
 
 
 # Feedback section appended to a re-enqueued task's body when the prior attempt
@@ -307,6 +312,12 @@ def _process_task(
             exc_info = (None, None, None)
             report: FlowReport | None = None
             try:
+                # Provision gitignored runtime deps (node_modules/.env/data) into
+                # the worktree so the demand's dev/qa can run the real app there.
+                # With an empty worktree_provision this is a no-op -> byte-identical.
+                provision_worktree(
+                    wt_path, project_root, manifest.worktree_provision
+                )
                 report = _run(wt_path)
             except BaseException as exc:
                 exc_info = (type(exc), exc, exc.__traceback__)
