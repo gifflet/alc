@@ -6,7 +6,7 @@ from pathlib import Path
 
 from alc.scaffold import detect_stack, scaffold
 from alc.intake import load_all_blueprints, load_flow, load_manifest
-from alc.policy import has_errors, lint
+from alc.policy import lint
 
 
 # Expected relative paths produced by scaffold().

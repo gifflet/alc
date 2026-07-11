@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from alc.cli import _validate_tier
 from alc.flow import FlowRunner, _stage_blueprint

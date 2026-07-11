@@ -6,7 +6,7 @@ from __future__ import annotations
 import sys
 
 from alc.engine import Engine, EngineRequest, Usage
-from alc.models import AttemptRecord, Blueprint, Check, RunReport, Scorecard
+from alc.models import AttemptRecord, Check, RunReport, Scorecard
 from alc.prompts import _REPAIR_TEMPLATE
 from alc.verifier import Verifier
 
@@ -122,7 +122,6 @@ class AssuranceLoop:
             print(f"→ Verify ({len(checks)} check(s))…", file=sys.stderr, flush=True)
             check_results = self._verifier.run(checks, request.workdir)
             failed = [cr for cr in check_results if not cr.passed]
-            passed_names = [cr.name for cr in check_results if cr.passed]
 
             attempts.append(
                 AttemptRecord(

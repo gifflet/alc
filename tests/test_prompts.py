@@ -297,7 +297,6 @@ class TestConductorByteIdentity:
         # Anchor the recomposed `<prefix> + _PLAN_OUTPUT_CONTRACT + "\n"` seam and tail
         # to LITERAL bytes, so a future edit cannot silently drift a newline at the
         # concatenation (the equality test above uses the live constant — self-referential).
-        manifest = load_manifest(operator_layer)
         rendered = _DEFAULT_PROMPTS["conductor"][0].format(goal="G", catalog_text="C")
         # The seam between the prefix and the shared contract, byte-for-byte.
         assert (

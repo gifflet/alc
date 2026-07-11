@@ -1,10 +1,9 @@
 # test_policy.py — Tests for the Policy Gate (policy.py).
 from __future__ import annotations
 
-import pytest
 
 from alc.models import Blueprint, Check, Manifest, ReportSpec
-from alc.policy import Violation, has_errors, lint
+from alc.policy import has_errors, lint
 
 
 def _valid_manifest() -> Manifest:

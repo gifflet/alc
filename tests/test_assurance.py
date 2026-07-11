@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from alc.assurance import AssuranceLoop
 from alc.engine import Capabilities, EngineRequest, EngineResult

@@ -11,14 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from alc.assurance import AssuranceLoop
 from alc.engine import Capabilities, EngineRequest, EngineResult
 from alc.engines.claude_code import ClaudeCodeEngine
 from alc.intake import load_blueprint
 from alc.models import Blueprint, Check, Manifest
 from alc.policy import has_errors, lint
 from alc.runner import execute_mandate
-from alc.verifier import Verifier
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +219,7 @@ class TestPermissionModeThreading:
         )
 
         # The loop ran max_repairs=1, so 2 total attempts (initial + 1 repair).
+        assert len(report.attempts) == 2
         assert len(engine.received) == 2
         for req in engine.received:
             assert req.permission_mode == "bypassPermissions"

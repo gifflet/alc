@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from alc.engines.mock import MockEngine
 from alc.intake import resolve_checks
 from alc.models import Blueprint, Check, Manifest
 from alc.policy import lint

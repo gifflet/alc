@@ -369,5 +369,7 @@ class TestProcessQueueParallelIsolated:
             check=True,
         ).stdout
         # Each worktree entry starts with "worktree <path>"; there must be exactly one.
-        worktree_entries = [l for l in wt_list.splitlines() if l.startswith("worktree ")]
+        worktree_entries = [
+            line for line in wt_list.splitlines() if line.startswith("worktree ")
+        ]
         assert len(worktree_entries) == 1, f"Stray worktrees found:\n{wt_list}"

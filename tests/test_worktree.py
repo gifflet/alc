@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
 
 from alc.worktree import IsolatedWorktree, is_git_repo
 

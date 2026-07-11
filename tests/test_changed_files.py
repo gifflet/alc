@@ -6,7 +6,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
 
 from alc.runner import _changed_between, _git_state
 
