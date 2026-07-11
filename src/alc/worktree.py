@@ -109,10 +109,18 @@ class IsolatedWorktree:
         branch: The temporary branch name (``alc/<label>-<hex8>``).
         path: The filesystem path of the worktree temp directory.
         committed: True after exit if changes were staged and committed.
+        commit_on_exit: When True (default), ``__exit__`` commits any staged
+            changes; when set False by the caller (before ``__exit__``) the exit
+            commits nothing and discards the branch — the isolation owner (e.g. a
+            failed committing demand) throws the worktree's work away.
     """
 
     def __init__(
-        self, repo_root: Path, label: str, commit_message: str = "alc: {branch}"
+        self,
+        repo_root: Path,
+        label: str,
+        commit_message: str = "alc: {branch}",
+        exclude_paths: tuple[str, ...] = (),
     ) -> None:
         self._repo_root = repo_root
         self.branch: str = f"alc/{label}-{uuid.uuid4().hex[:8]}"
@@ -121,6 +129,13 @@ class IsolatedWorktree:
         # Exit-commit message template with a `{branch}` placeholder. Defaults to
         # the former hardcoded value so an unset manifest is byte-identical.
         self._commit_message = commit_message
+        # Path prefixes to keep OUT of the exit-commit (mirrors commit_workdir's
+        # `git reset -q -- <entry>` step). Default () -> no reset -> commits
+        # everything incl. `.alc/` exactly as before (byte-identical).
+        self._exclude_paths = exclude_paths
+        # When False the exit commits nothing and deletes the branch, discarding
+        # whatever the agent wrote. Settable by the caller after __enter__.
+        self.commit_on_exit: bool = True
 
     def __enter__(self) -> Path:
         """Create the worktree and return the directory path.
@@ -156,8 +171,14 @@ class IsolatedWorktree:
         If the agent made changes, they are committed on ``self.branch`` and
         the worktree is removed (the branch retains the commit for review).
 
-        If no changes were made, the worktree and the empty branch are both
-        deleted, and ``self.committed`` is left False.
+        If no changes were made — or ``commit_on_exit`` was set False (the
+        isolation owner is discarding the work, e.g. a failed committing demand)
+        — the worktree and the branch are both deleted, and ``self.committed`` is
+        left False.
+
+        When ``_exclude_paths`` is non-empty, each entry is ``git reset -q --``
+        unstaged after ``git add -A`` (mirroring commit_workdir's step 2) so those
+        prefixes (e.g. ``.alc/``) never land in the exit-commit.
 
         Exceptions from the body are never suppressed.
 
@@ -167,18 +188,31 @@ class IsolatedWorktree:
         """
         with _GIT_MUTATION_LOCK:
             try:
-                # Stage everything the agent may have written.
-                subprocess.run(
-                    ["git", "-C", str(self.path), "add", "-A"],
-                    capture_output=True,
-                )
+                if not self.commit_on_exit:
+                    # The caller is discarding this worktree's work: commit
+                    # nothing and route straight to the delete-branch cleanup.
+                    has_changes = False
+                else:
+                    # Stage everything the agent may have written.
+                    subprocess.run(
+                        ["git", "-C", str(self.path), "add", "-A"],
+                        capture_output=True,
+                    )
 
-                # Detect whether there is anything staged.
-                diff = subprocess.run(
-                    ["git", "-C", str(self.path), "diff", "--cached", "--quiet"],
-                    capture_output=True,
-                )
-                has_changes = diff.returncode == 1  # returncode 1 => differences exist
+                    # Unstage excluded prefixes (mirrors commit_workdir step 2)
+                    # so e.g. `.alc/` never lands in a demand's exit-commit.
+                    for entry in self._exclude_paths:
+                        subprocess.run(
+                            ["git", "-C", str(self.path), "reset", "-q", "--", entry],
+                            capture_output=True,
+                        )
+
+                    # Detect whether there is anything staged.
+                    diff = subprocess.run(
+                        ["git", "-C", str(self.path), "diff", "--cached", "--quiet"],
+                        capture_output=True,
+                    )
+                    has_changes = diff.returncode == 1  # returncode 1 => differences exist
 
                 if has_changes:
                     # Render the template; a bad operator template must not crash

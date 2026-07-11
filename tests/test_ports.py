@@ -282,8 +282,7 @@ def _run_queue_with_ports(
     manifest = load_manifest(alc)
     manifest = manifest.model_copy(update={"worktree_ports": worktree_ports})
 
-    # Drop one isolate:true flow task (the fixture `ship` flow is non-committing,
-    # so it is not blocked by the double-commit guard).
+    # Drop one isolate:true flow task (the fixture `ship` flow is non-committing).
     queue_dir = alc / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
     (queue_dir / "t1.yaml").write_text(

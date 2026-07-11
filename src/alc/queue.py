@@ -268,12 +268,18 @@ def _process_task(
         print(f"▶ {task_file.name} — {qt.kind}:{unit_name}", file=sys.stderr, flush=True)
 
         def _run(
-            workdir: Path | None, env: dict[str, str] | None = None
+            workdir: Path | None,
+            env: dict[str, str] | None = None,
+            skip_commit: bool = False,
         ) -> FlowReport:
             """Run this task (flow or specialist) in the given workdir.
 
             ``env`` carries per-run environment (e.g. the worktree's ALC_PORT range)
             into the engine turn(s). None -> unchanged (byte-identical).
+
+            ``skip_commit`` is threaded to the FlowRunner so a committing demand run
+            inside a worktree does NOT double-commit/revert (the worktree owns it);
+            the specialist path has no terminal commit and ignores it.
             """
             if qt.kind == "specialist":
                 # A specialist run in a worktree resolves its Knowledge File against
@@ -288,36 +294,40 @@ def _process_task(
                 engine_override=qt.engine,
                 workdir=workdir,
                 env=env,
+                skip_commit=skip_commit,
             )
 
         branch: str | None = None
 
-        # Safety guard: a committing flow inside an isolated worktree would fire
-        # BOTH the IsolatedWorktree exit-commit AND the flow's terminal commit,
-        # producing a double-commit. Refuse loudly instead of silently corrupting.
-        if qt.kind == "flow" and qt.isolate and is_git_repo(project_root):
-            try:
-                _check_flow = load_flow(flows_dir, unit_name)
-                if _check_flow.commit is not None and _check_flow.commit.enabled:
-                    _msg = (
-                        "committing flows are not yet supported with worktree isolation "
-                        "(isolate:true); see ROADMAP: worktree with linked dependencies"
-                    )
-                    print(f"[ERROR] {_msg}", file=sys.stderr)
-                    return TickResult(
-                        task_file=task_file.name,
-                        flow=flow_name,
-                        success=False,
-                        branch=None,
-                        report=_error_flow_report(unit_name, engine_name, _msg),
-                    )
-            except Exception:
-                pass  # load failure will be caught by the outer try/except below
-
         if qt.isolate and is_git_repo(project_root):
             repo_root = git_toplevel(project_root)
+
+            # Detect a committing demand: a flow whose commit is enabled. Such a
+            # demand is committed ONCE by the worktree exit-commit (using the
+            # demand's rendered message, excluding `.alc/`), not by the FlowRunner
+            # — the two commits are reconciled into one.
+            is_committing_demand = False
+            demand_message = manifest.worktree_commit_message
+            if qt.kind == "flow":
+                try:
+                    _flow = load_flow(flows_dir, unit_name)
+                    if _flow.commit is not None and _flow.commit.enabled:
+                        is_committing_demand = True
+                        try:
+                            demand_message = _flow.commit.message.format(
+                                name=_flow.name,
+                                task=(qt.task.splitlines()[0] if qt.task else ""),
+                            )
+                        except (KeyError, IndexError, ValueError):
+                            demand_message = f"chore(cycle): {_flow.name}"
+                except Exception:
+                    pass  # a load failure surfaces via the outer try/except
+
             wt = IsolatedWorktree(
-                repo_root, label="tick", commit_message=manifest.worktree_commit_message
+                repo_root,
+                label="tick",
+                commit_message=demand_message,
+                exclude_paths=((".alc/",) if is_committing_demand else ()),
             )
             wt_path = wt.__enter__()
             exc_info = (None, None, None)
@@ -344,12 +354,19 @@ def _process_task(
                 provision_worktree(
                     wt_path, project_root, manifest.worktree_provision
                 )
-                report = _run(wt_path, port_env)
+                report = _run(wt_path, port_env, skip_commit=is_committing_demand)
             except BaseException as exc:
                 exc_info = (type(exc), exc, exc.__traceback__)
             finally:
                 # Release the ports even on failure so a later run can reuse them.
                 release_ports(ports)
+                # For a committing demand the worktree owns the single commit:
+                # keep it only on flow SUCCESS, otherwise discard the branch
+                # (on exception report is None -> discarded, like the serial
+                # revert). A non-committing isolate flow leaves commit_on_exit
+                # True -> today's behavior (commit iff changes).
+                if is_committing_demand:
+                    wt.commit_on_exit = report is not None and report.success
                 wt.__exit__(*exc_info)
 
             if exc_info[1] is not None:

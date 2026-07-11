@@ -132,6 +132,7 @@ class FlowRunner:
         extra_context: str | None = None,
         tier_override: str | None = None,
         env: dict[str, str] | None = None,
+        skip_commit: bool = False,
     ) -> FlowReport:
         """Execute every stage in the Flow and return an aggregate FlowReport.
 
@@ -150,6 +151,11 @@ class FlowRunner:
             env: Extra environment variables injected into every stage's engine turn
                 (e.g. the worktree's ALC_PORT range). Threaded to each stage's
                 execute_mandate / run_specialist call. None -> unchanged (byte-identical).
+            skip_commit: When True, SKIP both the terminal commit AND the
+                revert-on-failure — the enclosing IsolatedWorktree owns the commit
+                (on success) and the discard (on failure), so the FlowRunner must
+                not double-commit/revert. ``commit_sha`` stays None. Default False
+                leaves behavior byte-identical.
 
         Returns:
             FlowReport with per-stage RunReports and an aggregate Scorecard.
@@ -335,7 +341,8 @@ class FlowRunner:
         # Gated on commit.enabled (never runs for a non-committing/commit=None flow)
         # and not success (never runs on a green flow, which commits instead).
         if (
-            flow.commit is not None
+            not skip_commit
+            and flow.commit is not None
             and flow.commit.enabled
             and not success
             and len(stage_reports) > 0
@@ -354,7 +361,7 @@ class FlowRunner:
         # Terminal commit: only on a fully successful flow, and only when enabled.
         # Broken/unvalidated work never lands. Scoped to the flow's workdir.
         commit_sha: str | None = None
-        if success and flow.commit is not None and flow.commit.enabled:
+        if not skip_commit and success and flow.commit is not None and flow.commit.enabled:
             try:
                 message = flow.commit.message.format(
                     name=flow.name,

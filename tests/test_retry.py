@@ -71,8 +71,8 @@ checks:
 1. Make the smallest change that satisfies the task.
 """
 
-# A committing demand flow, run non-isolated (isolate:false) so the queue's
-# double-commit guard permits it and the drain runs it in the shared workdir.
+# A committing demand flow, run non-isolated (isolate:false) so the drain runs
+# it in the shared workdir and the FlowRunner does its own terminal commit.
 _DEMAND_FLOW = """\
 name: demand
 description: A unit of demand work that commits on success.
