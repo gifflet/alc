@@ -158,6 +158,23 @@ server to validate it:
 """
 
 
+# The `service-conventions` prompt — ALC appends this when the CORE owns the app
+# lifecycle for a run (a Blueprint opts in and the Manifest declares a service).
+# ALC has already started the app and exported its address as `$ALC_BASE_URL`, so
+# the agent must NOT start it or pick a port — it only makes requests. Core-owned
+# default (no placeholders); an operator override in the prompt store replaces it.
+_SERVICE_CONVENTIONS_TEMPLATE = """\
+## Service conventions (required by ALC — overrides any conflicting instruction above)
+
+ALC has ALREADY started the application for this run and is managing its full lifecycle.
+Its address is exported as the environment variable `$ALC_BASE_URL` (e.g. `http://127.0.0.1:<port>`).
+- Do NOT start the app, launch a server, or choose/bind a port — ALC owns all of that. The app
+  is up for the whole run and ALC tears it down afterward.
+- Make EVERY request against `$ALC_BASE_URL` (e.g. `curl "$ALC_BASE_URL/…"`). Never hardcode a
+  host or port and never assume `localhost:3000` — use `$ALC_BASE_URL` verbatim.
+"""
+
+
 _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     "plan-contract": (_PLAN_CONTRACT_TEMPLATE, frozenset({"catalog"})),
     "conductor": (_CONDUCTOR_DIRECTIVE_TEMPLATE, frozenset({"goal", "catalog_text"})),
@@ -168,6 +185,7 @@ _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     ),
     "repair": (_REPAIR_TEMPLATE, frozenset({"failures"})),
     "runtime-conventions": (_RUNTIME_CONVENTIONS_TEMPLATE, frozenset()),
+    "service-conventions": (_SERVICE_CONVENTIONS_TEMPLATE, frozenset()),
 }
 
 

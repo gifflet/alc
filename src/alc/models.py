@@ -41,6 +41,20 @@ class ReportSpec(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ServiceSpec(BaseModel):
+    """Declares an app the CORE runs for the duration of a runtime-validation run.
+
+    When a Blueprint opts in (``needs_service``) and the Manifest sets a
+    ``service``, ALC — not the agent — starts the app on its allocated port,
+    waits for ``health`` to return 200, exposes ``$ALC_BASE_URL`` to the engine
+    env, and tears it down after the run. The agent only hits ``$ALC_BASE_URL``.
+    """
+
+    start: str                    # shell command that launches the app
+    health: str = "/health"       # health path polled until it returns HTTP 200
+    ready_timeout_s: int = 30     # seconds to wait for health before giving up
+
+
 class Blueprint(BaseModel):
     """Parameterized template for a class of work (chore, bug, feature, …)."""
 
@@ -54,6 +68,10 @@ class Blueprint(BaseModel):
     max_repairs: int | None = None  # override AssuranceLoop repair budget; None -> default (3)
     permission_mode: str | None = None  # opt-in engine permission mode; None -> engine default
     timeout_s: int | None = None  # per-turn engine kill timeout; None -> manifest.default_timeout_s
+    # Opt-in per Blueprint: when True AND the Manifest declares a `service`, ALC owns
+    # the app lifecycle for this run (starts it on the allocated port, waits for health,
+    # exposes $ALC_BASE_URL, tears it down). Default False -> byte-identical to today.
+    needs_service: bool = False
 
 
 class ProvisionSpec(BaseModel):
@@ -135,6 +153,9 @@ class Manifest(BaseModel):
     # The ports are injected as ALC_PORT / ALC_PORT_2.. / ALC_PORTS into the
     # engine's env. 0 = OFF = today's behavior (no ports injected -> byte-identical).
     worktree_ports: int = 0
+    # The app ALC starts for runtime validation (see ServiceSpec). None = OFF =
+    # today's behavior: ALC never owns a service, so runs stay byte-identical.
+    service: ServiceSpec | None = None
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"

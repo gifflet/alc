@@ -3,6 +3,7 @@
 # enforces the Policy Gate, and drives the Assurance Loop.
 from __future__ import annotations
 
+import contextlib
 import subprocess
 from pathlib import Path
 
@@ -12,7 +13,9 @@ from alc.engines.registry import resolve_engine
 from alc.intake import resolve_checks
 from alc.models import Blueprint, Manifest, RunReport
 from alc.policy import has_errors, lint
+from alc.runtime import RuntimeService
 from alc.verifier import Verifier
+from alc.worktree import allocate_free_ports, release_ports
 
 def _git_state(workdir: Path) -> dict[str, str] | None:
     """Return a {path: status} map for the given workdir, or None if not a git work tree.
@@ -77,6 +80,100 @@ class PolicyViolationError(RuntimeError):
     """Raised when the Policy Gate finds error-level violations, blocking the run."""
 
 
+def _resolve_runtime(
+    manifest: Manifest,
+    blueprint: Blueprint,
+    directive: str,
+    _env: dict[str, str],
+    effective_workdir: Path,
+    operator_layer: Path | None,
+) -> tuple[str, contextlib.AbstractContextManager]:
+    """Decide the run's runtime posture (MUTUALLY EXCLUSIVE) and wire it in.
+
+    Three outcomes, in priority order:
+      1. **CORE owns the service** — the Blueprint opts in (``needs_service``) AND
+         the Manifest declares a ``service``. ALC picks the port (an already-injected
+         ``PORT``/``ALC_PORT`` wins, else it allocates one), exposes ``ALC_BASE_URL``
+         in ``_env``, appends the ``service-conventions`` prompt, and returns a
+         ``RuntimeService`` so the app is up around the whole Assurance Loop.
+      2. **Port-only (F1)** — no service, but a port is present in ``_env``. Appends
+         the ``runtime-conventions`` prompt (existing behavior). Null context.
+      3. **Nothing** — no service and no port. Directive/env untouched (byte-identical).
+
+    Mutates ``_env`` in place (adds PORT/ALC_PORT/ALC_BASE_URL only in case 1 when a
+    port was allocated here). Returns ``(directive, service_ctx)`` where ``service_ctx``
+    is a null context except in case 1.
+    """
+    if blueprint.needs_service and manifest.service is not None and operator_layer is not None:
+        from alc.prompts import resolve_prompt
+
+        allocated: list[int] = []
+        if "PORT" in _env:
+            port = int(_env["PORT"])
+        elif "ALC_PORT" in _env:
+            port = int(_env["ALC_PORT"])
+        else:
+            allocated = allocate_free_ports(1)
+            port = allocated[0]
+            _env["PORT"] = str(port)
+            _env["ALC_PORT"] = str(port)
+
+        base_url = f"http://127.0.0.1:{port}"
+        _env["ALC_BASE_URL"] = base_url
+        directive = (
+            directive
+            + "\n\n---\n"
+            + resolve_prompt("service-conventions", operator_layer, manifest)
+        )
+        service_ctx: contextlib.AbstractContextManager = _ServiceRun(
+            manifest.service, effective_workdir, port, _env, allocated
+        )
+        return directive, service_ctx
+
+    if operator_layer is not None and ("PORT" in _env or "ALC_PORT" in _env):
+        from alc.prompts import resolve_prompt
+
+        directive = (
+            directive
+            + "\n\n---\n"
+            + resolve_prompt("runtime-conventions", operator_layer, manifest)
+        )
+    return directive, contextlib.nullcontext()
+
+
+class _ServiceRun:
+    """Bridges RuntimeService to ``with``: runs the app, releases any port ALC allocated.
+
+    Wraps ``RuntimeService`` so a port allocated by ``_resolve_runtime`` is released
+    on exit even when ``__enter__`` raises (app never came up) — the drain turns that
+    RuntimeError into a failed report, so cleanup must not leak the reservation.
+    """
+
+    def __init__(
+        self,
+        service,
+        workdir: Path,
+        port: int,
+        env: dict[str, str],
+        allocated: list[int],
+    ) -> None:
+        self._svc = RuntimeService(service, workdir, port, env)
+        self._allocated = allocated
+
+    def __enter__(self):
+        try:
+            return self._svc.__enter__()
+        except BaseException:
+            release_ports(self._allocated)
+            raise
+
+    def __exit__(self, *exc) -> None:
+        try:
+            self._svc.__exit__(*exc)
+        finally:
+            release_ports(self._allocated)
+
+
 def execute_mandate(
     manifest: Manifest,
     blueprint: Blueprint,
@@ -121,20 +218,16 @@ def execute_mandate(
     # Resolve effective workdir once so the same value is used for snapshots and the request.
     effective_workdir = workdir or Path.cwd()
 
-    # Runtime conventions: when ALC has injected a network port into this run's env (a
-    # worktree port allocation), append the embedded `runtime-conventions` prompt so the
-    # agent binds ALC's assigned $PORT/$ALC_PORT instead of hardcoding one. Core-owned
-    # default, overridable via the prompt store. A no-op when no port was injected, so
-    # non-worktree/serial runs stay byte-identical.
-    _env = env or {}
-    if operator_layer is not None and ("PORT" in _env or "ALC_PORT" in _env):
-        from alc.prompts import resolve_prompt
-
-        directive = (
-            directive
-            + "\n\n---\n"
-            + resolve_prompt("runtime-conventions", operator_layer, manifest)
-        )
+    # Resolve the run's runtime posture (mutually exclusive): the CORE owns the app
+    # lifecycle (needs_service + manifest.service -> RuntimeService + service-conventions),
+    # else the port-only F1 path (append runtime-conventions), else nothing (byte-identical).
+    # A private COPY so `_resolve_runtime` can add ALC_BASE_URL (+ PORT/ALC_PORT when a
+    # port is allocated here) without mutating the caller's env dict (the drain threads
+    # ONE port_env through every stage — the service stage must not leak into siblings).
+    _env = dict(env) if env else {}
+    directive, service_ctx = _resolve_runtime(
+        manifest, blueprint, directive, _env, effective_workdir, operator_layer
+    )
 
     # Per-turn kill timeout: a Blueprint override wins, else the manifest default.
     timeout_s = (
@@ -167,7 +260,11 @@ def execute_mandate(
 
         loop_kwargs["repair_template"] = resolve_prompt("repair", operator_layer, manifest)
     loop = AssuranceLoop(engine=engine, verifier=verifier, **loop_kwargs)
-    report = loop.run(request=request, checks=resolve_checks(manifest, blueprint))
+    # When the CORE owns the service, `service_ctx` starts the app (and blocks until
+    # it is healthy) before the loop and tears it down after, so it is up for the whole
+    # Act + repair + verify. Otherwise `service_ctx` is a null context (no-op).
+    with service_ctx:
+        report = loop.run(request=request, checks=resolve_checks(manifest, blueprint))
 
     # Snapshot the git state after the Assurance Loop and compute changed paths.
     state_after = _git_state(effective_workdir)
