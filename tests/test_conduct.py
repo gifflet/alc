@@ -466,6 +466,8 @@ class TestDispatchEnqueueWritesQueueTasks:
 
         queue_dir = operator_layer.parent / manifest.queue_dir
         sorted_names = sorted(f.name for f in queue_dir.glob("*.yaml"))
+        # dispatch_enqueue must RETURN the filenames already in plan (= sorted) order.
+        assert files == sorted_names
         tasks = [
             yaml.safe_load((queue_dir / name).read_text())["task"]
             for name in sorted_names

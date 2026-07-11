@@ -12,7 +12,6 @@ import json
 import sys
 from pathlib import Path
 
-from alc.engine import Usage
 from alc.intake import load_specialist
 from alc.models import (
     CycleRecord,
