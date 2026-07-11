@@ -297,6 +297,12 @@ class QueueTask(BaseModel):
     # task; a retry carries the root of the whole lineage so every attempt in a
     # retry chain shares ONE root. Legacy files omit it -> None (backward compat).
     retry_of: str | None = None
+    # Optional short slug identifying this task so another task may depend on it.
+    # Legacy files omit both id and depends_on -> defaults (backward compat).
+    id: str | None = None
+    # ids of pending tasks this one builds on / shares files with; the waved drain
+    # runs it only AFTER each precedent has merged. Empty = no blocking dependency.
+    depends_on: list[str] = []
 
     def unit_name(self) -> str:
         """Return the unit name to dispatch: ``name`` when set, else ``flow``."""
@@ -314,6 +320,10 @@ class TickResult(BaseModel):
     # branch eligible for the post-batch auto-merge (Part D); a non-committing
     # isolate branch stays False and is left for the operator to review.
     auto_merge: bool = False
+    # Auto-merge outcome for this result's branch: None = not an auto-merge task
+    # (or not yet merged); True = its branch merged into main; False = its branch
+    # was LEFT (a conflict). Read by the honest merged/left cycle metric.
+    merged: bool | None = None
     report: FlowReport
 
 
@@ -367,6 +377,11 @@ class PlannedUnit(BaseModel):
     kind: Literal["flow", "specialist"]
     name: str          # validated against the catalog (Flow or Specialist name)
     task: str
+    # Optional short slug identifying this unit so another unit may depend on it.
+    id: str | None = None
+    # ids of units in the SAME plan this one builds on / shares files with; it runs
+    # only AFTER each precedent has merged. Empty = independent (runs in parallel).
+    depends_on: list[str] = []
 
     @model_validator(mode="before")
     @classmethod
@@ -566,6 +581,11 @@ class CycleRecord(BaseModel):
     drained: int
     succeeded: int
     failed: int
+    # Honest auto-merge tally: how many of this cycle's committing-demand branches
+    # merged into main vs were LEFT (a conflict). Both default 0 so old ledger
+    # lines stay valid and a cycle with no auto-merge branch is byte-identical.
+    merged: int = 0
+    left: int = 0
     progress: bool
     budget_delta: dict[str, float]
     stopped_reason: str | None = None

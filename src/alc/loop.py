@@ -428,6 +428,10 @@ def run_cycle(
     succeeded = sum(1 for r in results if r.success)
     failed = drained - succeeded
     progress = succeeded > 0
+    # Honest auto-merge tally: a committing-demand branch either MERGED into main
+    # or was LEFT (a conflict). None means the result had no auto-merge branch.
+    merged = sum(1 for r in results if r.merged is True)
+    left = sum(1 for r in results if r.merged is False)
 
     # (e) Budget delta: replenish + each drained unit's engine calls + Usage.
     for result in results:
@@ -455,6 +459,8 @@ def run_cycle(
         drained=drained,
         succeeded=succeeded,
         failed=failed,
+        merged=merged,
+        left=left,
         progress=progress,
         budget_delta=delta,
     )
@@ -484,6 +490,10 @@ def format_cycle_summary(record: CycleRecord) -> str:
         f"drained={record.drained} succeeded={record.succeeded} "
         f"failed={record.failed}"
     )
+    # Surface the honest auto-merge tally only when a committing-demand branch was
+    # merged or left this cycle; otherwise stay byte-identical to the old summary.
+    if record.merged + record.left > 0:
+        line += f" merged={record.merged} left={record.left}"
     if record.stopped_reason is not None:
         line += f" [stopped: {record.stopped_reason}]"
     return line

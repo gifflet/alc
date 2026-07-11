@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 from alc.intake import load_manifest
-from alc.queue import process_queue
+from alc.queue import _topological_waves, process_queue
 
 # ---------------------------------------------------------------------------
 # Harness — local git + Mock engine (mirrors tests/test_part_c.py).
@@ -371,3 +371,232 @@ class TestSharedWorkdirStandardCycle:
         assert _list_tick_branches(repo) == []
         assert "shared.txt" in _head_tree_files(repo)
         assert _git_log_subjects(repo)[0] == "feat(auto): shared cycle"
+
+
+# ---------------------------------------------------------------------------
+# W1 — _topological_waves: the pure scheduling ordering (no engine, no git).
+# ---------------------------------------------------------------------------
+
+
+def _write_task(queue_dir: Path, stem: str, *, id: str | None = None,
+                depends_on: list[str] | None = None) -> Path:
+    """Write a minimal committing-demand task file with optional id/depends_on."""
+    lines = ["flow: demand", f'task: "{stem}"', "engine: mock", "isolate: true"]
+    if id is not None:
+        lines.append(f"id: {id}")
+    if depends_on is not None:
+        lines.append(f"depends_on: [{', '.join(depends_on)}]")
+    path = queue_dir / f"{stem}.yaml"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+class TestTopologicalWaves:
+    def test_no_deps_is_single_sorted_wave(self, tmp_path: Path) -> None:
+        q = tmp_path
+        _write_task(q, "b")
+        _write_task(q, "a")
+        _write_task(q, "c")
+        pending = sorted(q.glob("*.yaml"))
+
+        waves = _topological_waves(pending)
+
+        assert waves == [sorted(pending)]
+
+    def test_linear_chain_is_three_ordered_waves(self, tmp_path: Path) -> None:
+        q = tmp_path
+        a = _write_task(q, "a", id="A")
+        b = _write_task(q, "b", id="B", depends_on=["A"])
+        c = _write_task(q, "c", id="C", depends_on=["B"])
+        pending = sorted(q.glob("*.yaml"))
+
+        waves = _topological_waves(pending)
+
+        assert waves == [[a], [b], [c]]
+
+    def test_diamond_orders_join_after_both_arms(self, tmp_path: Path) -> None:
+        q = tmp_path
+        a = _write_task(q, "a", id="A")
+        b = _write_task(q, "b", id="B", depends_on=["A"])
+        c = _write_task(q, "c", id="C", depends_on=["A"])
+        d = _write_task(q, "d", id="D", depends_on=["B", "C"])
+        pending = sorted(q.glob("*.yaml"))
+
+        waves = _topological_waves(pending)
+
+        assert waves == [[a], [b, c], [d]]
+
+    def test_cycle_does_not_hang_and_collapses(self, tmp_path: Path, capsys) -> None:
+        q = tmp_path
+        # A depends_on B and B depends_on A -> a cycle; neither is ever ready.
+        a = _write_task(q, "a", id="A", depends_on=["B"])
+        b = _write_task(q, "b", id="B", depends_on=["A"])
+        pending = sorted(q.glob("*.yaml"))
+
+        waves = _topological_waves(pending)
+
+        # Everything collapses into one final wave (sorted); a warning is printed.
+        assert waves == [[a, b]]
+        assert "dependency cycle" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# W2 — the key integration test: a dependent demand's worktree branches off a
+#      main that ALREADY contains its precedent's merged file (waved drain).
+# ---------------------------------------------------------------------------
+
+
+class TestWavedDrainDependentBranchesOffMergedPrecedent:
+    def test_dependent_sees_merged_precedent_file(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        repo = _build_repo(tmp_path)
+        # `wire` (depends_on ingest) reads ingest.txt and, only if it exists,
+        # writes wire.txt — so its file lands ONLY when its worktree branched off
+        # a main that already carries ingest's merged commit.
+        from alc.engine import Capabilities, EngineResult
+
+        class _DepAwareEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                if "ingest" in request.directive:
+                    (request.workdir / "ingest.txt").write_text("ingest\n")
+                elif "wire" in request.directive:
+                    # Only proceed when the precedent's merged file is present.
+                    if (request.workdir / "ingest.txt").exists():
+                        (request.workdir / "wire.txt").write_text("wire\n")
+                return EngineResult(ok=True, output_text="[mock] wrote files")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, cfg: _DepAwareEngine()
+        )
+
+        manifest = load_manifest(repo / ".alc")
+        queue_dir = repo / ".alc" / "queue"
+        # 00 sorts before 01, but wire declares depends_on ingest, so the wave
+        # scheduler runs ingest FIRST and merges it before wire's wave.
+        _write_task(queue_dir, "job-00-ingest", id="ingest")
+        _write_task(queue_dir, "job-01-wire", id="wire", depends_on=["ingest"])
+
+        results = process_queue(manifest, repo / ".alc", max_workers=3)
+
+        assert len(results) == 2
+        for r in results:
+            assert r.success is True
+            assert r.auto_merge is True
+            assert r.merged is True
+
+        # Both branches merged and deleted; main HEAD carries BOTH files. wire.txt
+        # only exists because wire's worktree saw ingest's already-merged file.
+        assert _list_tick_branches(repo) == []
+        tree = _head_tree_files(repo)
+        assert "ingest.txt" in tree
+        assert "wire.txt" in tree
+
+
+# ---------------------------------------------------------------------------
+# W3 — byte-identity: with NO depends_on the waved drain is one wave of all
+#      pending with one trailing auto-merge; identical end state at both
+#      concurrencies, results in sorted-pending order.
+# ---------------------------------------------------------------------------
+
+
+class TestNoDepsWaveIsByteIdentical:
+    def test_single_wave_same_end_state_and_order(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        for max_workers in (1, 3):
+            base = tmp_path / f"w{max_workers}"
+            base.mkdir()
+            repo = _build_repo(base)
+            engine = _per_task_files_engine(_THREE_DEMANDS)
+            monkeypatch.setattr(
+                "alc.runner.resolve_engine", lambda name, cfg: engine()
+            )
+
+            manifest = load_manifest(repo / ".alc")
+            queue_dir = repo / ".alc" / "queue"
+            _enqueue_three_demands(queue_dir)
+            pending = sorted(queue_dir.glob("*.yaml"))
+
+            results = process_queue(manifest, repo / ".alc", max_workers=max_workers)
+
+            # Results are returned in sorted-pending order.
+            assert [r.task_file for r in results] == [p.name for p in pending]
+            # All three demands merged this single wave.
+            for r in results:
+                assert r.success is True
+                assert r.auto_merge is True
+                assert r.merged is True
+            assert _list_tick_branches(repo) == []
+            tree = _head_tree_files(repo)
+            assert "alpha.txt" in tree
+            assert "bravo.txt" in tree
+            assert "charlie.txt" in tree
+
+
+# ---------------------------------------------------------------------------
+# W4 — the honest run_cycle metric: a cycle with 1 MERGED + 1 LEFT (conflict)
+#      lands merged==1, left==1 on the CycleRecord and in the summary.
+# ---------------------------------------------------------------------------
+
+
+class TestRunCycleMergedLeftMetric:
+    def test_one_merged_one_left(self, tmp_path: Path, monkeypatch) -> None:
+        from alc.engine import Capabilities, EngineResult
+        from alc.intake import load_loop
+        from alc.loop import format_cycle_summary, loops_dir, run_cycle
+        from alc.models import LoopState
+
+        repo = _build_repo(tmp_path)
+
+        # Two independent committing demands that BOTH write the SAME file with
+        # DIFFERENT content. Within one wave the first-sorted branch merges clean;
+        # the second conflicts on that file and is LEFT.
+        class _SameFileEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                content = "one\n" if "one" in request.directive else "two\n"
+                (request.workdir / "clash.txt").write_text(content)
+                return EngineResult(ok=True, output_text="[mock] wrote clash")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, cfg: _SameFileEngine()
+        )
+
+        # Mode B drain-only loop with concurrency 2 (both demands in one wave).
+        loops = repo / ".alc" / "loops"
+        loops.mkdir(parents=True)
+        (loops / "deliver.yaml").write_text(
+            "name: deliver\nstop:\n  max_cycles: 20\ndrain:\n  concurrency: 2\n"
+        )
+        queue_dir = repo / ".alc" / "queue"
+        _write_task(queue_dir, "job-00-one")
+        _write_task(queue_dir, "job-01-two")
+
+        manifest = load_manifest(repo / ".alc")
+        loop_def = load_loop(loops_dir(manifest, repo / ".alc"), "deliver")
+        _new_state, record = run_cycle(
+            manifest, repo / ".alc", loop_def, LoopState(name="deliver"),
+            engine_override="mock",
+        )
+
+        assert record.merged == 1
+        assert record.left == 1
+        assert "merged=1 left=1" in format_cycle_summary(record)
+        # The clean branch was deleted; the conflicting one is left for review.
+        assert len(_list_tick_branches(repo)) == 1

@@ -79,6 +79,16 @@ Return a JSON array; each element is an object of the form
 {{"kind":"flow","name":"<a catalog name, e.g. demand>","task":"<title>\\n\\n<details>"}}.
 The valid target names are exactly those in the Catalog below.
 
+## Dependencies (optional)
+
+An item MAY add an ``"id":"<short-slug>"`` to name itself, and another item MAY add
+``"depends_on":["<id>",...]`` when it BUILDS ON that demand OR would edit the same
+file(s). ALC then runs the dependent ONLY after its precedent has merged, so its
+worktree branches off the updated main (no conflict). Independent demands (no
+depends_on) still run in parallel. Every id in a depends_on MUST match some item's
+id in THIS plan. Example:
+[{{"id":"ingest","kind":"flow","name":"demand","task":"..."}}, {{"kind":"flow","name":"demand","task":"...","depends_on":["ingest"]}}]
+
 ## Catalog
 
 {catalog}

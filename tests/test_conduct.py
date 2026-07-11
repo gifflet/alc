@@ -81,6 +81,42 @@ class TestParsePlanMalformedRaises:
             parse_plan('[{"flow":"ship"}]', {"ship"})
 
 
+class TestParsePlanDependencies:
+    def test_reads_id_and_depends_on(self) -> None:
+        raw = (
+            '[{"id":"ingest","kind":"flow","name":"ship","task":"a"},'
+            '{"kind":"flow","name":"ship","task":"b","depends_on":["ingest"]}]'
+        )
+        plan = parse_plan(raw, {"ship"})
+        assert plan.items[0].id == "ingest"
+        assert plan.items[0].depends_on == []
+        assert plan.items[1].id is None
+        assert plan.items[1].depends_on == ["ingest"]
+
+    def test_absent_dependency_fields_default(self) -> None:
+        plan = parse_plan('[{"kind":"flow","name":"ship","task":"x"}]', {"ship"})
+        assert plan.items[0].id is None
+        assert plan.items[0].depends_on == []
+
+    def test_raises_for_unknown_dependency_id(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="unknown id"):
+            parse_plan(
+                '[{"kind":"flow","name":"ship","task":"x","depends_on":["nope"]}]',
+                {"ship"},
+            )
+
+    def test_raises_when_depends_on_not_list_of_strings(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="depends_on"):
+            parse_plan(
+                '[{"id":"a","kind":"flow","name":"ship","task":"x","depends_on":[1]}]',
+                {"ship"},
+            )
+
+
 # ---------------------------------------------------------------------------
 # plan_flows — uses MockEngine with a canned output
 # ---------------------------------------------------------------------------
@@ -475,6 +511,39 @@ class TestDispatchEnqueueWritesQueueTasks:
 
         assert files[0].startswith("conduct-000-")
         assert "--" not in files[0]  # no empty slug segment
+
+    def test_round_trips_id_and_depends_on(self, operator_layer: Path) -> None:
+        # id + depends_on written into the task file survive a QueueTask reparse.
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[
+            PlannedUnit(kind="flow", name="ship", task="a", id="ingest"),
+            PlannedUnit(kind="flow", name="ship", task="b", depends_on=["ingest"]),
+        ])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        first = QueueTask.model_validate(
+            yaml.safe_load((queue_dir / files[0]).read_text())
+        )
+        second = QueueTask.model_validate(
+            yaml.safe_load((queue_dir / files[1]).read_text())
+        )
+        assert first.id == "ingest"
+        assert first.depends_on == []
+        assert second.depends_on == ["ingest"]
+
+    def test_omits_dependency_fields_when_absent(self, operator_layer: Path) -> None:
+        # A plan with no id/depends_on writes legacy-clean files (keys omitted).
+        manifest = load_manifest(operator_layer)
+        plan = ConductorPlan(items=[PlannedUnit(kind="flow", name="ship", task="x")])
+
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        raw = yaml.safe_load((queue_dir / files[0]).read_text())
+        assert "id" not in raw
+        assert "depends_on" not in raw
 
 
 # ---------------------------------------------------------------------------

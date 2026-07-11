@@ -19,6 +19,7 @@ from alc.intake import load_loop, load_manifest
 from alc.loop import (
     check_post_stop,
     check_pre_stop,
+    format_cycle_summary,
     ledger_path,
     load_loop_state,
     loops_dir,
@@ -438,6 +439,33 @@ class TestStopBudget:
             progress=False, budget_delta={},
         )
         assert check_post_stop(loop_def, state, rec) == "failures"
+
+
+# ---------------------------------------------------------------------------
+# Honest merged/left metric
+# ---------------------------------------------------------------------------
+
+
+class TestMergedLeftMetric:
+    def test_summary_shows_merged_and_left_when_present(self) -> None:
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=2, succeeded=2, failed=0,
+            merged=1, left=1, progress=True, budget_delta={},
+        )
+        assert "merged=1 left=1" in format_cycle_summary(rec)
+
+    def test_summary_omits_suffix_when_no_auto_merge(self) -> None:
+        # A cycle with no auto-merge branch stays byte-identical (no suffix).
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=1, succeeded=1, failed=0,
+            progress=True, budget_delta={},
+        )
+        summary = format_cycle_summary(rec)
+        assert "merged=" not in summary
+        assert "left=" not in summary
+        assert summary == (
+            "cycle 1: replenished=0 drained=1 succeeded=1 failed=0"
+        )
 
 
 # ---------------------------------------------------------------------------

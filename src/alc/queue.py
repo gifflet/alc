@@ -467,6 +467,131 @@ def _partition_tasks(
     return parallel, serial
 
 
+def _run_wave(
+    wave_files: list[Path],
+    manifest: Manifest,
+    operator_layer: Path,
+    flows_dir: Path,
+    queue_dir: Path,
+    max_workers: int,
+) -> dict[Path, TickResult]:
+    """Run exactly ``wave_files`` and return a ``{file: TickResult}`` map.
+
+    This is the scheduling body extracted verbatim from the former
+    ``process_queue``: with ``max_workers == 1`` every task runs serially; with
+    ``> 1`` only isolated tasks (isolate:true + git repo) run concurrently in a
+    ThreadPoolExecutor while all others share the workdir and run serially. The
+    map is order-independent — the caller restores the original pending order.
+    """
+    project_root = operator_layer.parent
+
+    if max_workers == 1:
+        # Serial path — behaviourally identical to the original drain loop.
+        return {
+            task_file: _process_task(
+                manifest, operator_layer, flows_dir, queue_dir, task_file
+            )
+            for task_file in wave_files
+        }
+
+    # Parallel path — only isolated tasks (isolate:true + git repo) may run
+    # concurrently; all others share the working directory and run serially.
+    is_git = is_git_repo(project_root)
+    parallel_tasks, serial_tasks = _partition_tasks(wave_files, is_git)
+
+    if serial_tasks:
+        n = len(serial_tasks)
+        print(f"{n} non-isolated task(s) will run serially", file=sys.stderr)
+
+    results: dict[Path, TickResult] = {}
+
+    # Run parallel-eligible tasks concurrently.
+    if parallel_tasks:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_to_file = {
+                pool.submit(
+                    _process_task,
+                    manifest,
+                    operator_layer,
+                    flows_dir,
+                    queue_dir,
+                    task_file,
+                ): task_file
+                for task_file in parallel_tasks
+            }
+            for future in future_to_file:
+                results[future_to_file[future]] = future.result()
+
+    # Run serial tasks one by one.
+    for task_file in serial_tasks:
+        results[task_file] = _process_task(
+            manifest, operator_layer, flows_dir, queue_dir, task_file
+        )
+
+    return results
+
+
+def _topological_waves(pending: list[Path]) -> list[list[Path]]:
+    """Order ``pending`` task files into dependency WAVES (Kahn's algorithm).
+
+    Each file's QueueTask declares an optional ``id`` and ``depends_on``; a file
+    that is unreadable is treated as having no id and no deps. A task's BLOCKING
+    deps are only those ids present among the pending tasks (a dep on something
+    not in this drain can't block it). Wave 0 is the files with no blocking dep;
+    each next wave is the files whose blocking deps all landed in earlier waves.
+    Each wave is sorted by filename for determinism.
+
+    With NO ``depends_on`` anywhere, wave 0 already holds every file, so the
+    result is exactly ``[sorted(pending)]`` — one wave, byte-identical to the
+    pre-change single drain.
+
+    A dependency cycle (files remain but none is ready) never deadlocks: the
+    remaining files collapse into one final wave and a WARNING is printed.
+    """
+    # Read each file's id + deps once (unreadable -> no id, no deps).
+    deps_by_file: dict[Path, list[str]] = {}
+    id_by_file: dict[Path, str | None] = {}
+    for task_file in pending:
+        try:
+            qt = QueueTask.model_validate(yaml.safe_load(task_file.read_text()))
+            id_by_file[task_file] = qt.id
+            deps_by_file[task_file] = list(qt.depends_on)
+        except Exception:
+            id_by_file[task_file] = None
+            deps_by_file[task_file] = []
+
+    pending_ids = {id_by_file[f] for f in pending if id_by_file[f] is not None}
+    # Blocking deps = declared deps that name an id present in THIS drain.
+    blocking: dict[Path, set[str]] = {
+        f: {d for d in deps_by_file[f] if d in pending_ids} for f in pending
+    }
+
+    waves: list[list[Path]] = []
+    remaining = set(pending)
+    resolved_ids: set[str] = set()
+
+    while remaining:
+        ready = sorted(f for f in remaining if blocking[f] <= resolved_ids)
+        if not ready:
+            # A cycle among the remaining files — never deadlock: emit one final
+            # wave with everything left and warn (deterministic filename order).
+            print(
+                "[drain] WARNING: dependency cycle detected; running remaining "
+                f"{len(remaining)} task(s) in one wave.",
+                file=sys.stderr,
+                flush=True,
+            )
+            waves.append(sorted(remaining))
+            break
+        waves.append(ready)
+        for f in ready:
+            remaining.discard(f)
+            if id_by_file[f] is not None:
+                resolved_ids.add(id_by_file[f])  # type: ignore[arg-type]
+
+    return waves
+
+
 def process_queue(
     manifest: Manifest,
     operator_layer: Path,
@@ -487,6 +612,13 @@ def process_queue(
       run in an IsolatedWorktree (Sandbox), record the branch on TickResult.
     - Write the Gate (FlowReport JSON) to ``done/<stem>.report.json``.
     - Move the task file to ``done/<filename>`` so it is never reprocessed.
+
+    Tasks are scheduled in dependency WAVES (``_topological_waves``): a task that
+    declares ``depends_on`` runs only AFTER its precedents have MERGED, so its
+    worktree branches off the updated main. Each wave's passed committing-demand
+    branches are auto-merged BEFORE the next wave runs. With NO ``depends_on``
+    anywhere this is a single wave of all pending tasks with ONE trailing
+    auto-merge — byte-identical to the pre-change drain.
 
     Per-task failures are recorded as failed TickResults and do not abort the
     tick — the remaining tasks continue to be processed.
@@ -514,61 +646,29 @@ def process_queue(
 
     flows_dir = project_root / manifest.flows_dir
 
-    if max_workers == 1:
-        # Serial path — behaviourally identical to the original drain loop.
-        results: list[TickResult] = [
-            _process_task(manifest, operator_layer, flows_dir, queue_dir, task_file)
-            for task_file in pending
+    results_by_file: dict[Path, TickResult] = {}
+    for wave in _topological_waves(pending):
+        wave_results = _run_wave(
+            wave, manifest, operator_layer, flows_dir, queue_dir, max_workers
+        )
+        results_by_file.update(wave_results)
+
+        # Auto-merge THIS wave's passed committing-demand branches into the
+        # current branch (Part D/E) so the NEXT wave's worktrees branch off the
+        # updated main. Branches from non-committing isolate tasks (auto_merge
+        # False) are left for manual review. When no committing demand ran in a
+        # worktree this list is empty -> no-op. With one wave (no deps) this is
+        # the single trailing auto-merge of the pre-change drain.
+        merge_branches = [
+            r.branch
+            for f in wave
+            if (r := wave_results.get(f)) is not None and r.branch and r.auto_merge
         ]
-    else:
-        # Parallel path — only isolated tasks (isolate:true + git repo) may run
-        # concurrently; all others share the working directory and run serially.
-        is_git = is_git_repo(project_root)
-        parallel_tasks, serial_tasks = _partition_tasks(pending, is_git)
+        if merge_branches:
+            report = auto_merge_branches(git_toplevel(project_root), merge_branches)
+            for r in wave_results.values():
+                if r.branch and r.auto_merge:
+                    r.merged = r.branch in report.merged  # True merged / False left
+            print(report.summary(), file=sys.stderr, flush=True)
 
-        if serial_tasks:
-            n = len(serial_tasks)
-            print(f"{n} non-isolated task(s) will run serially", file=sys.stderr)
-
-        # Map original pending index -> TickResult so we can restore order.
-        pending_index: dict[Path, int] = {p: i for i, p in enumerate(pending)}
-        results = [None] * len(pending)  # type: ignore[list-item]
-
-        # Run parallel-eligible tasks concurrently.
-        if parallel_tasks:
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                future_to_index = {
-                    pool.submit(
-                        _process_task,
-                        manifest,
-                        operator_layer,
-                        flows_dir,
-                        queue_dir,
-                        task_file,
-                    ): pending_index[task_file]
-                    for task_file in parallel_tasks
-                }
-                for future in future_to_index:
-                    results[future_to_index[future]] = future.result()
-
-        # Run serial tasks one by one, preserving their original positions.
-        for task_file in serial_tasks:
-            result = _process_task(
-                manifest, operator_layer, flows_dir, queue_dir, task_file
-            )
-            results[pending_index[task_file]] = result
-
-    # Part E: auto-merge the passed committing-demand branches into the current
-    # branch (Part D), sequentially, AFTER the concurrent batch. Branches from
-    # ordinary non-committing isolate tasks (auto_merge False) are NOT merged —
-    # they are left for manual review (existing contract). When no committing
-    # demand ran in a worktree this list is empty -> no-op -> byte-identical.
-    merge_branches = [
-        r.branch for r in results if r is not None and r.branch and r.auto_merge
-    ]
-    if merge_branches:
-        repo_root = git_toplevel(project_root)
-        merge_report = auto_merge_branches(repo_root, merge_branches)
-        print(merge_report.summary(), file=sys.stderr, flush=True)
-
-    return results
+    return [results_by_file[f] for f in pending]

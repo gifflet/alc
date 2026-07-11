@@ -138,11 +138,40 @@ def parse_plan(
                 f"Item {i} has invalid kind '{kind}'; expected 'flow' or 'specialist'."
             )
 
+        # Optional dependency wiring: `id` names this unit, `depends_on` lists the
+        # ids of same-plan units it builds on / shares files with. Validated below.
+        unit_id = entry.get("id")
+        if unit_id is not None and not isinstance(unit_id, str):
+            raise ValueError(
+                f"Item {i} 'id' must be a string; got {type(unit_id).__name__}."
+            )
+        depends_on = entry.get("depends_on", [])
+        if not isinstance(depends_on, list) or not all(
+            isinstance(d, str) for d in depends_on
+        ):
+            raise ValueError(
+                f"Item {i} 'depends_on' must be a list of strings; got {depends_on!r}."
+            )
+
         # Build via model_validate so the before-validator normalises any
         # legacy shape; the catalog check above has already run by this point.
-        items.append(PlannedUnit.model_validate({
-            "kind": kind, "name": name, "task": str(entry["task"])
-        }))
+        item_data: dict = {"kind": kind, "name": name, "task": str(entry["task"])}
+        if unit_id is not None:
+            item_data["id"] = unit_id
+        if depends_on:
+            item_data["depends_on"] = depends_on
+        items.append(PlannedUnit.model_validate(item_data))
+
+    # Every referenced dependency id must match some item's id in the SAME plan;
+    # dependencies are declared within one plan (no cross-plan / unknown ids).
+    known_ids = {item.id for item in items if item.id is not None}
+    for i, item in enumerate(items):
+        for dep in item.depends_on:
+            if dep not in known_ids:
+                raise ValueError(
+                    f"Item {i} depends_on unknown id '{dep}'. "
+                    f"Known ids in this plan: {sorted(known_ids)}"
+                )
 
     return ConductorPlan(items=items)
 
@@ -445,6 +474,12 @@ def dispatch_enqueue(
             task_data["flow"] = item.name
         if engine_override is not None:
             task_data["engine"] = engine_override
+        # Carry the dependency wiring into the QueueTask so the waved drain can
+        # schedule topologically. Omitted when absent to keep files legacy-clean.
+        if item.id is not None:
+            task_data["id"] = item.id
+        if item.depends_on:
+            task_data["depends_on"] = item.depends_on
 
         (queue_dir / filename).write_text(yaml.safe_dump(task_data, sort_keys=True))
         written.append(filename)
