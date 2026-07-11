@@ -188,6 +188,7 @@ def run_specialist(
     workdir: Path | None = None,
     extra_context: str | None = None,
     output_contract: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> SpecialistReport:
     """Orchestrate one Recall -> Act -> Learn cycle for a Specialist.
 
@@ -209,6 +210,8 @@ def run_specialist(
         output_contract: Optional output-format contract appended as the last Act
             directive section (e.g. ALC's plan-output contract). Default None =
             unchanged.
+        env: Extra environment variables injected into the Act engine turn (e.g. the
+            worktree's ALC_PORT range). None -> unchanged (byte-identical).
 
     Returns:
         SpecialistReport with the Specialist name, Act RunReport, and whether
@@ -244,7 +247,7 @@ def run_specialist(
     )
     directive = expand_includes(directive, operator_layer, manifest)
     act = execute_mandate(
-        manifest, blueprint, directive, engine_override, workdir, operator_layer
+        manifest, blueprint, directive, engine_override, workdir, operator_layer, env
     )
 
     # Learn: only when Act succeeded.

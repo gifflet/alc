@@ -20,9 +20,11 @@ from alc.specialist import run_specialist
 from alc.textutil import slugify as _slugify
 from alc.worktree import (
     IsolatedWorktree,
+    allocate_free_ports,
     git_toplevel,
     is_git_repo,
     provision_worktree,
+    release_ports,
 )
 
 
@@ -218,8 +220,9 @@ def _run_specialist_task(
     qt: QueueTask,
     name: str,
     workdir: Path | None,
+    env: dict[str, str] | None = None,
 ) -> FlowReport:
-    """Run one specialist queue task, threading ``workdir`` when isolated."""
+    """Run one specialist queue task, threading ``workdir``/``env`` when isolated."""
     specialists_dir = operator_layer.parent / manifest.specialists_dir
     specialist = load_specialist(specialists_dir, name)
     report = run_specialist(
@@ -229,6 +232,7 @@ def _run_specialist_task(
         task=qt.task,
         engine_override=qt.engine,
         workdir=workdir,
+        env=env,
     )
     engine_name = qt.engine or manifest.default_engine
     return _specialist_flow_report(name, engine_name, report.act)
@@ -263,13 +267,19 @@ def _process_task(
         # Announce the active unit so operator output is grouped under a header.
         print(f"▶ {task_file.name} — {qt.kind}:{unit_name}", file=sys.stderr, flush=True)
 
-        def _run(workdir: Path | None) -> FlowReport:
-            """Run this task (flow or specialist) in the given workdir."""
+        def _run(
+            workdir: Path | None, env: dict[str, str] | None = None
+        ) -> FlowReport:
+            """Run this task (flow or specialist) in the given workdir.
+
+            ``env`` carries per-run environment (e.g. the worktree's ALC_PORT range)
+            into the engine turn(s). None -> unchanged (byte-identical).
+            """
             if qt.kind == "specialist":
                 # A specialist run in a worktree resolves its Knowledge File against
                 # the worktree so the Learn write lands on the isolated branch.
                 ol = (workdir / operator_layer.name) if workdir is not None else operator_layer
-                return _run_specialist_task(manifest, ol, qt, unit_name, workdir)
+                return _run_specialist_task(manifest, ol, qt, unit_name, workdir, env)
             flow = load_flow(flows_dir, unit_name)
             runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
             return runner.run(
@@ -277,6 +287,7 @@ def _process_task(
                 task=qt.task,
                 engine_override=qt.engine,
                 workdir=workdir,
+                env=env,
             )
 
         branch: str | None = None
@@ -311,17 +322,34 @@ def _process_task(
             wt_path = wt.__enter__()
             exc_info = (None, None, None)
             report: FlowReport | None = None
+            # Free port RANGE for this worktree run. Declared before the try so the
+            # `finally` can ALWAYS release, even if allocation itself raises.
+            ports: list[int] = []
+            port_env: dict[str, str] | None = None
             try:
+                # Allocate a free port RANGE so N parallel dev servers don't collide;
+                # injected as ALC_PORT / ALC_PORT_2.. / ALC_PORTS. With worktree_ports
+                # == 0 (default) nothing is allocated and no env is passed ->
+                # byte-identical to today. Inside the try so a (pathological)
+                # allocation failure still cleans up the worktree via finally.
+                if manifest.worktree_ports > 0:
+                    ports = allocate_free_ports(manifest.worktree_ports)
+                    port_env = {"ALC_PORT": str(ports[0])}
+                    for i, port in enumerate(ports[1:], start=2):
+                        port_env[f"ALC_PORT_{i}"] = str(port)
+                    port_env["ALC_PORTS"] = ",".join(str(p) for p in ports)
                 # Provision gitignored runtime deps (node_modules/.env/data) into
                 # the worktree so the demand's dev/qa can run the real app there.
                 # With an empty worktree_provision this is a no-op -> byte-identical.
                 provision_worktree(
                     wt_path, project_root, manifest.worktree_provision
                 )
-                report = _run(wt_path)
+                report = _run(wt_path, port_env)
             except BaseException as exc:
                 exc_info = (type(exc), exc, exc.__traceback__)
             finally:
+                # Release the ports even on failure so a later run can reuse them.
+                release_ports(ports)
                 wt.__exit__(*exc_info)
 
             if exc_info[1] is not None:

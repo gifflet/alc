@@ -131,6 +131,7 @@ class FlowRunner:
         workdir: Path | None = None,
         extra_context: str | None = None,
         tier_override: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> FlowReport:
         """Execute every stage in the Flow and return an aggregate FlowReport.
 
@@ -146,6 +147,9 @@ class FlowRunner:
                 Budget Trim move). Default None leaves behavior unchanged.
             tier_override: If set, override the Compute Tier for every stage in this
                 invocation (takes precedence over stage.compute_tier and Blueprint default).
+            env: Extra environment variables injected into every stage's engine turn
+                (e.g. the worktree's ALC_PORT range). Threaded to each stage's
+                execute_mandate / run_specialist call. None -> unchanged (byte-identical).
 
         Returns:
             FlowReport with per-stage RunReports and an aggregate Scorecard.
@@ -277,6 +281,7 @@ class FlowRunner:
                     engine_override=engine_override,
                     workdir=workdir,
                     extra_context=_specialist_ctx,
+                    env=env,
                 )
                 report = specialist_report.act
             else:
@@ -302,6 +307,7 @@ class FlowRunner:
                     engine_override=engine_override,
                     workdir=workdir,
                     operator_layer=self._operator_layer,
+                    env=env,
                 )
 
             stage_reports.append(report)

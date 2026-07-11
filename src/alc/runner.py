@@ -84,6 +84,7 @@ def execute_mandate(
     engine_override: str | None = None,
     workdir: Path | None = None,
     operator_layer: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> RunReport:
     """Resolve the engine, build the EngineRequest, and run the Assurance Loop.
 
@@ -101,6 +102,8 @@ def execute_mandate(
         operator_layer: Path to the ``.alc/`` directory. When set, the ``repair``
             prompt is resolved through the override registry (so an operator override
             replaces the built-in). None keeps the embedded default (backward compat).
+        env: Extra environment variables to inject into the engine turn (the adapter
+            merges them over os.environ). None -> ``{}`` -> byte-identical to today.
 
     Returns:
         RunReport with blueprint=blueprint.name and full Scorecard.
@@ -132,6 +135,7 @@ def execute_mandate(
         model=model,
         permission_mode=blueprint.permission_mode,
         timeout_s=timeout_s,
+        env=env or {},
     )
 
     # Snapshot the git state before the Assurance Loop.

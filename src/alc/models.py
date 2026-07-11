@@ -130,6 +130,11 @@ class Manifest(BaseModel):
     # (node_modules/.env/data). Empty = today's behavior (a worktree carries only
     # tracked files). Each entry declares a link/copy/clone mode per path.
     worktree_provision: list[ProvisionSpec] = []
+    # How many free TCP ports to allocate per worktree run so N parallel dev
+    # servers (a full-stack demand runs a frontend AND a backend) don't collide.
+    # The ports are injected as ALC_PORT / ALC_PORT_2.. / ALC_PORTS into the
+    # engine's env. 0 = OFF = today's behavior (no ports injected -> byte-identical).
+    worktree_ports: int = 0
     blueprints_dir: str = ".alc/blueprints"
     flows_dir: str = ".alc/flows"
     queue_dir: str = ".alc/queue"

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,57 @@ from alc.models import ProvisionSpec
 # holds this lock for the whole of __enter__ and the whole of __exit__. The engine
 # turn between enter and exit runs OUTSIDE the lock, so units still run in parallel.
 _GIT_MUTATION_LOCK = threading.Lock()
+
+# Guards the allocated-port registry so concurrent worktree runs (the parallel
+# drain) get DISJOINT port sets — an allocation still in flight cannot hand out a
+# port another in-flight allocation already claimed.
+_PORT_LOCK = threading.Lock()
+_ALLOCATED_PORTS: set[int] = set()
+
+
+def allocate_free_ports(n: int) -> list[int]:
+    """Allocate *n* distinct free TCP ports, reserving them against concurrent runs.
+
+    Under ``_PORT_LOCK``, repeatedly bind a socket to ``("", 0)`` (an OS-chosen
+    free port), read its number, and keep it only when it is not already in
+    ``_ALLOCATED_PORTS`` — so two allocations in flight at once return disjoint
+    sets. Each socket is closed immediately: the port is passed as env and bound
+    by the app, never held open by ALC (best-effort — a tiny race window is
+    acceptable; the dev server fails-fast, surfaced by QA).
+
+    The retry loop is bounded so a pathological run (every OS-chosen port already
+    reserved) raises instead of spinning forever.
+    """
+    if n <= 0:
+        return []
+    ports: list[int] = []
+    with _PORT_LOCK:
+        attempts = 0
+        max_attempts = n * 100  # generous bound; never expected to be hit
+        while len(ports) < n:
+            attempts += 1
+            if attempts > max_attempts:
+                # Atomic: never leave a partial reservation stuck in the registry.
+                for p in ports:
+                    _ALLOCATED_PORTS.discard(p)
+                raise RuntimeError(
+                    f"Could not allocate {n} free ports after {max_attempts} attempts."
+                )
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.bind(("", 0))
+                port = sock.getsockname()[1]
+            if port in _ALLOCATED_PORTS:
+                continue
+            _ALLOCATED_PORTS.add(port)
+            ports.append(port)
+    return ports
+
+
+def release_ports(ports: list[int]) -> None:
+    """Release previously allocated ports back to the registry (best-effort)."""
+    with _PORT_LOCK:
+        for port in ports:
+            _ALLOCATED_PORTS.discard(port)
 
 
 def is_git_repo(path: Path) -> bool:
