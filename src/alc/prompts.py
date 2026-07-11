@@ -137,6 +137,26 @@ _REPAIR_TEMPLATE = (
     "{failures}"
 )
 
+# The `runtime-conventions` prompt — ALC appends this to a run's directive whenever it
+# has injected a network port into the run's env (a worktree port allocation), so the
+# agent binds ALC's assigned port instead of hardcoding one. Core-owned default (no
+# placeholders); an operator override in the prompt store transparently replaces it.
+# This is the behavioral-defaults guarantee: the port-isolation core feature is enforced
+# by the core, not re-implemented in each project's qa Blueprint.
+_RUNTIME_CONVENTIONS_TEMPLATE = """\
+## Runtime conventions (required by ALC — overrides any conflicting instruction above)
+
+This run is isolated and ALC has already assigned it a free network port, exported as the
+environment variables `PORT` and `ALC_PORT` (identical values). When you start the app or any
+server to validate it:
+- Bind THAT assigned port — do NOT choose or hardcode one. Most apps read `$PORT` automatically;
+  otherwise pass it explicitly (e.g. `--port "$PORT"`) or set it (`PORT="$PORT" <cmd>`). Never
+  invent a fixed port like 3000/3099 — parallel runs share the host and a hardcoded port WILL
+  collide with a sibling run.
+- Make every request against `http://localhost:$PORT`, and confirm the app's own startup output
+  reports that port before hitting it.
+"""
+
 
 _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     "plan-contract": (_PLAN_CONTRACT_TEMPLATE, frozenset({"catalog"})),
@@ -147,6 +167,7 @@ _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"area", "current_knowledge", "task", "act_output"}),
     ),
     "repair": (_REPAIR_TEMPLATE, frozenset({"failures"})),
+    "runtime-conventions": (_RUNTIME_CONVENTIONS_TEMPLATE, frozenset()),
 }
 
 

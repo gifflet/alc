@@ -349,7 +349,9 @@ def _process_task(
                 # allocation failure still cleans up the worktree via finally.
                 if manifest.worktree_ports > 0:
                     ports = allocate_free_ports(manifest.worktree_ports)
-                    port_env = {"ALC_PORT": str(ports[0])}
+                    # Expose the primary port under the conventional `PORT` too (not just
+                    # `ALC_PORT`) so a standard app binds it with zero ALC awareness.
+                    port_env = {"ALC_PORT": str(ports[0]), "PORT": str(ports[0])}
                     for i, port in enumerate(ports[1:], start=2):
                         port_env[f"ALC_PORT_{i}"] = str(port)
                     port_env["ALC_PORTS"] = ",".join(str(p) for p in ports)

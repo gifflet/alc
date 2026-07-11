@@ -121,6 +121,21 @@ def execute_mandate(
     # Resolve effective workdir once so the same value is used for snapshots and the request.
     effective_workdir = workdir or Path.cwd()
 
+    # Runtime conventions: when ALC has injected a network port into this run's env (a
+    # worktree port allocation), append the embedded `runtime-conventions` prompt so the
+    # agent binds ALC's assigned $PORT/$ALC_PORT instead of hardcoding one. Core-owned
+    # default, overridable via the prompt store. A no-op when no port was injected, so
+    # non-worktree/serial runs stay byte-identical.
+    _env = env or {}
+    if operator_layer is not None and ("PORT" in _env or "ALC_PORT" in _env):
+        from alc.prompts import resolve_prompt
+
+        directive = (
+            directive
+            + "\n\n---\n"
+            + resolve_prompt("runtime-conventions", operator_layer, manifest)
+        )
+
     # Per-turn kill timeout: a Blueprint override wins, else the manifest default.
     timeout_s = (
         blueprint.timeout_s
@@ -135,7 +150,7 @@ def execute_mandate(
         model=model,
         permission_mode=blueprint.permission_mode,
         timeout_s=timeout_s,
-        env=env or {},
+        env=_env,
     )
 
     # Snapshot the git state before the Assurance Loop.

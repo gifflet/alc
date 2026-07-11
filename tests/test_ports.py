@@ -314,6 +314,8 @@ class TestQueuePortInjection:
         assert env["ALC_PORT"] != env["ALC_PORT_2"]
         # ALC_PORTS is the comma list of both.
         assert env["ALC_PORTS"] == f"{env['ALC_PORT']},{env['ALC_PORT_2']}"
+        # The primary port is ALSO exposed under the conventional `PORT` (F1).
+        assert env["PORT"] == env["ALC_PORT"]
 
     def test_ports_released_after_run(
         self, tmp_path: Path, operator_layer: Path, monkeypatch
@@ -365,3 +367,69 @@ class TestQueuePortInjection:
         assert _EnvSpyEngine.seen
         for env in _EnvSpyEngine.seen:
             assert "ALC_PORT" not in env
+
+
+# ---------------------------------------------------------------------------
+# F1 — the embedded `runtime-conventions` prompt is appended to the directive
+# exactly when ALC injected a port into the run's env (core-owned enforcement).
+# ---------------------------------------------------------------------------
+
+
+class TestRuntimeConventions:
+    def _bp(self) -> Blueprint:
+        return Blueprint(
+            name="chore",
+            purpose="a mandate",
+            checks=[Check(name="smoke", command=["true"])],
+            workflow="# do it",
+        )
+
+    def _mandate(self, engine, operator_layer, tmp_path, monkeypatch, env):
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        execute_mandate(
+            manifest=load_manifest(operator_layer),
+            blueprint=self._bp(),
+            directive="# original",
+            workdir=tmp_path,
+            operator_layer=operator_layer,
+            env=env,
+        )
+        return engine.received[0].directive
+
+    def test_appended_when_alc_port_in_env(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        directive = self._mandate(
+            _RecordingEngine(), operator_layer, tmp_path, monkeypatch, {"ALC_PORT": "5555"}
+        )
+        assert "# original" in directive
+        assert "Runtime conventions" in directive
+        assert "$PORT" in directive
+
+    def test_appended_for_bare_PORT(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        directive = self._mandate(
+            _RecordingEngine(), operator_layer, tmp_path, monkeypatch, {"PORT": "5555"}
+        )
+        assert "Runtime conventions" in directive
+
+    def test_not_appended_without_port(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        # No port in env -> directive is byte-identical to what the caller passed.
+        directive = self._mandate(
+            _RecordingEngine(), operator_layer, tmp_path, monkeypatch, {}
+        )
+        assert directive == "# original"
+
+    def test_runtime_conventions_is_a_reserved_prompt(
+        self, operator_layer: Path
+    ) -> None:
+        from alc.prompts import resolve_prompt
+
+        text = resolve_prompt(
+            "runtime-conventions", operator_layer, load_manifest(operator_layer)
+        )
+        assert "Runtime conventions" in text
+        assert "$PORT" in text
