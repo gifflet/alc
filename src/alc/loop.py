@@ -342,7 +342,13 @@ def run_replenish(
                     manifest,
                     operator_layer,
                     engine_override=engine_override,
-                    isolate=False,
+                    # Parallel demands: when the loop drains concurrently
+                    # (drain.concurrency > 1) enqueue demands as isolate:true so each
+                    # committing demand runs in its own provisioned, port-injected
+                    # worktree and its branch is auto-merged after the batch. The
+                    # default concurrency 1 keeps isolate:false -> serial shared-workdir
+                    # standard cycle, byte-identical.
+                    isolate=loop_def.drain.concurrency > 1,
                     prefix="plan",
                 )
             except ValueError as exc:

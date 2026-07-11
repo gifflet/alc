@@ -1342,6 +1342,50 @@ class TestPlanReplenish:
             assert t.flow == "demand"
             assert t.isolate is False
 
+    def test_concurrent_drain_enqueues_isolated_demands(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """When the loop drains concurrently (drain.concurrency > 1), demands are
+        enqueued isolate:true so each committing demand runs in its own worktree
+        (the parallel-demands path). concurrency 1 stays isolate:false (the sibling
+        happy-path test)."""
+        from alc import loop as loop_mod
+        from alc.models import QueueTask
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        # A plan-replenish loop whose drain runs 3 demands in parallel.
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nreplenish:\n  kind: plan\n  ref: pm\n  task: plan next\n"
+            "drain:\n  concurrency: 3\nstop:\n  max_cycles: 20\n",
+        )
+        self._fake_planner(
+            '[{"kind":"flow","name":"demand","task":"First\\n\\na"},'
+            '{"kind":"flow","name":"demand","task":"Second\\n\\nb"}]',
+            monkeypatch,
+        )
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        assert loop_def.drain.concurrency == 3
+        enqueued, _delta = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 2
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        tasks = [
+            QueueTask.model_validate(yaml.safe_load(p.read_text()))
+            for p in sorted(queue_dir.glob("*.yaml"))
+        ]
+        assert len(tasks) == 2
+        for t in tasks:
+            assert t.flow == "demand"
+            assert t.isolate is True
+
     def test_no_op_when_plan_invalid(
         self, operator_layer: Path, monkeypatch, capsys
     ) -> None:
