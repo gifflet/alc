@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/ibm-plex-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+/*
+ * Design tokens — "instrument control room", industrial/refined, JetBrains
+ * (Darcula / New UI) lineage. Semantic names map to the brief's palette.
+ * Elevation comes from surface + 1px border, never large diffuse shadows.
+ */
+@theme {
+  /* Surfaces */
+  --color-base: #1b1d1f;
+  --color-panel: #212427;
+  --color-raised: #26292c;
+  --color-hover: #2e3236;
+  --color-border: #35393d;
+
+  /* Text */
+  --color-primary: #d5d8dc;
+  --color-muted: #8b9096;
+  --color-faint: #5e646b;
+
+  /* Accents / status */
+  --color-accent: #3d7edb;
+  --color-live: #5cc975;
+  --color-running: #d9a343;
+  --color-error: #e5544b;
+  --color-warn: #c9a23f;
+
+  /* Fonts */
+  --font-sans: 'IBM Plex Sans Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  /* Density */
+  --radius-panel: 3px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-base);
+    color: var(--color-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Tabular figures for numeric table cells. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Soft phosphor pulse used by "live" indicators (status bar, active runs). */
+@keyframes alc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.alc-pulse {
+  animation: alc-pulse 1.4s ease-in-out infinite;
+}
+
+/* Discreet staggered fade-in for lists on first load. */
+@keyframes alc-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.alc-fade-in {
+  animation: alc-fade-in 120ms ease-out both;
+}

@@ -1,0 +1,172 @@
+// Dashboard.tsx — Project overview: scorecard, queue, recent runs, loops, engines.
+// Every card is backed by a live query invalidated over WS — no manual refresh.
+import { Activity, Cpu, Gauge, ListTodo, RefreshCw } from 'lucide-react'
+import {
+  useCollection,
+  useEngines,
+  useLoopState,
+  useQueue,
+  useRuns,
+  useScorecard,
+} from '../api/hooks'
+import { useProjectId } from '../app/ProjectContext'
+import { openView } from '../components/ActivityBar'
+import { uiStore } from '../app/uiStore'
+import { Card, Metric, Pill } from '../components/primitives'
+import { EmptyState } from '../components/EmptyState'
+import { RelativeTime } from '../components/RelativeTime'
+import { StatusDot } from '../components/StatusDot'
+
+function ScorecardCard() {
+  const id = useProjectId()
+  const { data } = useScorecard(id)
+  const s = data
+  return (
+    <Card title="Scorecard" icon={Gauge}>
+      {s && s.reports > 0 ? (
+        <div className="grid grid-cols-4 gap-3">
+          <Metric label="span" value={s.span_total} tone="live" />
+          <Metric label="passes" value={s.passes_total} />
+          <Metric label="streak" value={s.streak_total} />
+          <Metric label="touch" value={s.touch_total} tone={s.touch_total > 0 ? 'error' : undefined} />
+          <Metric label="reports" value={s.reports} />
+          <Metric label="ok" value={s.successes} tone="live" />
+          <Metric label="failed" value={s.failures} tone={s.failures > 0 ? 'error' : undefined} />
+        </div>
+      ) : (
+        <p className="text-[12px] text-faint">No archived reports yet.</p>
+      )}
+    </Card>
+  )
+}
+
+function QueueCard() {
+  const id = useProjectId()
+  const { data } = useQueue(id)
+  const pending = data?.pending.length ?? 0
+  const done = data?.done.length ?? 0
+  return (
+    <Card title="Queue" icon={ListTodo} action={<LinkButton onClick={() => openView('queue')} />}>
+      <div className="grid grid-cols-2 gap-3">
+        <Metric label="pending" value={pending} tone={pending > 0 ? 'running' : undefined} />
+        <Metric label="done" value={done} />
+      </div>
+    </Card>
+  )
+}
+
+function LinkButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[11px] text-accent transition-colors duration-120 hover:underline"
+    >
+      open
+    </button>
+  )
+}
+
+function RunsCard() {
+  const id = useProjectId()
+  const { data } = useRuns(id)
+  const runs = (data?.runs ?? []).slice(0, 6)
+  return (
+    <Card title="Recent runs" icon={Activity} action={<LinkButton onClick={() => openView('runs')} />}>
+      {runs.length === 0 ? (
+        <p className="text-[12px] text-faint">No runs recorded.</p>
+      ) : (
+        <ul className="flex flex-col">
+          {runs.map((r) => (
+            <li key={r.stem}>
+              <button
+                type="button"
+                onClick={() => uiStore.openTab({ target: { type: 'run', stem: r.stem }, title: r.stem })}
+                className="flex h-[26px] w-full items-center gap-2 text-left text-[12px] transition-colors duration-120 hover:bg-hover"
+              >
+                <StatusDot tone={r.finished ? 'idle' : 'running'} pulse={!r.finished} />
+                <span className="w-10 font-mono text-[11px] text-faint">{r.kind}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">{r.stem}</span>
+                <RelativeTime value={r.mtime} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+function LoopRow({ name }: { name: string }) {
+  const id = useProjectId()
+  const { data } = useLoopState(id, name)
+  const tone = data?.status === 'running' ? 'running' : data?.status === 'stopped' ? 'error' : 'idle'
+  return (
+    <button
+      type="button"
+      onClick={() => uiStore.openTab({ target: { type: 'loop', name }, title: name })}
+      className="flex h-[26px] w-full items-center gap-2 text-left text-[12px] transition-colors duration-120 hover:bg-hover"
+    >
+      <StatusDot tone={tone} pulse={data?.status === 'running'} />
+      <span className="min-w-0 flex-1 truncate text-muted">{name}</span>
+      <span className="tabular text-[11px] text-faint">cycle {data?.cycle ?? 0}</span>
+    </button>
+  )
+}
+
+function LoopsCard() {
+  const id = useProjectId()
+  const { data } = useCollection(id, 'loops')
+  const loops = data ?? []
+  return (
+    <Card title="Loops" icon={RefreshCw} action={<LinkButton onClick={() => openView('loops')} />}>
+      {loops.length === 0 ? (
+        <p className="text-[12px] text-faint">No loops defined.</p>
+      ) : (
+        <div className="flex flex-col">
+          {loops.map((l) => (
+            <LoopRow key={l.name} name={l.name} />
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function EnginesCard() {
+  const id = useProjectId()
+  const { data } = useEngines(id)
+  const engines = data ?? []
+  return (
+    <Card title="Engines" icon={Cpu}>
+      <div className="flex flex-col gap-1.5">
+        {engines.map((e) => (
+          <div key={e.name} className="flex items-center gap-2 text-[12px]">
+            <StatusDot tone={e.healthy ? 'live' : 'error'} />
+            <span className="text-primary">{e.name}</span>
+            {e.default && <Pill tone="accent">default</Pill>}
+            <span className="ml-auto font-mono text-[11px] text-faint">{e.type}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+export function Dashboard() {
+  const id = useProjectId()
+  const { data: engines } = useEngines(id)
+  if (engines === undefined) {
+    // First paint before any data: keep it calm rather than a blank grid.
+    return <EmptyState icon={Gauge} message="Loading project overview…" />
+  }
+  return (
+    <div className="grid h-full grid-cols-1 content-start gap-3 overflow-auto p-4 md:grid-cols-2 xl:grid-cols-3">
+      <ScorecardCard />
+      <QueueCard />
+      <EnginesCard />
+      <RunsCard />
+      <LoopsCard />
+    </div>
+  )
+}

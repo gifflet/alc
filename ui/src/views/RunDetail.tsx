@@ -1,0 +1,114 @@
+// RunDetail.tsx — One run: Assurance Loop timeline + event feed + scorecard.
+//
+// Loads the run's events, then tails live: WS run_event messages for this stem
+// carry each new JSONL line, appended in place so an active run animates without
+// any refresh. buildTimeline turns the raw events into the segmented track.
+import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Radio } from 'lucide-react'
+import { api } from '../api/client'
+import { keys } from '../api/keys'
+import { useProjectId } from '../app/ProjectContext'
+import { useWs } from '../ws/WsProvider'
+import { buildTimeline, describeEvent } from '../lib/runEvents'
+import type { RunEvent } from '../api/types'
+import { TimelineView } from '../components/Timeline'
+import { Metric, Pill } from '../components/primitives'
+import { StatusDot } from '../components/StatusDot'
+import { EmptyState } from '../components/EmptyState'
+
+export function RunDetail({ stem }: { stem: string }) {
+  const id = useProjectId()
+  const { client } = useWs()
+  const [events, setEvents] = useState<RunEvent[]>([])
+
+  const query = useQuery({
+    queryKey: keys.run(id, stem),
+    queryFn: () => api.getRun(id, stem),
+  })
+
+  // Seed local events from the fetched snapshot.
+  useEffect(() => {
+    if (query.data) setEvents(query.data.events)
+  }, [query.data])
+
+  // Live tail: append each new line pushed for this run.
+  useEffect(() => {
+    const off = client.on((msg) => {
+      if (msg.type === 'run_event' && msg.project_id === id && msg.stem === stem) {
+        setEvents((prev) => [...prev, msg.event])
+      }
+    })
+    return off
+  }, [client, id, stem])
+
+  if (query.isError) {
+    return <EmptyState icon={Radio} message={`Could not load run ${stem}.`} />
+  }
+
+  const timeline = buildTimeline(events)
+  const statusTone =
+    timeline.success === true ? 'live' : timeline.success === false ? 'error' : 'running'
+
+  return (
+    <div className="flex h-full flex-col overflow-auto p-4">
+      <header className="mb-3 flex items-center gap-3">
+        <StatusDot tone={statusTone} pulse={!timeline.finished} />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="truncate text-[14px] font-medium text-primary">{timeline.title || stem}</h1>
+            {!timeline.finished ? (
+              <Pill tone="running">live</Pill>
+            ) : (
+              <Pill tone={statusTone}>{timeline.success ? 'success' : 'failed'}</Pill>
+            )}
+          </div>
+          <p className="truncate text-[12px] text-muted">{timeline.task}</p>
+        </div>
+        {timeline.engine && (
+          <span className="ml-auto font-mono text-[11px] text-faint">
+            {timeline.engine}
+            {timeline.model ? `/${timeline.model}` : ''}
+          </span>
+        )}
+      </header>
+
+      {events.length === 0 ? (
+        <EmptyState icon={Radio} message="No events yet." />
+      ) : (
+        <>
+          <TimelineView timeline={timeline} />
+
+          {timeline.scorecard && (
+            <div className="mt-4 flex gap-6 rounded-panel border border-border bg-panel px-4 py-3">
+              <Metric label="span" value={timeline.scorecard.span} tone="live" />
+              <Metric label="passes" value={timeline.scorecard.passes} />
+              <Metric label="streak" value={timeline.scorecard.streak} />
+              <Metric label="touch" value={timeline.scorecard.touch} />
+              {timeline.commitSha && (
+                <div className="ml-auto flex items-center font-mono text-[11px] text-faint">
+                  commit {timeline.commitSha.slice(0, 10)}
+                </div>
+              )}
+            </div>
+          )}
+
+          <section className="mt-4">
+            <h2 className="mb-1 text-[11px] uppercase tracking-wide text-faint">Events</h2>
+            <ul className="rounded-panel border border-border bg-base font-mono text-[11px]">
+              {events.map((e, i) => (
+                <li
+                  key={i}
+                  className="flex items-baseline gap-3 border-b border-border/50 px-3 py-1 last:border-b-0"
+                >
+                  <span className="shrink-0 text-faint">{String(e.ts).slice(11, 19)}</span>
+                  <span className="text-muted">{describeEvent(e)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
+    </div>
+  )
+}
