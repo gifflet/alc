@@ -1,5 +1,6 @@
 // Loops.tsx — The loops list; a row opens its state + ledger in a tab.
-import { Play, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { Play, RefreshCw, Repeat } from 'lucide-react'
 import { useCollection, useLoopState } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { uiStore, useUiState } from '../app/uiStore'
@@ -9,6 +10,7 @@ import { Loading, Pill } from '../components/primitives'
 import { StatusDot } from '../components/StatusDot'
 import type { Tone } from '../components/StatusDot'
 import type { LoopStatus } from '../api/types'
+import { LoopRunDialog } from './LoopRunDialog'
 
 const STATUS_TONE: Record<LoopStatus, Tone> = {
   pending: 'idle',
@@ -23,6 +25,7 @@ function LoopRow({ name }: { name: string }) {
   const { data } = useLoopState(id, name)
   const status = data?.status ?? 'pending'
   const active = activeTabId === `loop:${name}`
+  const [running, setRunning] = useState(false)
   return (
     <div
       className={`group flex h-[28px] w-full items-center gap-2 border-b border-border/60 px-3 text-[12px] transition-colors duration-120 ${
@@ -47,6 +50,15 @@ function LoopRow({ name }: { name: string }) {
       >
         <Play className="h-3.5 w-3.5" />
       </button>
+      <button
+        type="button"
+        aria-label={`Run loop ${name}`}
+        onClick={() => setRunning(true)}
+        className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-live group-hover:opacity-100"
+      >
+        <Repeat className="h-3.5 w-3.5" />
+      </button>
+      {running && <LoopRunDialog name={name} onClose={() => setRunning(false)} />}
     </div>
   )
 }

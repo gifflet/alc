@@ -25,6 +25,21 @@ describe('execStore', () => {
     expect(execStore.getState().execs[0].status).toBe('error')
   })
 
+  it('tracks multiple execs running concurrently and routes output by id', () => {
+    // A second exec starts while the first is still running — no guard blocks it.
+    execStore.launch({ id: 'e1', projectId: 'p', command: 'loop' })
+    execStore.launch({ id: 'e2', projectId: 'p', command: 'run' })
+
+    execStore.output({ execId: 'e1', projectId: 'p', line: 'loop line' })
+    execStore.output({ execId: 'e2', projectId: 'p', line: 'run line' })
+
+    const { execs } = execStore.getState()
+    expect(execs).toHaveLength(2)
+    expect(execs.every((e) => e.status === 'running')).toBe(true)
+    expect(execs.find((e) => e.id === 'e1')!.lines).toEqual(['loop line'])
+    expect(execs.find((e) => e.id === 'e2')!.lines).toEqual(['run line'])
+  })
+
   it('adopts an exec created early by streamed output', () => {
     execStore.output({ execId: 'e1', projectId: 'p', line: 'first' })
     execStore.launch({ id: 'e1', projectId: 'p', command: 'flow' })

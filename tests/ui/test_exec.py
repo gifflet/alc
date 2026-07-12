@@ -20,6 +20,16 @@ def _wait_status(client, exec_id: str, *, timeout: float = 30.0) -> dict:
     raise AssertionError(f"exec {exec_id} did not finish within {timeout}s")
 
 
+def _write_loop(project: Path, name: str) -> None:
+    """Write a minimal drain-only loop definition so `alc loop` can run once."""
+    loops = project / ".alc" / "loops"
+    loops.mkdir(parents=True, exist_ok=True)
+    (loops / f"{name}.yaml").write_text(
+        "name: {name}\nstop:\n  max_cycles: 1\n  on_no_new_work: true\n"
+        "drain:\n  concurrency: 1\n".format(name=name)
+    )
+
+
 class TestExecEndToEnd:
     def test_run_chore_finishes_and_writes_a_run_log(
         self, client, registered: str, project: Path
@@ -44,6 +54,21 @@ class TestExecEndToEnd:
         listed = client.get("/api/execs").json()
         assert exec_id in {e["id"] for e in listed}
 
+    def test_loop_finishes(self, client, registered: str, project: Path) -> None:
+        _write_loop(project, "deliver")
+        resp = client.post(
+            f"/api/projects/{registered}/exec",
+            json={
+                "command": "loop",
+                "args": {"name": "deliver", "interval": 0, "reset": True},
+            },
+        )
+        assert resp.status_code == 201
+        exec_id = resp.json()["exec_id"]
+
+        view = _wait_status(client, exec_id)
+        assert view["status"] in {"finished", "cancelled"}
+
 
 class TestExecValidation:
     def test_unknown_command_is_422(self, client, registered: str) -> None:
@@ -63,6 +88,14 @@ class TestExecValidation:
         resp = client.post(
             f"/api/projects/{registered}/exec",
             json={"command": "run", "args": {"blueprint": "chore"}},
+        )
+        assert resp.status_code == 422
+
+    def test_loop_unknown_arg_is_422(self, client, registered: str) -> None:
+        # `concurrency` belongs to cycle, not loop — it must be rejected.
+        resp = client.post(
+            f"/api/projects/{registered}/exec",
+            json={"command": "loop", "args": {"name": "deliver", "concurrency": 2}},
         )
         assert resp.status_code == 422
 

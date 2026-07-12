@@ -58,6 +58,11 @@ _COMMANDS: dict[str, _Spec] = {
         value_flags=("engine", "concurrency"),
         bool_flags=("reset", "status"),
     ),
+    "loop": _Spec(
+        positionals=("name",),
+        value_flags=("engine", "interval"),
+        bool_flags=("reset",),
+    ),
     "retry": _Spec(opt_positionals=("stem",), bool_flags=("all",)),
     "lint": _Spec(bool_flags=("json",)),
 }
