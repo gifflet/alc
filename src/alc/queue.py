@@ -640,35 +640,55 @@ def process_queue(
     if not queue_dir.exists():
         return []
 
-    pending = sorted(queue_dir.glob("*.yaml"))
-    if not pending:
-        return []
-
     flows_dir = project_root / manifest.flows_dir
 
     results_by_file: dict[Path, TickResult] = {}
-    for wave in _topological_waves(pending):
-        wave_results = _run_wave(
-            wave, manifest, operator_layer, flows_dir, queue_dir, max_workers
-        )
-        results_by_file.update(wave_results)
+    drained_order: list[Path] = []
+    # Drain in PASSES. A failed task with retries left re-enqueues a retry file into
+    # queue_dir; a drained task is moved to done/, so a fresh glob returns only the new
+    # retries. With retry_strategy "immediate" (default) we keep re-globbing and draining
+    # until the queue is dry — so a retry runs in THIS drain (bounded: max_task_retries
+    # stops the re-enqueue). With "deferred" we run exactly one pass and the retry waits
+    # for the next drain/cycle (byte-identical to the pre-strategy behavior).
+    pass_count = 0
+    while True:
+        pending = sorted(queue_dir.glob("*.yaml"))
+        if not pending:
+            break
+        drained_order.extend(pending)
+        pass_count += 1
+        for wave in _topological_waves(pending):
+            wave_results = _run_wave(
+                wave, manifest, operator_layer, flows_dir, queue_dir, max_workers
+            )
+            results_by_file.update(wave_results)
 
-        # Auto-merge THIS wave's passed committing-demand branches into the
-        # current branch (Part D/E) so the NEXT wave's worktrees branch off the
-        # updated main. Branches from non-committing isolate tasks (auto_merge
-        # False) are left for manual review. When no committing demand ran in a
-        # worktree this list is empty -> no-op. With one wave (no deps) this is
-        # the single trailing auto-merge of the pre-change drain.
-        merge_branches = [
-            r.branch
-            for f in wave
-            if (r := wave_results.get(f)) is not None and r.branch and r.auto_merge
-        ]
-        if merge_branches:
-            report = auto_merge_branches(git_toplevel(project_root), merge_branches)
-            for r in wave_results.values():
-                if r.branch and r.auto_merge:
-                    r.merged = r.branch in report.merged  # True merged / False left
-            print(report.summary(), file=sys.stderr, flush=True)
+            # Auto-merge THIS wave's passed committing-demand branches into the current
+            # branch (Part D/E) so the NEXT wave's worktrees branch off the updated main.
+            # Non-committing isolate branches (auto_merge False) are left for review. Empty
+            # list -> no-op.
+            merge_branches = [
+                r.branch
+                for f in wave
+                if (r := wave_results.get(f)) is not None and r.branch and r.auto_merge
+            ]
+            if merge_branches:
+                report = auto_merge_branches(git_toplevel(project_root), merge_branches)
+                for r in wave_results.values():
+                    if r.branch and r.auto_merge:
+                        r.merged = r.branch in report.merged  # True merged / False left
+                print(report.summary(), file=sys.stderr, flush=True)
 
-    return [results_by_file[f] for f in pending]
+        if manifest.retry_strategy == "deferred":
+            break
+        # Defence-in-depth: legitimate retry passes never exceed max_task_retries + 1
+        # (each pass advances every failing lineage by one retry).
+        if pass_count > manifest.max_task_retries + 1:
+            print(
+                "[drain] retry passes exceeded the bound; stopping the drain loop.",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
+
+    return [results_by_file[f] for f in drained_order]

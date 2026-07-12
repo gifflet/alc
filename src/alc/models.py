@@ -143,6 +143,11 @@ class Manifest(BaseModel):
     # Per-task retry cap for the queue drain. 0 = OFF = current behavior: a failed
     # task is re-enqueued with the failure feedback only while qt.retries < this.
     max_task_retries: int = 0
+    # WHEN a re-enqueued retry is drained (inert unless max_task_retries > 0):
+    #   "immediate" (default) — drained in the SAME drain pass (drain-until-dry,
+    #     bounded by max_task_retries), so a retry runs promptly and works on `alc tick`.
+    #   "deferred" — drained by the NEXT drain pass (next cycle / next tick).
+    retry_strategy: Literal["immediate", "deferred"] = "immediate"
     worktree_commit_message: str = "alc: {branch}"  # exit-commit template ({branch} placeholder)
     # Gitignored runtime deps provisioned INTO each worktree before the engine turn
     # (node_modules/.env/data). Empty = today's behavior (a worktree carries only

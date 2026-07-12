@@ -273,10 +273,17 @@ class TestWriteRetryTask:
 
 
 class TestDrainAutoRetry:
-    def test_failed_task_is_reenqueued_then_succeeds(
+    def _deferred(self, repo: Path):
+        """Load the repo's manifest forced to the `deferred` retry strategy."""
+        return load_manifest(repo / ".alc").model_copy(
+            update={"retry_strategy": "deferred"}
+        )
+
+    def test_deferred_strategy_defers_retry_then_succeeds(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """A failing demand drains -> retry file appears -> next pass passes."""
+        """deferred: a failing demand drains -> retry file appears -> the NEXT drain
+        pass runs it (here with flipped-to-passing checks, so it then succeeds)."""
         repo = _build_repo(tmp_path, chore=_CHORE_FAILING, max_retries=1)
         engine = _write_file_engine("feature.txt")
         monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine())
@@ -284,12 +291,11 @@ class TestDrainAutoRetry:
         # committing flow's clean-tree guard sees the seeded (clean) tree.
         monkeypatch.chdir(repo)
 
-        manifest = load_manifest(repo / ".alc")
         queue_dir = repo / ".alc" / "queue"
         (queue_dir / "job1.yaml").write_text(_DEMAND_TASK)
 
-        # Pass 1: the task fails and a retry is re-enqueued.
-        results = process_queue(manifest, repo / ".alc")
+        # Pass 1: the task fails and a retry is re-enqueued (deferred = one pass only).
+        results = process_queue(self._deferred(repo), repo / ".alc")
         assert len(results) == 1
         assert results[0].success is False
         # Original archived to done/.
@@ -310,13 +316,37 @@ class TestDrainAutoRetry:
         # Flip the checks to passing, then drain again: the retry succeeds.
         (repo / ".alc" / "blueprints" / "chore.md").write_text(_CHORE_PASSING)
         _commit_all(repo, "make checks pass")
-        manifest = load_manifest(repo / ".alc")
 
-        results2 = process_queue(manifest, repo / ".alc")
+        results2 = process_queue(self._deferred(repo), repo / ".alc")
         assert len(results2) == 1
         assert results2[0].success is True
         # No further retry (it passed); queue is drained.
         assert _pending_yaml(queue_dir) == []
+
+    def test_immediate_strategy_drains_the_retry_in_the_same_pass(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """immediate (default): a failed task's retry is drained in the SAME
+        process_queue call (drain-until-dry), bounded by max_task_retries."""
+        repo = _build_repo(tmp_path, chore=_CHORE_FAILING, max_retries=1)
+        engine = _write_file_engine("feature.txt")
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine())
+        monkeypatch.chdir(repo)
+
+        manifest = load_manifest(repo / ".alc")
+        assert manifest.retry_strategy == "immediate"  # the default
+        queue_dir = repo / ".alc" / "queue"
+        (queue_dir / "job1.yaml").write_text(_DEMAND_TASK)
+
+        results = process_queue(manifest, repo / ".alc")
+        # Both the original (retries 0) AND its retry (retries 1) drained this call.
+        assert len(results) == 2
+        assert all(r.success is False for r in results)
+        # The retry hit the cap, so nothing was re-enqueued -> the queue is dry.
+        assert _pending_yaml(queue_dir) == []
+        # Both attempts were archived to done/.
+        assert (queue_dir / "done" / "job1.yaml").exists()
+        assert len(list((queue_dir / "done").glob("retry-*.yaml"))) == 1
 
     def test_task_at_cap_is_not_reenqueued(self, tmp_path: Path, monkeypatch) -> None:
         """A failing task already at retries==max_task_retries is NOT re-enqueued."""
