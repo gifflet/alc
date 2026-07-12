@@ -1,0 +1,83 @@
+# Release — automatic on main: when pyproject.toml's version has no matching
+# tag yet, run the full test suite, build the frontend into the package
+# (src/alc/ui/static/) and publish a GitHub Release (tag v<version>) with the
+# sdist + wheel attached. Version bumps land in feature commits, so merging a
+# bumped main is what cuts a release.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags are needed to detect already-released versions
+
+      - name: Detect unreleased version
+        id: version
+        run: |
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION already released — nothing to do."
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.version.outputs.released == 'false'
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.released == 'false'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Backend tests
+        if: steps.version.outputs.released == 'false'
+        run: |
+          uv sync --extra ui
+          uv run pytest -q
+
+      - name: Frontend tests + build into the package
+        if: steps.version.outputs.released == 'false'
+        working-directory: ui
+        run: |
+          npm ci
+          npx vitest run
+          npm run build:alc
+
+      - name: Build sdist + wheel (UI embedded)
+        if: steps.version.outputs.released == 'false'
+        run: |
+          uv build
+          # Guard: a release without the web IDE inside is a broken release.
+          python3 - <<'EOF'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          if not any("/ui/static/" in n for n in names):
+              sys.exit("wheel has no ui/static files")
+          EOF
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.released == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" dist/* \
+            --title "v${{ steps.version.outputs.version }}" \
+            --generate-notes

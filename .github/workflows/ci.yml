@@ -1,0 +1,47 @@
+# CI — lint + tests for the control plane (Python) and the web IDE (ui/).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Lint (ruff)
+        run: uvx ruff@0.15.21 check src tests
+      - name: Sync (with ui extra)
+        run: uv sync --extra ui
+      - name: Tests
+        run: uv run pytest -q
+
+  frontend:
+    name: Frontend (vitest + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Tests
+        run: npx vitest run
+      - name: Typecheck + build
+        run: npm run build
