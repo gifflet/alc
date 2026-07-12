@@ -1,5 +1,6 @@
 // fields.tsx — Compact labelled form controls for dialogs and settings forms.
 import type { ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
 
 const INPUT =
   'w-full rounded-panel border border-border bg-base px-2 py-1.5 text-[12px] text-primary outline-none focus:border-accent'
@@ -77,7 +78,7 @@ export function NumberInput({
       value={value}
       onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
       placeholder={placeholder}
-      className={`${INPUT} tabular font-mono`}
+      className={`${INPUT} tabular`}
     />
   )
 }
@@ -92,13 +93,20 @@ export function Select({
   options: { value: string; label: string }[]
 }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT}>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${INPUT} appearance-none pr-7`}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+    </div>
   )
 }
 
