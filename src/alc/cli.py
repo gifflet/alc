@@ -907,6 +907,60 @@ def cmd_retry(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui(args: argparse.Namespace) -> int:
+    """Run `alc ui [--host H] [--port P] [--ui-dist PATH] [--no-ui]`: serve the web IDE.
+
+    The web backend lives behind the optional ``ui`` extra (fastapi/uvicorn/
+    watchfiles). When it is not installed, print a clear install hint and exit 1
+    rather than raising an ImportError traceback.
+
+    The frontend is served BY DEFAULT. Resolution order (unless --no-ui): an
+    explicit --ui-dist (error + exit 1 if it has no index.html), then
+    ALC_UI_DIST (a warning + skip when invalid), then the bundled build shipped
+    inside the package, else API-only with a hint on how to obtain the UI.
+    """
+    import os
+
+    try:
+        import uvicorn
+
+        from alc.ui.frontend import FrontendError, resolve_frontend
+        from alc.ui.registry import default_registry_path
+        from alc.ui.server import create_app
+    except ModuleNotFoundError:
+        print(
+            "[ERROR] `alc ui` requires the 'ui' extra (fastapi, uvicorn, watchfiles). "
+            'Install it with: uv tool install "alc[ui]"',
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        frontend = resolve_frontend(
+            args.ui_dist, os.environ.get("ALC_UI_DIST"), no_ui=args.no_ui
+        )
+    except FrontendError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    if frontend is not None:
+        location = f"frontend: {frontend}"
+    else:
+        location = "API only"
+        if not args.no_ui:
+            print(
+                "No frontend build found. Build the alc-ui frontend "
+                "(npm run build:alc) or pass --ui-dist PATH to serve it; "
+                "running API-only for now.",
+                file=sys.stderr,
+            )
+
+    app = create_app(default_registry_path(), ui_dist=frontend)
+    print(f"Serving alc ui on http://{args.host}:{args.port} ({location})")
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
+
+
 def main() -> None:
     """Console-script entrypoint."""
     parser = argparse.ArgumentParser(
@@ -1264,6 +1318,37 @@ def main() -> None:
         help="Override the Compute Tier for this invocation (flow: applies to every stage).",
     )
 
+    # alc ui [--host H] [--port P] [--ui-dist PATH]
+    ui_parser = subparsers.add_parser(
+        "ui",
+        help=(
+            "Serve the alc web IDE (API + WebSocket, plus the built frontend when "
+            "--ui-dist points at it). Requires the optional 'ui' extra."
+        ),
+    )
+    ui_parser.add_argument(
+        "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)."
+    )
+    ui_parser.add_argument(
+        "--port", type=int, default=8642, help="Port to bind (default: 8642)."
+    )
+    ui_parser.add_argument(
+        "--ui-dist",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Explicit directory of the built frontend to serve as an SPA. Must "
+            "contain index.html (error + exit 1 otherwise). When unset, falls "
+            "back to ALC_UI_DIST, then the bundled build, then API-only."
+        ),
+    )
+    ui_parser.add_argument(
+        "--no-ui",
+        action="store_true",
+        default=False,
+        help="Serve only the API and WebSocket (do not serve any frontend).",
+    )
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -1294,6 +1379,8 @@ def main() -> None:
         if args.action == "eject" and not args.name:
             parser.error("prompts eject requires a prompt NAME")
         sys.exit(cmd_prompts(args))
+    elif args.command == "ui":
+        sys.exit(cmd_ui(args))
     else:
         parser.print_help()
         sys.exit(1)

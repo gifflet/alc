@@ -76,10 +76,32 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc tick [--concurrency N]` | Drena a fila de tarefas — chame isto via cron; `--concurrency N` processa até N tarefas isoladas em paralelo |
 | `alc primer new <nome>` | Cria um novo arquivo Primer em `.alc/primers/<nome>.md` |
 | `alc setup [--engine]` | Instala/atualiza a skill user-level do editor (Claude Code ou Gemini) |
+| `alc ui [--port 8642]` | Sobe a IDE web (dashboard, fila, runs ao vivo, loops, config) — requer o extra opcional `ui` |
 
 Adicione `--engine claude-code|gemini|mock` para escolher o executor e `--isolate` para conter as edições numa branch de git-worktree.
 
 Blueprints suportam `max_repairs` para limitar o orçamento de reparos do Assurance Loop, e `check_set` para referenciar um conjunto de checks nomeado e reutilizável declarado no Manifest. Checks rodam por código de saída sem shell por padrão; adicione um `shell:` one-liner a uma entrada de check para rodá-lo via `sh -c` (atenção: o resultado é decidido exclusivamente pelo código de saída — stdout/stderr são capturados e alimentam a diretiva de reparo, mas não afetam a decisão de passar ou falhar).
+
+## 🖥 Web UI
+
+`alc ui` sobe uma IDE web local, single-user — uma sala de controle estilo IntelliJ para cada
+projeto registrado: dashboard, fila, runs ao vivo (timeline do Assurance Loop), loops e config,
+tudo atualizado em tempo real via WebSocket (sem refresh, nunca).
+
+```bash
+uv tool install "alc[ui]"   # ou: uv sync --extra ui
+alc ui                      # http://127.0.0.1:8642 — frontend servido por default
+```
+
+O frontend vive em [`ui/`](ui/) (React + Vite + TypeScript). Fluxo de desenvolvimento:
+
+```bash
+cd ui && npm install
+npm run dev        # dev server do Vite com proxy de /api e /ws para 127.0.0.1:8642
+npm run build:alc  # publica o build de produção em src/alc/ui/static/ (gitignored; embarcado no wheel)
+```
+
+`--ui-dist PATH` serve um build alternativo; `--no-ui` sobe apenas API/WebSocket.
 
 ## 🧱 Como as peças se encaixam
 

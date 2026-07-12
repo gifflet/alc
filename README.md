@@ -78,10 +78,32 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc tick [--concurrency N]` | Drain the task queue — call this from cron; `--concurrency N` processes up to N isolated tasks in parallel |
 | `alc primer new <name>` | Scaffold a new Primer file at `.alc/primers/<name>.md` |
 | `alc setup [--engine]` | Install/update the user-level editor skill (Claude Code or Gemini) |
+| `alc ui [--port 8642]` | Serve the web IDE (dashboard, queue, live runs, loops, config) — needs the optional `ui` extra |
 
 Add `--engine claude-code|gemini|mock` to choose the executor, and `--isolate` to contain edits to a git-worktree branch.
 
 Blueprints support `max_repairs` to cap the Assurance Loop repair budget, and `check_set` to reference a reusable named check set declared in the Manifest. Checks run by exit code without a shell by default; add a `shell:` one-liner to a check entry to run it via `sh -c` (note: pass/fail is decided solely by the exit code — stdout/stderr are captured and fed to the repair directive, but they do not affect the pass/fail decision).
+
+## 🖥 Web UI
+
+`alc ui` serves a local, single-user web IDE — an IntelliJ-like control room for every
+registered project: dashboard, queue, live runs (Assurance Loop timeline), loops and config,
+all updated in real time over WebSocket (no refresh, ever).
+
+```bash
+uv tool install "alc[ui]"   # or: uv sync --extra ui
+alc ui                      # http://127.0.0.1:8642 — frontend served by default
+```
+
+The frontend lives in [`ui/`](ui/) (React + Vite + TypeScript). Development workflow:
+
+```bash
+cd ui && npm install
+npm run dev        # Vite dev server proxying /api and /ws to 127.0.0.1:8642
+npm run build:alc  # publish the production build into src/alc/ui/static/ (gitignored; shipped in the wheel)
+```
+
+`--ui-dist PATH` serves an alternative build; `--no-ui` serves only the API/WebSocket.
 
 ## 🧱 How it fits together
 

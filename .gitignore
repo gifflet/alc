@@ -31,3 +31,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Bundled frontend build (produced by the alc-ui frontend's `npm run build:alc`)
+src/alc/ui/static/
