@@ -66,6 +66,17 @@ def save_loop_state(path: Path, state: LoopState) -> None:
     path.write_text(state.model_dump_json(indent=2))
 
 
+def reset_loop_state(path: Path, name: str) -> LoopState:
+    """Replace the loop's persisted state with a fresh pending one; return it.
+
+    Shared by `alc cycle --reset` and `alc loop --reset` so the restart semantics
+    (a clean LoopState, persisted) live in one place.
+    """
+    state = LoopState(name=name)
+    save_loop_state(path, state)
+    return state
+
+
 def append_ledger(path: Path, record: CycleRecord) -> None:
     """Append one cycle record as a JSON line (creating the loops dir if needed).
 

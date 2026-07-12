@@ -475,10 +475,10 @@ def cmd_cycle(args: argparse.Namespace) -> int:
     from alc.loop import (
         format_cycle_summary,
         load_loop_state,
+        reset_loop_state,
         run_cycle,
         save_loop_state,
     )
-    from alc.models import LoopState
 
     manifest, operator_layer, loop_def, _loops, spath, err = _resolve_loop(args)
     if err is not None:
@@ -504,11 +504,9 @@ def cmd_cycle(args: argparse.Namespace) -> int:
         return 0
 
     if args.reset:
-        # Reset THEN run: replace the state with a fresh pending one, persist it,
-        # announce the reset, and fall through so this invocation runs one cycle on
-        # the fresh state (which proceeds normally from pending).
-        state = LoopState(name=args.name)
-        save_loop_state(spath, state)
+        # Reset THEN run: replace the state with a fresh pending one and fall through
+        # so this invocation runs one cycle on the fresh state (from pending).
+        state = reset_loop_state(spath, args.name)
         print(f"Loop '{args.name}' reset.")
 
     if state.status == "stopped":
@@ -539,6 +537,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
     from alc.loop import (
         format_cycle_summary,
         load_loop_state,
+        reset_loop_state,
         run_cycle,
         save_loop_state,
     )
@@ -548,10 +547,15 @@ def cmd_loop(args: argparse.Namespace) -> int:
         return err
 
     state = load_loop_state(spath, args.name)
+    if args.reset:
+        # Reset THEN loop: start the repeating drain from a fresh pending state,
+        # symmetric with `alc cycle --reset` (both share reset_loop_state).
+        state = reset_loop_state(spath, args.name)
+        print(f"Loop '{args.name}' reset.")
     if state.status == "stopped":
         print(
             f"Loop '{args.name}' already stopped: {state.stopped_reason}. "
-            "Use `alc cycle {name} --reset` to restart."
+            "Use --reset to restart."
         )
         return 0
 
@@ -1122,6 +1126,12 @@ def main() -> None:
         type=int,
         default=300,
         help="Seconds to sleep between cycles (0 = no sleep). Default 300.",
+    )
+    loop_parser.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Reset the loop's stopped/exhausted state, then run — restart in one step.",
     )
 
     # alc specialist <name> "<task>" [--engine NAME]

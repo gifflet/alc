@@ -24,7 +24,9 @@ from alc.loop import (
     load_loop_state,
     loops_dir,
     read_ledger,
+    reset_loop_state,
     run_cycle,
+    save_loop_state,
     state_path,
 )
 from alc.models import (
@@ -717,6 +719,51 @@ class TestCliCycle:
         # Started from a fresh state (cycle 0), then ran exactly one cycle.
         assert reloaded.cycle == 1
 
+    def test_loop_reset_restarts_a_stopped_loop(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """`alc loop --reset` on a stopped loop resets AND runs (no manual `alc cycle`)."""
+        from alc.cli import cmd_loop
+
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        _chdir_to_project(operator_layer, monkeypatch)
+        spath = state_path(loops_dir(load_manifest(operator_layer), operator_layer), "deliver")
+        spath.parent.mkdir(parents=True, exist_ok=True)
+        spath.write_text(
+            LoopState(name="deliver", status="stopped", cycle=9, stopped_reason="max_cycles")
+            .model_dump_json()
+        )
+
+        args = argparse.Namespace(name="deliver", engine="mock", interval=0, reset=True)
+        assert cmd_loop(args) == 0
+        out = capsys.readouterr().out
+        # It reset AND ran (Mode B + empty queue stops after one cycle) — not the
+        # "already stopped" no-op.
+        assert "reset" in out.lower()
+        assert "cycle 1:" in out
+        assert "already stopped" not in out.lower()
+
+    def test_loop_without_reset_bails_on_stopped(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        """Without --reset a stopped loop is a no-op pointing at --reset (symmetric UX)."""
+        from alc.cli import cmd_loop
+
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        _chdir_to_project(operator_layer, monkeypatch)
+        spath = state_path(loops_dir(load_manifest(operator_layer), operator_layer), "deliver")
+        spath.parent.mkdir(parents=True, exist_ok=True)
+        spath.write_text(
+            LoopState(name="deliver", status="stopped", stopped_reason="no_new_work")
+            .model_dump_json()
+        )
+
+        args = argparse.Namespace(name="deliver", engine="mock", interval=0, reset=False)
+        assert cmd_loop(args) == 0
+        out = capsys.readouterr().out
+        assert "already stopped" in out.lower()
+        assert "--reset" in out
+
     def test_stopped_loop_is_no_op(self, operator_layer: Path, monkeypatch, capsys) -> None:
         from alc.cli import cmd_cycle
 
@@ -841,12 +888,17 @@ class TestPendingState:
         assert new_state.stopped_reason == "max_cycles"
 
     def test_reset_returns_state_to_pending(self, tmp_path: Path) -> None:
-        """LoopState constructed fresh (as --reset does) has status=pending."""
-        state = LoopState(name="myloop", status="stopped", cycle=5, stopped_reason="budget")
-        reset_state = LoopState(name=state.name)
-        assert reset_state.status == "pending"
-        assert reset_state.cycle == 0
-        assert reset_state.stopped_reason is None
+        """reset_loop_state persists a fresh pending state (the shared --reset core)."""
+        p = tmp_path / "myloop.state.json"
+        save_loop_state(
+            p, LoopState(name="myloop", status="stopped", cycle=5, stopped_reason="budget")
+        )
+        fresh = reset_loop_state(p, "myloop")
+        assert fresh.status == "pending"
+        assert fresh.cycle == 0
+        assert fresh.stopped_reason is None
+        # Persisted: a reload returns the fresh pending state, not the stopped one.
+        assert load_loop_state(p, "myloop").status == "pending"
 
 
 # ---------------------------------------------------------------------------
@@ -1743,7 +1795,7 @@ class TestCliLoop:
 
         monkeypatch.setattr(loop_mod, "run_cycle", _seeding_run_cycle)
 
-        args = argparse.Namespace(name="deliver", engine="mock", interval=0)
+        args = argparse.Namespace(name="deliver", engine="mock", interval=0, reset=False)
         assert cmd_loop(args) == 0
         out = capsys.readouterr().out
         assert "cycle 1:" in out
