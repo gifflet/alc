@@ -247,7 +247,8 @@ def run_specialist(
     )
     directive = expand_includes(directive, operator_layer, manifest)
     act = execute_mandate(
-        manifest, blueprint, directive, engine_override, workdir, operator_layer, env
+        manifest, blueprint, directive, engine_override, workdir, operator_layer, env,
+        task=task,
     )
 
     # Learn: only when Act succeeded.

@@ -10,6 +10,7 @@ from pathlib import Path
 from alc.assurance import AssuranceLoop
 from alc.engine import Engine, EngineRequest
 from alc.engines.registry import resolve_engine
+from alc.events import emit
 from alc.intake import resolve_checks
 from alc.models import Blueprint, Manifest, RunReport
 from alc.policy import has_errors, lint
@@ -182,6 +183,7 @@ def execute_mandate(
     workdir: Path | None = None,
     operator_layer: Path | None = None,
     env: dict[str, str] | None = None,
+    task: str | None = None,
 ) -> RunReport:
     """Resolve the engine, build the EngineRequest, and run the Assurance Loop.
 
@@ -201,6 +203,9 @@ def execute_mandate(
             replaces the built-in). None keeps the embedded default (backward compat).
         env: Extra environment variables to inject into the engine turn (the adapter
             merges them over os.environ). None -> ``{}`` -> byte-identical to today.
+        task: Free-text task description recorded in the run event log. Not used
+            for execution (the directive already carries it); None keeps the
+            ``mandate_started`` payload's ``task`` field null.
 
     Returns:
         RunReport with blueprint=blueprint.name and full Scorecard.
@@ -214,6 +219,15 @@ def execute_mandate(
     tier = manifest.compute_tiers.get(blueprint.compute_tier)
     if tier:
         model = tier.get(engine_name)
+
+    # Observe: announce the mandate (best-effort; no-op when no run log is bound).
+    emit(
+        "mandate_started",
+        blueprint=blueprint.name,
+        task=task,
+        engine=engine_name,
+        model=model,
+    )
 
     # Resolve effective workdir once so the same value is used for snapshots and the request.
     effective_workdir = workdir or Path.cwd()
@@ -274,7 +288,7 @@ def execute_mandate(
         changed_files = _changed_between(state_before, state_after)
 
     # Patch the report's blueprint field to the real name (not the truncated directive).
-    return RunReport(
+    final_report = RunReport(
         blueprint=blueprint.name,
         engine=report.engine,
         success=report.success,
@@ -284,6 +298,15 @@ def execute_mandate(
         changed_files=changed_files,
         usage=report.usage,
     )
+
+    # Observe: close the mandate with its outcome and scorecard.
+    emit(
+        "mandate_finished",
+        success=final_report.success,
+        attempts=len(final_report.attempts),
+        scorecard=final_report.scorecard.model_dump(),
+    )
+    return final_report
 
 
 class MandateRunner:
@@ -347,6 +370,7 @@ class MandateRunner:
             engine_override,
             workdir,
             self._operator_layer,
+            task=task,
         )
 
     def _compose_directive(

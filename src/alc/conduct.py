@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 
 from alc.engine import Engine, EngineRequest
+from alc.events import bind_run_log, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import (
     load_all_flows,
@@ -396,26 +397,33 @@ def dispatch_now(
 
     flows_dir = operator_layer.parent / manifest.flows_dir
     specialists_dir = operator_layer.parent / manifest.specialists_dir
+    runs_dir = operator_layer.parent / manifest.runs_dir
     runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
     reports: list[FlowReport] = []
     for item in plan.items:
-        if item.kind == "specialist":
-            specialist = load_specialist(specialists_dir, item.name)
-            specialist_report = run_specialist(
-                manifest=manifest,
-                operator_layer=operator_layer,
-                specialist=specialist,
-                task=item.task,
-                engine_override=engine_override,
-            )
-            engine_name = engine_override or manifest.default_engine
-            reports.append(
-                _specialist_flow_report(item.name, engine_name, specialist_report.act)
-            )
-            continue
-        flow = load_flow(flows_dir, item.name)
-        report = runner.run(flow, item.task, engine_override=engine_override)
-        reports.append(report)
+        # Bind ONE run log per unit — parity with the parallel path (fanout.run_unit),
+        # so a serial conduct dispatch is just as observable as a concurrent one.
+        run_log = new_run_log_path(runs_dir, "unit", f"{item.name} {item.task}")
+        with bind_run_log(run_log):
+            if item.kind == "specialist":
+                specialist = load_specialist(specialists_dir, item.name)
+                specialist_report = run_specialist(
+                    manifest=manifest,
+                    operator_layer=operator_layer,
+                    specialist=specialist,
+                    task=item.task,
+                    engine_override=engine_override,
+                )
+                engine_name = engine_override or manifest.default_engine
+                reports.append(
+                    _specialist_flow_report(
+                        item.name, engine_name, specialist_report.act
+                    )
+                )
+                continue
+            flow = load_flow(flows_dir, item.name)
+            report = runner.run(flow, item.task, engine_override=engine_override)
+            reports.append(report)
     return reports
 
 

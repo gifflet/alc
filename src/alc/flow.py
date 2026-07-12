@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from alc.commit import commit_workdir, has_non_alc_changes, revert_workdir
+from alc.events import emit
 from alc.intake import load_blueprint, load_specialist, resolve_checks
 from alc.models import (
     Blueprint,
@@ -205,6 +206,14 @@ class FlowRunner:
 
         effective_workdir = workdir or Path.cwd()
 
+        # Observe: announce the flow (best-effort; no-op when no run log is bound).
+        emit(
+            "flow_started",
+            flow=flow.name,
+            task=task,
+            stages=[s.name for s in flow.stages],
+        )
+
         # Clean-tree guard: a committing Flow in a shared (non-isolated) workdir must
         # not sweep pre-existing, unrelated work into its terminal commit. If the
         # workdir has uncommitted non-.alc/ changes, abort before running any stage.
@@ -220,6 +229,7 @@ class FlowRunner:
                 file=sys.stderr,
                 flush=True,
             )
+            emit("flow_finished", success=False)
             return FlowReport(
                 flow=flow.name,
                 engine=engine_name,
@@ -237,8 +247,10 @@ class FlowRunner:
             # Announce the active stage before any engine or verifier work.
             if stage.specialist is not None:
                 _stage_header = f"▶ stage {stage.name} — specialist:{stage.specialist}"
+                emit("stage_started", stage=stage.name, specialist=stage.specialist)
             else:
                 _stage_header = f"▶ stage {stage.name} — blueprint:{blueprint.name}"
+                emit("stage_started", stage=stage.name, blueprint=blueprint.name)
             if stage.verify_only:
                 _stage_header += " (verify-only)"
             print(_stage_header, file=sys.stderr, flush=True)
@@ -314,9 +326,11 @@ class FlowRunner:
                     workdir=workdir,
                     operator_layer=self._operator_layer,
                     env=env,
+                    task=task,
                 )
 
             stage_reports.append(report)
+            emit("stage_finished", stage=stage.name, success=report.success)
 
             # Fail-fast: stop the pipeline if this stage did not succeed.
             if not report.success:
@@ -380,6 +394,12 @@ class FlowRunner:
             commit_sha = commit_workdir(
                 effective_workdir, message, exclude=(".alc/", *flow.commit.exclude)
             )
+
+        # Observe: close the flow with its outcome (and commit sha when created).
+        if commit_sha is not None:
+            emit("flow_finished", success=success, commit_sha=commit_sha)
+        else:
+            emit("flow_finished", success=success)
 
         return FlowReport(
             flow=flow.name,

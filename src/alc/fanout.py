@@ -8,6 +8,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from alc.events import bind_run_log, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import load_blueprint, load_flow, load_specialist
 from alc.models import FanoutReport, Manifest, UnitResult
@@ -17,6 +18,25 @@ from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
 
 
 def run_unit(
+    manifest: Manifest,
+    operator_layer: Path,
+    kind: str,
+    name: str,
+    task: str,
+    engine_override: str | None = None,
+) -> UnitResult:
+    """Run one unit under a per-unit run log, then delegate to :func:`_run_unit`.
+
+    Binds a fresh ``.jsonl`` run log for this unit INSIDE the worker thread so
+    every event it emits lands in ONE file, resolved against the ORIGINAL project
+    (``operator_layer``) — the path is fixed BEFORE the unit enters its worktree.
+    """
+    runs_dir = operator_layer.parent / manifest.runs_dir
+    with bind_run_log(new_run_log_path(runs_dir, "unit", f"{name} {task}")):
+        return _run_unit(manifest, operator_layer, kind, name, task, engine_override)
+
+
+def _run_unit(
     manifest: Manifest,
     operator_layer: Path,
     kind: str,

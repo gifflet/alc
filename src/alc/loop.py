@@ -12,6 +12,7 @@ import json
 import sys
 from pathlib import Path
 
+from alc.events import bind_run_log, new_run_log_path
 from alc.intake import load_specialist
 from alc.models import (
     CycleRecord,
@@ -259,6 +260,9 @@ def run_replenish(
     else:
         print("▶ replenish — conduct", file=sys.stderr, flush=True)
 
+    # Each replenish that runs a mandate/flow binds its own run log so the loop's
+    # planning step is as observable as a demand drain (kind "replenish").
+    runs_dir = operator_layer.parent / manifest.runs_dir
     before = _count_queue_files(manifest, operator_layer)
 
     if replenish.kind == "specialist":
@@ -266,13 +270,16 @@ def run_replenish(
 
         specialists_dir = operator_layer.parent / manifest.specialists_dir
         specialist = load_specialist(specialists_dir, replenish.ref)
-        report = run_specialist(
-            manifest=manifest,
-            operator_layer=operator_layer,
-            specialist=specialist,
-            task=replenish.task,
-            engine_override=engine_override,
-        )
+        with bind_run_log(
+            new_run_log_path(runs_dir, "replenish", f"specialist {replenish.ref}")
+        ):
+            report = run_specialist(
+                manifest=manifest,
+                operator_layer=operator_layer,
+                specialist=specialist,
+                task=replenish.task,
+                engine_override=engine_override,
+            )
         _report_usage(report.act, delta)
         replenish_ok = report.act.success
     elif replenish.kind == "flow":
@@ -281,9 +288,14 @@ def run_replenish(
 
         flows_dir_path = operator_layer.parent / manifest.flows_dir
         flow = load_flow(flows_dir_path, replenish.ref)
-        flow_report = FlowRunner(
-            manifest=manifest, operator_layer=operator_layer
-        ).run(flow, task=replenish.task, engine_override=engine_override, workdir=None)
+        with bind_run_log(
+            new_run_log_path(runs_dir, "replenish", f"flow {replenish.ref}")
+        ):
+            flow_report = FlowRunner(
+                manifest=manifest, operator_layer=operator_layer
+            ).run(
+                flow, task=replenish.task, engine_override=engine_override, workdir=None
+            )
         _flow_usage(flow_report, delta)
         replenish_ok = flow_report.success
     elif replenish.kind == "plan":
@@ -301,17 +313,20 @@ def run_replenish(
         catalog_text, available_flows, available_specialists = build_catalog(
             manifest, operator_layer
         )
-        report = run_specialist(
-            manifest=manifest,
-            operator_layer=operator_layer,
-            specialist=planner,
-            task=replenish.task,
-            engine_override=engine_override,
-            workdir=None,
-            output_contract=render_plan_contract(
-                catalog_text, operator_layer, manifest
-            ),
-        )
+        with bind_run_log(
+            new_run_log_path(runs_dir, "replenish", f"plan {replenish.ref}")
+        ):
+            report = run_specialist(
+                manifest=manifest,
+                operator_layer=operator_layer,
+                specialist=planner,
+                task=replenish.task,
+                engine_override=engine_override,
+                workdir=None,
+                output_contract=render_plan_contract(
+                    catalog_text, operator_layer, manifest
+                ),
+            )
         _report_usage(report.act, delta)
         if not report.act.success:
             # The planner's Act failed (engine/API error — e.g. a 503 or a quota

@@ -6,9 +6,25 @@ from __future__ import annotations
 import sys
 
 from alc.engine import Engine, EngineRequest, Usage
+from alc.events import emit
 from alc.models import AttemptRecord, Check, RunReport, Scorecard
 from alc.prompts import _REPAIR_TEMPLATE
 from alc.verifier import Verifier
+
+
+def _usage_payload(usage: Usage) -> dict[str, int | float | None] | None:
+    """Return a JSON-friendly usage dict, or None when nothing was reported."""
+    if (
+        usage.input_tokens is None
+        and usage.output_tokens is None
+        and usage.cost_usd is None
+    ):
+        return None
+    return {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cost_usd": usage.cost_usd,
+    }
 
 
 def _accumulate_usage(total: Usage | None, result_usage: Usage) -> Usage | None:
@@ -92,9 +108,16 @@ class AssuranceLoop:
                 file=sys.stderr,
                 flush=True,
             )
+            emit("act_started", attempt=attempt_index)
             result = self._engine.run(current_request)
             last_output = result.output_text
             usage_total = _accumulate_usage(usage_total, result.usage)
+
+            act_usage = _usage_payload(result.usage)
+            if act_usage is not None:
+                emit("act_finished", attempt=attempt_index, ok=result.ok, usage=act_usage)
+            else:
+                emit("act_finished", attempt=attempt_index, ok=result.ok)
 
             # The engine itself failed to run (bad invocation, missing binary,
             # auth error, timeout). Repairing is futile — surface the error and
@@ -120,7 +143,21 @@ class AssuranceLoop:
 
             # --- Verify ---
             print(f"→ Verify ({len(checks)} check(s))…", file=sys.stderr, flush=True)
+            emit(
+                "verify_started",
+                attempt=attempt_index,
+                checks=[c.name for c in checks],
+            )
             check_results = self._verifier.run(checks, request.workdir)
+            for cr in check_results:
+                # output_tail reuses the verifier's already-truncated output.
+                emit(
+                    "check_finished",
+                    attempt=attempt_index,
+                    name=cr.name,
+                    passed=cr.passed,
+                    output_tail=cr.output,
+                )
             failed = [cr for cr in check_results if not cr.passed]
 
             attempts.append(

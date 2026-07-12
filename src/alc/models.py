@@ -169,6 +169,7 @@ class Manifest(BaseModel):
     prompts_dir: str = ".alc/prompts"
     bundles_dir: str = ".alc/bundles"
     loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
+    runs_dir: str = ".alc/runs"         # Structured per-run event logs (observability)
 
 
 class AttemptRecord(BaseModel):

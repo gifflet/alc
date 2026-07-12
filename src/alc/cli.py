@@ -189,6 +189,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     """Run `alc run <blueprint> "<task>" [--engine NAME] [--isolate]`."""
     from alc.bundle import summarize_bundle, write_bundle
+    from alc.events import bind_run_log, new_run_log_path
     from alc.intake import load_blueprint, load_manifest
     from alc.primer import load_primer
     from alc.runner import MandateRunner, PolicyViolationError
@@ -210,6 +211,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         blueprint = blueprint.model_copy(update={"compute_tier": args.tier})
 
     runner = MandateRunner(manifest=manifest, operator_layer=operator_layer)
+
+    # Per-run event log, resolved against the original project BEFORE any worktree.
+    run_log = new_run_log_path(
+        operator_layer.parent / manifest.runs_dir, "run", f"{args.blueprint} {args.task}"
+    )
 
     # Build extra_context from --primer and/or --from-bundle before branching.
     parts: list[str] = []
@@ -250,13 +256,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         exc_info = (None, None, None)
         report = None
         try:
-            report = runner.run(
-                blueprint=blueprint,
-                task=args.task,
-                engine_override=args.engine,
-                workdir=wt_path,
-                extra_context=extra_context,
-            )
+            with bind_run_log(run_log):
+                report = runner.run(
+                    blueprint=blueprint,
+                    task=args.task,
+                    engine_override=args.engine,
+                    workdir=wt_path,
+                    extra_context=extra_context,
+                )
         except PolicyViolationError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             exc_info = (type(exc), exc, exc.__traceback__)
@@ -283,12 +290,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     # Non-isolated path (default).
     try:
-        report = runner.run(
-            blueprint=blueprint,
-            task=args.task,
-            engine_override=args.engine,
-            extra_context=extra_context,
-        )
+        with bind_run_log(run_log):
+            report = runner.run(
+                blueprint=blueprint,
+                task=args.task,
+                engine_override=args.engine,
+                extra_context=extra_context,
+            )
     except PolicyViolationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
@@ -639,6 +647,7 @@ def cmd_prompts(args: argparse.Namespace) -> int:
 
 def cmd_specialist(args: argparse.Namespace) -> int:
     """Run `alc specialist <name> "<task>" [--engine NAME]`."""
+    from alc.events import bind_run_log, new_run_log_path
     from alc.intake import load_manifest, load_specialist
     from alc.specialist import run_specialist
 
@@ -648,13 +657,17 @@ def cmd_specialist(args: argparse.Namespace) -> int:
     specialists_dir = operator_layer.parent / manifest.specialists_dir
     specialist = load_specialist(specialists_dir, args.name)
 
-    report = run_specialist(
-        manifest=manifest,
-        operator_layer=operator_layer,
-        specialist=specialist,
-        task=args.task,
-        engine_override=args.engine,
+    run_log = new_run_log_path(
+        operator_layer.parent / manifest.runs_dir, "specialist", f"{args.name} {args.task}"
     )
+    with bind_run_log(run_log):
+        report = run_specialist(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            specialist=specialist,
+            task=args.task,
+            engine_override=args.engine,
+        )
 
     act_status = "SUCCESS" if report.act.success else "FAILED"
     knowledge_status = "yes" if report.knowledge_updated else "no"
@@ -670,6 +683,7 @@ def cmd_specialist(args: argparse.Namespace) -> int:
 def cmd_flow(args: argparse.Namespace) -> int:
     """Run `alc flow <flow_name> "<task>" [--engine NAME] [--isolate]`."""
     from alc.bundle import summarize_bundle, write_bundle
+    from alc.events import bind_run_log, new_run_log_path
     from alc.flow import FlowRunner
     from alc.intake import load_flow, load_manifest
     from alc.primer import load_primer
@@ -689,6 +703,11 @@ def cmd_flow(args: argparse.Namespace) -> int:
         return 1
 
     runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+
+    # Per-run event log, resolved against the original project BEFORE any worktree.
+    run_log = new_run_log_path(
+        operator_layer.parent / manifest.runs_dir, "flow", f"{args.flow_name} {args.task}"
+    )
 
     # Build extra_context from --primer and/or --from-bundle before branching.
     parts: list[str] = []
@@ -738,14 +757,15 @@ def cmd_flow(args: argparse.Namespace) -> int:
         exc_info = (None, None, None)
         report = None
         try:
-            report = runner.run(
-                flow=flow,
-                task=args.task,
-                engine_override=args.engine,
-                workdir=wt_path,
-                extra_context=extra_context,
-                tier_override=args.tier,
-            )
+            with bind_run_log(run_log):
+                report = runner.run(
+                    flow=flow,
+                    task=args.task,
+                    engine_override=args.engine,
+                    workdir=wt_path,
+                    extra_context=extra_context,
+                    tier_override=args.tier,
+                )
         except PolicyViolationError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             exc_info = (type(exc), exc, exc.__traceback__)
@@ -770,13 +790,14 @@ def cmd_flow(args: argparse.Namespace) -> int:
 
     # Non-isolated path (default).
     try:
-        report = runner.run(
-            flow=flow,
-            task=args.task,
-            engine_override=args.engine,
-            extra_context=extra_context,
-            tier_override=args.tier,
-        )
+        with bind_run_log(run_log):
+            report = runner.run(
+                flow=flow,
+                task=args.task,
+                engine_override=args.engine,
+                extra_context=extra_context,
+                tier_override=args.tier,
+            )
     except PolicyViolationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1

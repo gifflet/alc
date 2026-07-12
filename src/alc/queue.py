@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from alc.events import bind_run_log, emit, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import load_flow, load_specialist
 from alc.merge import auto_merge_branches
@@ -246,6 +247,27 @@ def _process_task(
     queue_dir: Path,
     task_file: Path,
 ) -> TickResult:
+    """Run one pending task file under a per-task run log, then archive it.
+
+    Binds a fresh ``.jsonl`` run log for this task INSIDE the worker (thread or
+    serial), so every event the task emits — its flow/mandate/act/check events
+    included, via the reentrant binding — lands in ONE file. The log path is
+    resolved against the ORIGINAL project (``operator_layer``), never a worktree.
+    """
+    runs_dir = operator_layer.parent / manifest.runs_dir
+    with bind_run_log(new_run_log_path(runs_dir, "task", task_file.stem)):
+        return _process_task_body(
+            manifest, operator_layer, flows_dir, queue_dir, task_file
+        )
+
+
+def _process_task_body(
+    manifest: Manifest,
+    operator_layer: Path,
+    flows_dir: Path,
+    queue_dir: Path,
+    task_file: Path,
+) -> TickResult:
     """Run one pending task file and archive it to done/, returning its Gate record.
 
     This is the per-task processing body shared by both the serial and the
@@ -267,6 +289,13 @@ def _process_task(
 
         # Announce the active unit so operator output is grouped under a header.
         print(f"▶ {task_file.name} — {qt.kind}:{unit_name}", file=sys.stderr, flush=True)
+        emit(
+            "task_started",
+            task_file=task_file.name,
+            name=unit_name,
+            kind=qt.kind,
+            isolate=qt.isolate,
+        )
 
         def _run(
             workdir: Path | None,
@@ -417,6 +446,13 @@ def _process_task(
             file=sys.stderr,
             flush=True,
         )
+
+    # Observe: close the task. ``merged`` is decided later (post-batch auto-merge,
+    # outside this binding), so it is intentionally not reported here.
+    if branch is not None:
+        emit("task_finished", success=success, branch=branch)
+    else:
+        emit("task_finished", success=success)
 
     return TickResult(
         task_file=task_file.name,
