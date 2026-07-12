@@ -66,10 +66,17 @@ class TestClassifyChange:
             "name": "deliver",
         }
 
+    def test_run_configs(self, tmp_path: Path) -> None:
+        alc = _alc(tmp_path)
+        assert classify_change(alc, alc / "ui" / "run-configs.json") == {
+            "type": "run_configs_changed",
+        }
+
     def test_unrelated_path_is_none(self, tmp_path: Path) -> None:
         alc = _alc(tmp_path)
         assert classify_change(alc, tmp_path / "README.md") is None
         assert classify_change(alc, alc / "bundles" / "x.jsonl") is None
+        assert classify_change(alc, alc / "ui" / "layout.json") is None
 
 
 class TestRunTailing:

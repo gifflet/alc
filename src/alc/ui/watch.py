@@ -56,6 +56,9 @@ def classify_change(alc_dir: Path, changed: Path) -> dict | None:
     if top in ("blueprints", "flows", "specialists", "primers", "prompts"):
         return {"type": "config_changed", "resource": top}
 
+    if top == "ui" and rel.name == "run-configs.json":
+        return {"type": "run_configs_changed"}
+
     return None
 
 

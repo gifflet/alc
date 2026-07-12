@@ -307,6 +307,10 @@ export interface WsProjectListChanged {
   type: 'project_list_changed'
   project_id: null
 }
+export interface WsRunConfigsChanged {
+  type: 'run_configs_changed'
+  project_id: string
+}
 
 export type WsMessage =
   | WsSubscribed
@@ -318,3 +322,4 @@ export type WsMessage =
   | WsExecOutput
   | WsExecFinished
   | WsProjectListChanged
+  | WsRunConfigsChanged

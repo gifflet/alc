@@ -60,6 +60,12 @@ describe('wsInvalidations', () => {
     expect(midRun).toEqual([])
   })
 
+  it('invalidates the run-configs list when the file changes', () => {
+    expect(wsInvalidations({ type: 'run_configs_changed', project_id: 'p' })).toEqual([
+      keys.runConfigs('p'),
+    ])
+  })
+
   it('invalidates execs on exec output', () => {
     expect(
       wsInvalidations({
