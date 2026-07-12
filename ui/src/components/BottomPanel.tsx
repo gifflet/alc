@@ -1,45 +1,13 @@
 // BottomPanel.tsx — Console (live exec output) + Problems (lint) tool panel.
-import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, CircleCheck } from 'lucide-react'
-import { useExecs, useLint } from '../api/hooks'
+import { useLint } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
+import { useExecState } from '../app/execStore'
 import { uiStore, useUiState } from '../app/uiStore'
-import { useWs } from '../ws/WsProvider'
-import { ConsolePane } from './ConsolePane'
+import { Console } from './Console'
 import { EmptyState } from './EmptyState'
 import { StatusDot } from './StatusDot'
 import type { Tone } from './StatusDot'
-
-const MAX_LINES = 2000
-
-function ConsoleTab() {
-  const id = useProjectId()
-  const { client } = useWs()
-  const { data: execs } = useExecs()
-  const buffer = useRef<string[]>([])
-  const [, bump] = useState(0)
-
-  useEffect(() => {
-    buffer.current = []
-    bump((n) => n + 1)
-    const off = client.on((msg) => {
-      if (msg.type === 'exec_output' && msg.project_id === id) {
-        buffer.current.push(msg.line)
-      } else if (msg.type === 'exec_finished' && msg.project_id === id) {
-        buffer.current.push(`[exec ${msg.exec_id} finished — exit ${msg.exit_code}]`)
-      } else {
-        return
-      }
-      if (buffer.current.length > MAX_LINES) buffer.current.splice(0, buffer.current.length - MAX_LINES)
-      bump((n) => n + 1)
-    })
-    return off
-  }, [client, id])
-
-  const seeded = (execs ?? []).filter((e) => e.project_id === id).at(-1)?.output ?? []
-  const lines = buffer.current.length > 0 ? buffer.current : seeded
-  return <ConsolePane lines={lines} />
-}
 
 const SEVERITY_TONE: Record<string, Tone> = { error: 'error', warning: 'warn', warn: 'warn' }
 
@@ -90,10 +58,12 @@ export function BottomPanel() {
   const id = useProjectId()
   const { bottomTab } = useUiState()
   const { data: lint } = useLint(id)
+  const { execs } = useExecState()
+  const running = execs.filter((e) => e.projectId === id && e.status === 'running').length
   return (
     <div className="flex h-full flex-col border-t border-border bg-panel">
       <div className="flex items-center border-b border-border">
-        <PanelTab id="console" label="Console" />
+        <PanelTab id="console" label="Console" count={running} />
         <PanelTab id="problems" label="Problems" count={lint?.violations.length} />
         <button
           type="button"
@@ -105,7 +75,7 @@ export function BottomPanel() {
         </button>
       </div>
       <div className="min-h-0 flex-1">
-        {bottomTab === 'console' ? <ConsoleTab /> : <ProblemsTab />}
+        {bottomTab === 'console' ? <Console /> : <ProblemsTab />}
       </div>
     </div>
   )

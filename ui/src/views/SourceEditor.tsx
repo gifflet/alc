@@ -7,7 +7,7 @@
 // every save and 422 details render in a panel below the editor.
 import { Suspense, lazy, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, Check, FileWarning, Lock, RotateCcw, Save } from 'lucide-react'
+import { AlertTriangle, Check, FileWarning, Lock, Play, RotateCcw, Save } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
   useCollectionItem,
@@ -26,6 +26,15 @@ import type { CollectionName } from '../api/types'
 import { CodeView } from '../components/CodeView'
 import { EmptyState } from '../components/EmptyState'
 import { Loading } from '../components/primitives'
+import { RunDialog } from './RunDialog'
+import type { RunCommand } from './RunDialog'
+
+// Collections the IDE can launch straight from the editor toolbar.
+const RUN_COMMANDS: Partial<Record<CollectionName, RunCommand>> = {
+  blueprints: 'run',
+  flows: 'flow',
+  specialists: 'specialist',
+}
 
 // Lazy so neither Monaco nor the `yaml` round-trip library (used by the forms)
 // lands in the initial bundle — both load on first edit / form toggle.
@@ -58,6 +67,7 @@ function EditorShell({
   readOnlyNote,
   save,
   renderForm,
+  headerExtra,
 }: {
   id: string
   serverRaw: string | undefined
@@ -68,6 +78,7 @@ function EditorShell({
   readOnlyNote?: string
   save?: SaveLike
   renderForm?: (value: string, onChange: (v: string) => void) => ReactNode
+  headerExtra?: ReactNode
 }) {
   // Seed from the per-tab cache so edits survive switching away and back.
   const cached = getDraft(id)
@@ -134,7 +145,7 @@ function EditorShell({
   return (
     <div className="flex h-full min-h-0 flex-col" onKeyDownCapture={onKeyDownCapture}>
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-panel px-2">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           {renderForm && (
             <div className="flex overflow-hidden rounded-panel border border-border">
               {(['form', 'source'] as const).map((m) => (
@@ -151,6 +162,7 @@ function EditorShell({
               ))}
             </div>
           )}
+          {headerExtra}
         </div>
         <div className="flex items-center gap-2">
           {readOnly ? (
@@ -272,6 +284,7 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
   const { data, isLoading, isError } = useCollectionItem(id, collection, name)
   const manifest = useManifest(id)
   const save = useSaveCollectionItem(id, collection, name)
+  const [running, setRunning] = useState(false)
 
   const parsed = manifest.data?.parsed as
     | { compute_tiers?: Record<string, unknown>; check_sets?: Record<string, unknown> }
@@ -286,16 +299,34 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
         )
       : undefined
 
+  const runCommand = RUN_COMMANDS[collection]
+  const runButton = runCommand ? (
+    <button
+      type="button"
+      onClick={() => setRunning(true)}
+      className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-0.5 text-[11px] text-live transition-colors duration-120 hover:bg-live/20"
+    >
+      <Play className="h-3 w-3" />
+      Run
+    </button>
+  ) : undefined
+
   return (
-    <EditorShell
-      id={tabId({ type: 'source', resource: collection, name })}
-      serverRaw={data?.raw}
-      isLoading={isLoading}
-      isError={isError}
-      language={langFor(collection)}
-      save={save}
-      renderForm={renderForm}
-    />
+    <>
+      <EditorShell
+        id={tabId({ type: 'source', resource: collection, name })}
+        serverRaw={data?.raw}
+        isLoading={isLoading}
+        isError={isError}
+        language={langFor(collection)}
+        save={save}
+        renderForm={renderForm}
+        headerExtra={runButton}
+      />
+      {running && runCommand && (
+        <RunDialog command={runCommand} name={name} onClose={() => setRunning(false)} />
+      )}
+    </>
   )
 }
 

@@ -7,6 +7,7 @@ import { Runs } from '../views/Runs'
 import { RunDetail } from '../views/RunDetail'
 import { Loops } from '../views/Loops'
 import { LoopDetail } from '../views/LoopDetail'
+import { Conduct } from '../views/Conduct'
 import { SourceEditor } from '../views/SourceEditor'
 import { useUiState } from './uiStore'
 import type { PrimaryView, Tab } from './uiStore'
@@ -16,6 +17,7 @@ const VIEWS: Record<PrimaryView, () => React.ReactElement> = {
   queue: Queue,
   runs: Runs,
   loops: Loops,
+  conduct: Conduct,
 }
 
 function renderTab(tab: Tab): React.ReactElement {

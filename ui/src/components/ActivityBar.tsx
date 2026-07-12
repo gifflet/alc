@@ -6,6 +6,7 @@ import {
   Radio,
   RefreshCw,
   Settings,
+  Wand2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { uiStore, useUiState } from '../app/uiStore'
@@ -22,6 +23,7 @@ const ITEMS: Item[] = [
   { view: 'queue', icon: ListTodo, label: 'Queue' },
   { view: 'runs', icon: Radio, label: 'Runs' },
   { view: 'loops', icon: RefreshCw, label: 'Loops' },
+  { view: 'conduct', icon: Wand2, label: 'Conduct' },
 ]
 
 const VIEW_TITLE: Record<PrimaryView, string> = {
@@ -29,6 +31,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   queue: 'Queue',
   runs: 'Runs',
   loops: 'Loops',
+  conduct: 'Conduct',
 }
 
 export function openView(view: PrimaryView): void {

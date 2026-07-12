@@ -1,10 +1,12 @@
 // Queue.tsx — Pending tasks + archived (done) tasks with enqueue/retry/delete.
 import { Fragment, useState } from 'react'
-import { ChevronDown, ChevronRight, ListTodo, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ListTodo, Play, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { useDeletePending, useEnqueueTask, useQueue, useRetryQueue } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
-import { ConfirmDialog } from '../components/Dialog'
+import { useStartExec } from '../app/useStartExec'
+import { ConfirmDialog, Dialog, DialogButton } from '../components/Dialog'
 import { EmptyState } from '../components/EmptyState'
+import { Field, NumberInput } from '../components/fields'
 import { Loading, Pill } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
 import { EnqueueDialog } from './EnqueueDialog'
@@ -13,6 +15,50 @@ import type { DoneTask, FlowReport, PendingTask } from '../api/types'
 
 function firstLine(text: string): string {
   return text.split('\n')[0]
+}
+
+function DrainDialog({ onClose }: { onClose: () => void }) {
+  const start = useStartExec()
+  const [concurrency, setConcurrency] = useState<number | ''>(1)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await start('tick', concurrency === '' ? {} : { concurrency })
+      onClose()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Failed to start.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog
+      title="Drain queue"
+      onClose={onClose}
+      footer={
+        <>
+          <DialogButton tone="ghost" onClick={onClose}>
+            Cancel
+          </DialogButton>
+          <DialogButton onClick={submit} disabled={saving}>
+            Drain
+          </DialogButton>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <p className="text-[12px] text-muted">Process every pending task once (alc tick), then exit.</p>
+        <Field label="Concurrency">
+          <NumberInput value={concurrency} onChange={setConcurrency} placeholder="1" />
+        </Field>
+        {error && <p className="text-[11px] text-error">{error}</p>}
+      </div>
+    </Dialog>
+  )
 }
 
 function ReportSummary({ report }: { report: FlowReport }) {
@@ -165,6 +211,7 @@ export function Queue() {
   const retry = useRetryQueue(id)
   const del = useDeletePending(id)
   const [enqueuing, setEnqueuing] = useState(false)
+  const [draining, setDraining] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
   if (isLoading) return <Loading />
@@ -200,6 +247,16 @@ export function Queue() {
             >
               <RotateCcw className="h-3 w-3" />
               Retry all failures
+            </button>
+          )}
+          {pending.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setDraining(true)}
+              className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[11px] text-live hover:bg-live/20"
+            >
+              <Play className="h-3 w-3" />
+              Drain queue
             </button>
           )}
           <button
@@ -253,6 +310,8 @@ export function Queue() {
           error={enqueue.error instanceof ApiError ? enqueue.error.message : null}
         />
       )}
+
+      {draining && <DrainDialog onClose={() => setDraining(false)} />}
 
       {deleting && (
         <ConfirmDialog

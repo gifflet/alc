@@ -7,6 +7,7 @@ import { StatusBar } from '../components/StatusBar'
 import { TabBar } from '../components/TabBar'
 import { ToolWindow } from '../components/ToolWindow'
 import { uiStore, useUiState } from './uiStore'
+import { ExecBridge } from './ExecBridge'
 import { TabContent } from './TabContent'
 
 export function Shell({
@@ -20,6 +21,7 @@ export function Shell({
 
   return (
     <div className="flex h-full flex-col">
+      <ExecBridge />
       <div className="flex min-h-0 flex-1">
         <ActivityBar onOpenProjects={onOpenProjects} />
 

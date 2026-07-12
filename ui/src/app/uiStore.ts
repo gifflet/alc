@@ -7,7 +7,7 @@ import { useSyncExternalStore } from 'react'
 import type { CollectionName } from '../api/types'
 import { clearAllDrafts, clearDraft } from '../lib/draftCache'
 
-export type PrimaryView = 'dashboard' | 'queue' | 'runs' | 'loops'
+export type PrimaryView = 'dashboard' | 'queue' | 'runs' | 'loops' | 'conduct'
 
 /** A config file that can be opened as a read-only source viewer. */
 export type SourceResource = 'manifest' | CollectionName | 'prompts'

@@ -11,6 +11,7 @@ import {
   FileCode2,
   FileText,
   FileUp,
+  Play,
   Plus,
   Trash2,
 } from 'lucide-react'
@@ -27,6 +28,8 @@ import {
 import { useProjectId } from '../app/ProjectContext'
 import { tabId, uiStore, useUiState } from '../app/uiStore'
 import type { CollectionName, PromptEntry } from '../api/types'
+import { RunDialog } from '../views/RunDialog'
+import type { RunCommand } from '../views/RunDialog'
 import { ConfirmDialog, Dialog, DialogButton } from './Dialog'
 import { TextInput } from './fields'
 
@@ -151,11 +154,13 @@ function CollectionSection({
   collection,
   suffix,
   md,
+  runCommand,
 }: {
   label: string
   collection: CollectionName
   suffix: string
   md: boolean
+  runCommand?: RunCommand
 }) {
   const id = useProjectId()
   const { activeTabId } = useUiState()
@@ -164,6 +169,7 @@ function CollectionSection({
   const del = useDeleteCollectionItem(id, collection)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [running, setRunning] = useState<string | null>(null)
   const FileIcon = md ? FileText : FileCode2
   const leaves = data ?? []
 
@@ -205,18 +211,33 @@ function CollectionSection({
             active={activeTabId === id2}
             onOpen={() => openTab(leaf.name)}
             action={
-              <button
-                type="button"
-                aria-label={`Delete ${leaf.name}`}
-                onClick={() => setDeleting(leaf.name)}
-                className="flex h-4 w-4 items-center justify-center text-faint hover:text-error"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <span className="flex items-center gap-1">
+                {runCommand && (
+                  <button
+                    type="button"
+                    aria-label={`Run ${leaf.name}`}
+                    onClick={() => setRunning(leaf.name)}
+                    className="flex h-4 w-4 items-center justify-center text-faint hover:text-live"
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Delete ${leaf.name}`}
+                  onClick={() => setDeleting(leaf.name)}
+                  className="flex h-4 w-4 items-center justify-center text-faint hover:text-error"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </span>
             }
           />
         )
       })}
+      {running && runCommand && (
+        <RunDialog command={runCommand} name={running} onClose={() => setRunning(null)} />
+      )}
       {creating && (
         <NewFileDialog
           label={label.replace(/s$/, '')}
@@ -360,9 +381,15 @@ export function ToolWindow() {
         <FileCode2 className="h-3.5 w-3.5 shrink-0 text-faint" />
         <span className="truncate">manifest.yaml</span>
       </button>
-      <CollectionSection label="Blueprints" collection="blueprints" suffix=".md" md />
-      <CollectionSection label="Flows" collection="flows" suffix=".yaml" md={false} />
-      <CollectionSection label="Specialists" collection="specialists" suffix=".yaml" md={false} />
+      <CollectionSection label="Blueprints" collection="blueprints" suffix=".md" md runCommand="run" />
+      <CollectionSection label="Flows" collection="flows" suffix=".yaml" md={false} runCommand="flow" />
+      <CollectionSection
+        label="Specialists"
+        collection="specialists"
+        suffix=".yaml"
+        md={false}
+        runCommand="specialist"
+      />
       <CollectionSection label="Loops" collection="loops" suffix=".yaml" md={false} />
       <CollectionSection label="Primers" collection="primers" suffix=".md" md />
       <PromptsSection />
