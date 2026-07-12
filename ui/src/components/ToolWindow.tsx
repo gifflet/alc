@@ -13,6 +13,7 @@ import {
   FileUp,
   Play,
   Plus,
+  Repeat,
   Trash2,
 } from 'lucide-react'
 import { ApiError } from '../api/client'
@@ -26,8 +27,10 @@ import {
   usePrompts,
 } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
+import { useStartExec } from '../app/useStartExec'
 import { tabId, uiStore, useUiState } from '../app/uiStore'
 import type { CollectionName, PromptEntry } from '../api/types'
+import { LoopRunDialog } from '../views/LoopRunDialog'
 import { RunDialog } from '../views/RunDialog'
 import type { RunCommand } from '../views/RunDialog'
 import { ConfirmDialog, Dialog, DialogButton } from './Dialog'
@@ -155,14 +158,17 @@ function CollectionSection({
   suffix,
   md,
   runCommand,
+  loop,
 }: {
   label: string
   collection: CollectionName
   suffix: string
   md: boolean
   runCommand?: RunCommand
+  loop?: boolean
 }) {
   const id = useProjectId()
+  const start = useStartExec()
   const { activeTabId } = useUiState()
   const { data } = useCollection(id, collection)
   const create = useCreateCollectionItem(id, collection)
@@ -222,6 +228,26 @@ function CollectionSection({
                     <Play className="h-3.5 w-3.5" />
                   </button>
                 )}
+                {loop && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label={`Run cycle ${leaf.name}`}
+                      onClick={() => void start('cycle', { name: leaf.name }).catch(() => {})}
+                      className="flex h-4 w-4 items-center justify-center text-faint hover:text-live"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Run loop ${leaf.name}`}
+                      onClick={() => setRunning(leaf.name)}
+                      className="flex h-4 w-4 items-center justify-center text-faint hover:text-live"
+                    >
+                      <Repeat className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   aria-label={`Delete ${leaf.name}`}
@@ -238,6 +264,7 @@ function CollectionSection({
       {running && runCommand && (
         <RunDialog command={runCommand} name={running} onClose={() => setRunning(null)} />
       )}
+      {running && loop && <LoopRunDialog name={running} onClose={() => setRunning(null)} />}
       {creating && (
         <NewFileDialog
           label={label.replace(/s$/, '')}
@@ -390,7 +417,7 @@ export function ToolWindow() {
         md={false}
         runCommand="specialist"
       />
-      <CollectionSection label="Loops" collection="loops" suffix=".yaml" md={false} />
+      <CollectionSection label="Loops" collection="loops" suffix=".yaml" md={false} loop />
       <CollectionSection label="Primers" collection="primers" suffix=".md" md />
       <PromptsSection />
     </div>
