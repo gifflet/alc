@@ -18,9 +18,17 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   runs: 'Runs',
   loops: 'Loops',
   conduct: 'Conduct',
+  'run-configs': 'Run Configurations',
 }
 
-const PRIMARY_VIEWS = new Set<PrimaryView>(['dashboard', 'queue', 'runs', 'loops', 'conduct'])
+const PRIMARY_VIEWS = new Set<PrimaryView>([
+  'dashboard',
+  'queue',
+  'runs',
+  'loops',
+  'conduct',
+  'run-configs',
+])
 
 /** File-extension suffixes per config resource (mirrors the tool window). */
 const SOURCE_SUFFIX: Record<SourceResource, string> = {

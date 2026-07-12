@@ -6,6 +6,7 @@ import {
   Radio,
   RefreshCw,
   Settings,
+  SlidersHorizontal,
   Wand2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -24,6 +25,7 @@ const ITEMS: Item[] = [
   { view: 'runs', icon: Radio, label: 'Runs' },
   { view: 'loops', icon: RefreshCw, label: 'Loops' },
   { view: 'conduct', icon: Wand2, label: 'Conduct' },
+  { view: 'run-configs', icon: SlidersHorizontal, label: 'Run Configurations' },
 ]
 
 const VIEW_TITLE: Record<PrimaryView, string> = {
@@ -32,6 +34,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   runs: 'Runs',
   loops: 'Loops',
   conduct: 'Conduct',
+  'run-configs': 'Run Configurations',
 }
 
 export function openView(view: PrimaryView): void {

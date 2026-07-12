@@ -6,7 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { keys } from './keys'
-import type { CollectionName, QueueTask } from './types'
+import type { CollectionName, QueueTask, RunConfig } from './types'
 
 const enabled = (id: string | undefined): boolean => Boolean(id)
 
@@ -103,6 +103,19 @@ export function useScorecard(id: string) {
 
 export function useExecs() {
   return useQuery({ queryKey: keys.execs(), queryFn: api.listExecs })
+}
+
+export function useCommands() {
+  // The command whitelist is static for a running backend — cache it forever.
+  return useQuery({ queryKey: keys.commands(), queryFn: api.getCommands, staleTime: Infinity })
+}
+
+export function useRunConfigs(id: string) {
+  return useQuery({
+    queryKey: keys.runConfigs(id),
+    queryFn: () => api.listRunConfigs(id),
+    enabled: enabled(id),
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -219,5 +232,30 @@ export function useRetryQueue(id: string) {
   return useMutation({
     mutationFn: (body: { stem?: string; all?: boolean }) => api.retryQueue(id, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.queue(id) }),
+  })
+}
+
+export function useCreateRunConfig(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (cfg: RunConfig) => api.createRunConfig(id, cfg),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.runConfigs(id) }),
+  })
+}
+
+export function useUpdateRunConfig(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, cfg }: { name: string; cfg: RunConfig }) =>
+      api.updateRunConfig(id, name, cfg),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.runConfigs(id) }),
+  })
+}
+
+export function useDeleteRunConfig(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => api.deleteRunConfig(id, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.runConfigs(id) }),
   })
 }

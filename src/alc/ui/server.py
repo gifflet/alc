@@ -13,7 +13,14 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
-from alc.ui import routes_config, routes_exec, routes_projects, routes_queue, ws
+from alc.ui import (
+    routes_config,
+    routes_exec,
+    routes_projects,
+    routes_queue,
+    routes_run_configs,
+    ws,
+)
 from alc.ui.bus import EventBus
 from alc.ui.errors import ApiError
 from alc.ui.execs import RunManager
@@ -88,6 +95,8 @@ def create_app(
     # routes_config is included LAST so it never shadows queue/runs/exec routes.
     app.include_router(routes_projects.router)
     app.include_router(routes_queue.router)
+    app.include_router(routes_run_configs.router)
+    app.include_router(routes_run_configs.project_router)
     app.include_router(routes_exec.project_router)
     app.include_router(routes_exec.router)
     app.include_router(routes_config.router)

@@ -221,6 +221,28 @@ export interface LoopLedger {
 }
 
 // ---------------------------------------------------------------------------
+// Run configurations (command schema + saved presets)
+// ---------------------------------------------------------------------------
+
+/** One command's accepted arguments, from GET /api/commands. */
+export interface CommandSpec {
+  positionals: string[]
+  opt_positionals: string[]
+  value_flags: string[]
+  bool_flags: string[]
+}
+
+/** The whole command whitelist keyed by command name. */
+export type CommandSchema = Record<string, CommandSpec>
+
+/** A saved, named {command, args} preset. */
+export interface RunConfig {
+  name: string
+  command: string
+  args: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
 // Execs
 // ---------------------------------------------------------------------------
 

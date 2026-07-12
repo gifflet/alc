@@ -7,6 +7,7 @@
 import type {
   CollectionItem,
   CollectionName,
+  CommandSchema,
   EngineInfo,
   ExecView,
   LintResult,
@@ -18,6 +19,7 @@ import type {
   Queue,
   QueueTask,
   RawParsed,
+  RunConfig,
   RunDetail,
   RunsPage,
   ScorecardTotals,
@@ -139,6 +141,25 @@ export const api = {
   getLint: (id: string) => request<LintResult>(`${proj(id)}/lint`),
   getEngines: (id: string) => request<EngineInfo[]>(`${proj(id)}/engines`),
   getScorecard: (id: string) => request<ScorecardTotals>(`${proj(id)}/scorecard`),
+
+  // Run configurations
+  getCommands: () => request<CommandSchema>('/api/commands'),
+  listRunConfigs: (id: string) =>
+    request<{ configs: RunConfig[] }>(`${proj(id)}/run-configs`),
+  createRunConfig: (id: string, cfg: RunConfig) =>
+    request<RunConfig>(`${proj(id)}/run-configs`, {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    }),
+  updateRunConfig: (id: string, name: string, cfg: RunConfig) =>
+    request<RunConfig>(`${proj(id)}/run-configs/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(cfg),
+    }),
+  deleteRunConfig: (id: string, name: string) =>
+    request<void>(`${proj(id)}/run-configs/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
 
   // Execs
   listExecs: () => request<ExecView[]>('/api/execs'),

@@ -68,6 +68,24 @@ _COMMANDS: dict[str, _Spec] = {
 }
 
 
+def command_schema() -> dict[str, dict[str, list[str]]]:
+    """Serialize the command whitelist to a JSON-friendly schema.
+
+    The single source of truth the frontend reads to render a config form and
+    the backend reuses (via build_argv) to validate — one entry per command with
+    its accepted positionals, optional positionals and value/bool flags.
+    """
+    return {
+        command: {
+            "positionals": list(spec.positionals),
+            "opt_positionals": list(spec.opt_positionals),
+            "value_flags": list(spec.value_flags),
+            "bool_flags": list(spec.bool_flags),
+        }
+        for command, spec in _COMMANDS.items()
+    }
+
+
 def build_argv(command: str, args: dict | None) -> list[str]:
     """Return the argv for ``alc <command>`` from a validated args dict.
 

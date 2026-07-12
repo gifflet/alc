@@ -4,6 +4,8 @@ import type { CollectionName } from './types'
 export const keys = {
   projects: () => ['projects'] as const,
   execs: () => ['execs'] as const,
+  commands: () => ['commands'] as const,
+  runConfigs: (id: string) => ['project', id, 'run-configs'] as const,
   manifest: (id: string) => ['project', id, 'manifest'] as const,
   collection: (id: string, c: CollectionName) => ['project', id, 'collection', c] as const,
   collectionItem: (id: string, c: CollectionName, name: string) =>
