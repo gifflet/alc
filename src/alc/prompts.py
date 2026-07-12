@@ -79,15 +79,21 @@ Return a JSON array; each element is an object of the form
 {{"kind":"flow","name":"<a catalog name, e.g. demand>","task":"<title>\\n\\n<details>"}}.
 The valid target names are exactly those in the Catalog below.
 
-## Dependencies (optional)
+## File declarations (REQUIRED) & dependencies
 
-An item MAY add an ``"id":"<short-slug>"`` to name itself, and another item MAY add
-``"depends_on":["<id>",...]`` when it BUILDS ON that demand OR would edit the same
-file(s). ALC then runs the dependent ONLY after its precedent has merged, so its
-worktree branches off the updated main (no conflict). Independent demands (no
-depends_on) still run in parallel. Every id in a depends_on MUST match some item's
-id in THIS plan. Example:
-[{{"id":"ingest","kind":"flow","name":"demand","task":"..."}}, {{"kind":"flow","name":"demand","task":"...","depends_on":["ingest"]}}]
+Every element MUST include ``"touches"``: a JSON array of the file paths (or globs) this
+demand will CREATE or EDIT, as precisely as you can predict them (e.g.
+``"touches":["src/services/ingest.js","src/routes/audios.js"]``). ALC uses these to
+GUARANTEE safety: it AUTOMATICALLY serializes any two demands whose ``touches`` overlap
+(the second runs after the first has merged, branching off the updated main — no
+conflict) and runs demands with DISJOINT touches in parallel. Declare touches accurately;
+a demand that omits them is treated conservatively (serialized after the others), which
+is slower. You do NOT decide the parallelism — the core derives it from ``touches``.
+
+You MAY additionally add ``"id":"<short-slug>"`` + ``"depends_on":["<id>",...]`` for a
+LOGICAL dependency (B builds on A even when their files are disjoint). Every id in a
+depends_on MUST match some item's id in THIS plan. Example:
+[{{"id":"ingest","kind":"flow","name":"demand","task":"...","touches":["src/services/ingest.js"]}}, {{"kind":"flow","name":"demand","task":"...","touches":["src/services/ingest.js","src/routes/audios.js"],"depends_on":["ingest"]}}]
 
 ## Catalog
 

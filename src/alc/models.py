@@ -388,6 +388,10 @@ class PlannedUnit(BaseModel):
     # ids of units in the SAME plan this one builds on / shares files with; it runs
     # only AFTER each precedent has merged. Empty = independent (runs in parallel).
     depends_on: list[str] = []
+    # File paths/globs this unit will create or edit. The CORE derives depends_on from
+    # touches OVERLAP (serializing demands that share files) so interdependency safety
+    # does NOT rely on the planner declaring depends_on. Empty = not declared.
+    touches: list[str] = []
 
     @model_validator(mode="before")
     @classmethod

@@ -10,6 +10,7 @@ import yaml
 from alc.conduct import (
     build_catalog,
     conduct,
+    derive_dependencies,
     dispatch_enqueue,
     dispatch_now,
     finalize_plan,
@@ -115,6 +116,113 @@ class TestParsePlanDependencies:
                 '[{"id":"a","kind":"flow","name":"ship","task":"x","depends_on":[1]}]',
                 {"ship"},
             )
+
+
+class TestParsePlanTouches:
+    def test_reads_touches(self) -> None:
+        plan = parse_plan(
+            '[{"kind":"flow","name":"ship","task":"a","touches":["src/app.js"]}]', {"ship"}
+        )
+        assert plan.items[0].touches == ["src/app.js"]
+
+    def test_absent_touches_defaults_empty(self) -> None:
+        plan = parse_plan('[{"kind":"flow","name":"ship","task":"a"}]', {"ship"})
+        assert plan.items[0].touches == []
+
+    def test_rejects_non_string_touches(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="touches"):
+            parse_plan(
+                '[{"kind":"flow","name":"ship","task":"a","touches":[1]}]', {"ship"}
+            )
+
+
+class TestDeriveDependencies:
+    """The CORE derives depends_on from `touches` overlap — the mechanical guarantee."""
+
+    def _plan(self, *items: PlannedUnit) -> ConductorPlan:
+        return ConductorPlan(items=list(items))
+
+    def test_no_touches_plan_is_unchanged(self) -> None:
+        # No touches anywhere -> byte-identical (no ids assigned, no deps derived).
+        plan = self._plan(
+            PlannedUnit(kind="flow", name="ship", task="a"),
+            PlannedUnit(kind="flow", name="ship", task="b"),
+        )
+        out = derive_dependencies(plan)
+        assert out.items[0].id is None and out.items[0].depends_on == []
+        assert out.items[1].id is None and out.items[1].depends_on == []
+
+    def test_overlapping_touches_serialize_the_later(self) -> None:
+        out = derive_dependencies(
+            self._plan(
+                PlannedUnit(kind="flow", name="ship", task="a", touches=["src/app.js"]),
+                PlannedUnit(
+                    kind="flow", name="ship", task="b", touches=["src/app.js", "src/b.js"]
+                ),
+            )
+        )
+        assert out.items[0].id == "d0"
+        assert out.items[1].depends_on == ["d0"]  # shares src/app.js
+
+    def test_disjoint_touches_stay_independent(self) -> None:
+        out = derive_dependencies(
+            self._plan(
+                PlannedUnit(kind="flow", name="ship", task="a", touches=["src/a.js"]),
+                PlannedUnit(kind="flow", name="ship", task="b", touches=["src/b.js"]),
+            )
+        )
+        assert out.items[1].depends_on == []
+
+    def test_glob_overlap_is_detected(self) -> None:
+        out = derive_dependencies(
+            self._plan(
+                PlannedUnit(kind="flow", name="ship", task="a", touches=["src/*.js"]),
+                PlannedUnit(kind="flow", name="ship", task="b", touches=["src/app.js"]),
+            )
+        )
+        assert out.items[1].depends_on == ["d0"]  # src/app.js matches src/*.js
+
+    def test_no_touches_item_in_touches_aware_plan_is_serialized(self) -> None:
+        out = derive_dependencies(
+            self._plan(
+                PlannedUnit(kind="flow", name="ship", task="a", touches=["src/a.js"]),
+                PlannedUnit(kind="flow", name="ship", task="b"),  # no touches -> conservative
+                PlannedUnit(kind="flow", name="ship", task="c", touches=["src/c.js"]),
+            )
+        )
+        assert "d0" in out.items[1].depends_on  # b (no touches) waits for a
+        assert "d1" in out.items[2].depends_on  # c waits for b (b overlaps everything)
+
+    def test_explicit_depends_on_preserved_even_when_disjoint(self) -> None:
+        out = derive_dependencies(
+            self._plan(
+                PlannedUnit(
+                    kind="flow", name="ship", task="a", id="ingest", touches=["src/a.js"]
+                ),
+                PlannedUnit(
+                    kind="flow", name="ship", task="b", touches=["src/b.js"],
+                    depends_on=["ingest"],
+                ),
+            )
+        )
+        assert out.items[1].depends_on == ["ingest"]  # logical dep kept despite disjoint files
+
+    def test_dispatch_enqueue_writes_derived_depends_on(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        plan = self._plan(
+            PlannedUnit(kind="flow", name="ship", task="a", touches=["src/app.js"]),
+            PlannedUnit(kind="flow", name="ship", task="b", touches=["src/app.js"]),
+        )
+        files = dispatch_enqueue(plan, manifest, operator_layer)
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        tasks = [
+            QueueTask.model_validate(yaml.safe_load((queue_dir / f).read_text()))
+            for f in files
+        ]
+        assert tasks[0].id == "d0"
+        assert tasks[1].depends_on == ["d0"]  # the core serialized the overlapping pair
 
 
 # ---------------------------------------------------------------------------

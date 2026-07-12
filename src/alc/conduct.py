@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
+from fnmatch import fnmatch
 from pathlib import Path
 
 import yaml
@@ -153,6 +154,14 @@ def parse_plan(
             raise ValueError(
                 f"Item {i} 'depends_on' must be a list of strings; got {depends_on!r}."
             )
+        # `touches` — files this unit will edit; the core derives depends_on from their
+        # overlap (derive_dependencies). Optional at parse time (mandated by the
+        # plan-contract prompt); a legacy plan without it parses unchanged.
+        touches = entry.get("touches", [])
+        if not isinstance(touches, list) or not all(isinstance(t, str) for t in touches):
+            raise ValueError(
+                f"Item {i} 'touches' must be a list of strings; got {touches!r}."
+            )
 
         # Build via model_validate so the before-validator normalises any
         # legacy shape; the catalog check above has already run by this point.
@@ -161,6 +170,8 @@ def parse_plan(
             item_data["id"] = unit_id
         if depends_on:
             item_data["depends_on"] = depends_on
+        if touches:
+            item_data["touches"] = touches
         items.append(PlannedUnit.model_validate(item_data))
 
     # Every referenced dependency id must match some item's id in the SAME plan;
@@ -427,6 +438,53 @@ def dispatch_now(
     return reports
 
 
+def _touch_overlap(a: list[str], b: list[str]) -> bool:
+    """True if two touch-sets could edit a common path (conservative glob match)."""
+    for pa in a:
+        for pb in b:
+            if pa == pb or fnmatch(pa, pb) or fnmatch(pb, pa):
+                return True
+    return False
+
+
+def derive_dependencies(plan: ConductorPlan) -> ConductorPlan:
+    """Augment each item's depends_on with FILE-OVERLAP dependencies the CORE derives
+    from ``touches`` — so serializing demands that share files does NOT rely on the
+    planner declaring depends_on. This is the mechanical interdependency guarantee.
+
+    Gated on the plan actually declaring ``touches``: a plan with NONE is returned
+    UNCHANGED (byte-identical — the Conductor, or a legacy plan — relying on explicit
+    depends_on only). In a touches-aware plan, an item that declares NO touches is
+    treated CONSERVATIVELY (overlaps everything) so it is serialized, never run blind.
+
+    Deterministic: an item depends on every EARLIER item (plan order) it overlaps, so a
+    stable order breaks ties. A stable id (``d0``, ``d1``, …) is assigned to items
+    missing one so a derived dependency can reference them.
+    """
+    items = list(plan.items)
+    if not any(item.touches for item in items):
+        return plan  # no touches declared -> unchanged (explicit deps only)
+
+    withid = [
+        item if item.id else item.model_copy(update={"id": f"d{i}"})
+        for i, item in enumerate(items)
+    ]
+    result: list[PlannedUnit] = []
+    for i, item in enumerate(withid):
+        deps = set(item.depends_on)
+        for j in range(i):
+            prior = withid[j]
+            # No touches on either side -> can't prove disjoint -> conservative overlap.
+            if (
+                not item.touches
+                or not prior.touches
+                or _touch_overlap(item.touches, prior.touches)
+            ):
+                deps.add(prior.id)
+        result.append(item.model_copy(update={"depends_on": sorted(deps)}))
+    return ConductorPlan(items=result)
+
+
 def dispatch_enqueue(
     plan: ConductorPlan,
     manifest: Manifest,
@@ -460,6 +518,12 @@ def dispatch_enqueue(
     Returns:
         Sorted list of filenames (stems only, not full paths) that were written.
     """
+    # The CORE derives file-overlap dependencies from each unit's `touches` (union with
+    # explicit depends_on) so overlapping demands serialize automatically — the
+    # interdependency guarantee does not depend on the planner. No-touches plans (e.g.
+    # the Conductor) pass through unchanged.
+    plan = derive_dependencies(plan)
+
     queue_dir = operator_layer.parent / manifest.queue_dir
     queue_dir.mkdir(parents=True, exist_ok=True)
 
