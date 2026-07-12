@@ -108,6 +108,7 @@ def check_post_stop(
         loop_def.stop.on_no_new_work
         and record.replenished == 0
         and record.drained == 0
+        and not record.replenish_failed
     ):
         return "no_new_work"
     if state.consecutive_no_progress >= loop_def.failure.max_consecutive:
@@ -216,8 +217,12 @@ def run_replenish(
     the cycle can charge them against the budget.
     """
     delta: dict[str, float] = {"engine_calls": 0.0, "usd": 0.0, "tokens": 0.0}
+    # False when the replenish engine turn FAILED (planner Act errored / plan
+    # unparseable) — the caller uses this so a transient failure doesn't trip
+    # no_new_work. "No replenish configured" and "conduct" are not failures.
+    replenish_ok = True
     if loop_def.replenish is None:
-        return 0, delta
+        return 0, delta, replenish_ok
 
     # Announce the replenish step so operator output is grouped under a header,
     # matching the ▶ style used by queue._process_task and flow.FlowRunner.
@@ -258,6 +263,7 @@ def run_replenish(
             engine_override=engine_override,
         )
         _report_usage(report.act, delta)
+        replenish_ok = report.act.success
     elif replenish.kind == "flow":
         from alc.flow import FlowRunner
         from alc.intake import load_flow
@@ -268,6 +274,7 @@ def run_replenish(
             manifest=manifest, operator_layer=operator_layer
         ).run(flow, task=replenish.task, engine_override=engine_override, workdir=None)
         _flow_usage(flow_report, delta)
+        replenish_ok = flow_report.success
     elif replenish.kind == "plan":
         from alc.commit import commit_workdir
         from alc.conduct import build_catalog, dispatch_enqueue, finalize_plan
@@ -297,9 +304,10 @@ def run_replenish(
         _report_usage(report.act, delta)
         if not report.act.success:
             # The planner's Act failed (engine/API error — e.g. a 503 or a quota
-            # limit). There is no plan to parse or heal, so skip the enqueue entirely:
-            # a clean no-op (the cycle makes no progress and its own stop conditions
-            # handle it) instead of hammering a failed engine with corrective turns.
+            # limit). There is no plan to parse or heal, so skip the enqueue entirely.
+            # This is a FAILURE (not "no work"): flag it so no_new_work won't stop the
+            # loop; the failures/max_consecutive backstop bounds repeated failures.
+            replenish_ok = False
             print(
                 "▶ replenish — planner Act failed; nothing to enqueue.",
                 file=sys.stderr,
@@ -351,6 +359,9 @@ def run_replenish(
                     prefix="plan",
                 )
             except ValueError as exc:
+                # The planner produced an unparseable plan (self-heal exhausted).
+                # Treat like a replenish failure so no_new_work won't stop the loop.
+                replenish_ok = False
                 print(
                     f"▶ replenish — plan not enqueued (invalid plan): {exc}",
                     file=sys.stderr,
@@ -372,7 +383,7 @@ def run_replenish(
 
     after = _count_queue_files(manifest, operator_layer)
     enqueued = max(0, after - before)
-    return enqueued, delta
+    return enqueued, delta, replenish_ok
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +428,9 @@ def run_cycle(
         return new_state, record
 
     # (b) Replenish (Mode A only).
-    enqueued, delta = run_replenish(manifest, operator_layer, loop_def, engine_override)
+    enqueued, delta, replenish_ok = run_replenish(
+        manifest, operator_layer, loop_def, engine_override
+    )
 
     # (c) Drain the queue.
     results = process_queue(
@@ -460,6 +473,7 @@ def run_cycle(
         failed=failed,
         merged=merged,
         left=left,
+        replenish_failed=not replenish_ok,
         progress=progress,
         budget_delta=delta,
     )

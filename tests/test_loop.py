@@ -599,7 +599,7 @@ class TestReplenishCounting:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, delta = loop_mod.run_replenish(
+        enqueued, delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
         assert enqueued == 2
@@ -996,7 +996,7 @@ class TestFlowReplenish:
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
 
-        _enqueued, delta = loop_mod.run_replenish(
+        _enqueued, delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
         # The chore blueprint has one 'true' check; MockEngine runs one attempt.
@@ -1050,7 +1050,7 @@ class TestFlowReplenish:
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
 
-        _enqueued, delta = loop_mod.run_replenish(
+        _enqueued, delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1274,7 +1274,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1282,6 +1282,71 @@ class TestPlanReplenish:
         queue_dir = operator_layer.parent / manifest.queue_dir
         assert not list(queue_dir.glob("*.yaml"))
         assert "planner Act failed" in capsys.readouterr().err
+
+    def test_failed_replenish_does_not_trip_no_new_work(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A FAILED planner Act must NOT stop the loop via no_new_work — it is a
+        transient failure, not "nothing to do"; the loop keeps running to retry
+        (the failures/max_consecutive backstop bounds repeated failures)."""
+        from alc import loop as loop_mod
+        from alc.models import LoopState
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nreplenish:\n  kind: plan\n  ref: pm\n  task: plan next\n"
+            "stop:\n  max_cycles: 20\n  on_no_new_work: true\n"
+            "failure:\n  max_consecutive: 5\n",
+        )
+        # Planner Act FAILS -> nothing enqueued, but it's a FAILURE (not "no work").
+        self._fake_planner("[]", monkeypatch, success=False)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        state, record = loop_mod.run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"),
+            engine_override="mock",
+        )
+
+        assert record.replenished == 0
+        assert record.replenish_failed is True
+        assert record.stopped_reason is None  # NOT "no_new_work"
+        assert state.status == "running"
+
+    def test_successful_empty_plan_still_stops_no_new_work(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """Byte-identity: a SUCCESSFUL planner that enqueues nothing DOES stop via
+        no_new_work — only a FAILED replenish is spared."""
+        from alc import loop as loop_mod
+        from alc.models import LoopState
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        _write_loop(
+            operator_layer,
+            "deliver",
+            "name: deliver\nreplenish:\n  kind: plan\n  ref: pm\n  task: plan next\n"
+            "stop:\n  max_cycles: 20\n  on_no_new_work: true\n",
+        )
+        # Planner succeeds but returns an EMPTY plan -> nothing enqueued, no failure.
+        self._fake_planner("[]", monkeypatch, success=True)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        _state, record = loop_mod.run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"),
+            engine_override="mock",
+        )
+
+        assert record.replenished == 0
+        assert record.replenish_failed is False
+        assert record.stopped_reason == "no_new_work"
 
     def test_plan_replenish_prints_header(
         self, operator_layer: Path, monkeypatch, capsys
@@ -1329,7 +1394,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, delta = loop_mod.run_replenish(
+        enqueued, delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1399,7 +1464,7 @@ class TestPlanReplenish:
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
         assert loop_def.drain.concurrency == 3
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1428,7 +1493,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1457,7 +1522,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1503,7 +1568,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1532,7 +1597,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 
@@ -1561,7 +1626,7 @@ class TestPlanReplenish:
 
         manifest = load_manifest(operator_layer)
         loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
-        enqueued, _delta = loop_mod.run_replenish(
+        enqueued, _delta, _ok = loop_mod.run_replenish(
             manifest, operator_layer, loop_def, engine_override="mock"
         )
 

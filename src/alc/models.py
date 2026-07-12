@@ -586,6 +586,11 @@ class CycleRecord(BaseModel):
     # lines stay valid and a cycle with no auto-merge branch is byte-identical.
     merged: int = 0
     left: int = 0
+    # True when the replenish step's engine turn FAILED (planner Act errored, or the
+    # plan was unparseable) — distinct from "replenish produced no work". A failed
+    # replenish must NOT trip the no_new_work stop (a transient hiccup, not "done");
+    # the failures/max_consecutive backstop bounds repeated failures.
+    replenish_failed: bool = False
     progress: bool
     budget_delta: dict[str, float]
     stopped_reason: str | None = None
