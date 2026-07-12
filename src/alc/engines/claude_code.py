@@ -185,11 +185,37 @@ class ClaudeCodeEngine:
         printer.close()
 
         if timed_out["v"]:
-            return EngineResult(ok=False, output_text="[claude-code] timed out")
+            return EngineResult(
+                ok=False,
+                output_text=f"[claude-code] timed out after {request.timeout_s}s",
+                usage=usage,
+                raw=raw,
+            )
 
-        if proc.returncode != 0:
-            err = "".join(stderr_buf).strip()
-            return EngineResult(ok=False, output_text=err or "[claude-code] non-zero exit")
+        # A turn fails on a non-zero exit OR an error the CLI reported in its
+        # stream-json result event (usage/rate limit, API 5xx, max turns…). Surface
+        # the richest diagnostic captured — exit code + result subtype + error text
+        # (stderr tail, else the result text, else the subtype) — instead of the old
+        # opaque "non-zero exit", so the operator sees WHY it died. Usage still counts
+        # (the failed turn cost tokens/$).
+        subtype = raw.get("subtype")
+        is_error_result = bool(raw.get("is_error")) or (
+            isinstance(subtype, str) and subtype.startswith("error")
+        )
+        if proc.returncode != 0 or is_error_result:
+            stderr_tail = "".join(stderr_buf).strip()
+            detail = (
+                stderr_tail or output_text.strip() or subtype or "no diagnostic output"
+            )
+            label = f"exit {proc.returncode}"
+            if isinstance(subtype, str) and subtype and subtype != "success":
+                label += f" ({subtype})"
+            return EngineResult(
+                ok=False,
+                output_text=f"[claude-code] {label}: {detail[:1000]}",
+                usage=usage,
+                raw=raw,
+            )
 
         cost = f", ${usage.cost_usd:.3f}" if usage.cost_usd is not None else ""
         print(f"  → claude-code done ({elapsed}s{cost})", file=sys.stderr, flush=True)
