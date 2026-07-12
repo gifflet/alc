@@ -25,11 +25,14 @@ ui = [
 [project.scripts]
 alc = "alc.cli:main"
 
+# The built frontend is gitignored (produced by `npm run build:alc` in ui/),
+# but must ship in BOTH sdist and wheel — `uv build` builds the wheel from the
+# sdist, so a wheel-only `artifacts` entry would silently drop the UI.
+[tool.hatch.build]
+artifacts = ["src/alc/ui/static/"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/alc"]
-# The built frontend is gitignored (produced by `npm run build:alc` in ui/),
-# but must ship inside the wheel — `artifacts` includes VCS-ignored paths.
-artifacts = ["src/alc/ui/static/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
