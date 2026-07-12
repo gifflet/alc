@@ -87,6 +87,9 @@ export function useEngines(id: string) {
     queryKey: keys.engines(id),
     queryFn: () => api.getEngines(id),
     enabled: enabled(id),
+    // Engine health is probed live, so re-check on a slow cadence (and on WS
+    // reconnect, see WsProvider) to keep the status dots honest.
+    refetchInterval: 60_000,
   })
 }
 

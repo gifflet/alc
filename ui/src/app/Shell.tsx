@@ -1,12 +1,15 @@
 // Shell.tsx — The IDE grid: activity bar, tool window, tabs, bottom panel, status bar.
+import { useState } from 'react'
 import { PanelBottom, PanelLeft } from 'lucide-react'
 import { ActivityBar } from '../components/ActivityBar'
 import { BottomPanel } from '../components/BottomPanel'
 import { Resizer } from '../components/Resizer'
+import { ShortcutsDialog } from '../components/ShortcutsDialog'
 import { StatusBar } from '../components/StatusBar'
 import { TabBar } from '../components/TabBar'
 import { ToolWindow } from '../components/ToolWindow'
 import { uiStore, useUiState } from './uiStore'
+import { useShortcuts } from './useShortcuts'
 import { ExecBridge } from './ExecBridge'
 import { TabContent } from './TabContent'
 
@@ -18,6 +21,8 @@ export function Shell({
   onOpenProjects: () => void
 }) {
   const ui = useUiState()
+  const [helpOpen, setHelpOpen] = useState(false)
+  useShortcuts(() => setHelpOpen(true))
 
   return (
     <div className="flex h-full flex-col">
@@ -83,7 +88,8 @@ export function Shell({
         </div>
       </div>
 
-      <StatusBar projectName={projectName} />
+      <StatusBar projectName={projectName} onOpenShortcuts={() => setHelpOpen(true)} />
+      {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }

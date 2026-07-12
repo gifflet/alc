@@ -45,4 +45,41 @@ describe('Dashboard', () => {
     // The "reports" metric appears once the aggregate query resolves.
     expect(await screen.findByText('reports')).toBeInTheDocument()
   })
+
+  it('renders per-report history bars when there are done reports', async () => {
+    installFetch({
+      '/scorecard': {
+        reports: 1,
+        successes: 1,
+        failures: 0,
+        span_total: 4,
+        passes_total: 4,
+        streak_total: 1,
+        touch_total: 0,
+      },
+      '/queue': {
+        pending: [],
+        done: [
+          {
+            stem: 'ship-1',
+            mtime: 10,
+            task: null,
+            report: {
+              flow: 'ship',
+              engine: 'mock',
+              success: true,
+              stages: [],
+              scorecard: { span: 4, passes: 4, streak: 1, touch: 0 },
+              commit_sha: null,
+            },
+          },
+        ],
+      },
+      '/runs': { runs: [], total: 0 },
+      '/engines': [{ name: 'mock', type: 'mock', default: true, tiers: {}, healthy: true }],
+      '/loops': [],
+    })
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByTitle(/ship-1: span=4/)).toBeInTheDocument()
+  })
 })

@@ -99,7 +99,16 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
           return (
             <Fragment key={d.stem}>
               <tr
+                role="button"
+                tabIndex={0}
+                aria-expanded={open}
                 onClick={() => setExpanded(open ? null : d.stem)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setExpanded(open ? null : d.stem)
+                  }
+                }}
                 className="h-[28px] cursor-pointer border-b border-border/60 transition-colors duration-120 hover:bg-hover"
               >
                 <td className="px-2">

@@ -8,8 +8,7 @@ import { useProjects } from '../api/hooks'
 import { ProjectProvider } from './ProjectContext'
 import { WsProvider } from '../ws/WsProvider'
 import { Shell } from './Shell'
-import { openView } from '../components/ActivityBar'
-import { uiStore } from './uiStore'
+import { UrlSync, useUrlHydration } from './urlSync'
 import { ProjectSelector } from '../components/ProjectSelector'
 import { EmptyState } from '../components/EmptyState'
 
@@ -50,11 +49,9 @@ function ProjectShell() {
   const { data: projects } = useProjects()
   const [selectorOpen, setSelectorOpen] = useState(false)
 
-  // Reset tabs and land on the dashboard whenever the active project changes.
-  useEffect(() => {
-    uiStore.reset()
-    openView('dashboard')
-  }, [id])
+  // Reset + hydrate the tab store from the URL once per project; `hydrated` gates
+  // UrlSync so the two-way binding can never turn into a navigation loop.
+  const hydrated = useUrlHydration(id)
 
   const project = projects?.find((p) => p.id === id)
   const projectName = project?.name ?? id
@@ -62,6 +59,7 @@ function ProjectShell() {
   return (
     <ProjectProvider value={id}>
       <WsProvider projectId={id}>
+        <UrlSync id={id} hydrated={hydrated} />
         <Shell projectName={projectName} onOpenProjects={() => setSelectorOpen(true)} />
         {selectorOpen && (
           <ProjectSelector
@@ -84,7 +82,7 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Landing />} />
-          <Route path="/projects/:id" element={<ProjectShell />} />
+          <Route path="/projects/:id/*" element={<ProjectShell />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

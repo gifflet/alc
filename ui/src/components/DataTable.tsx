@@ -37,12 +37,26 @@ export function DataTable<T>({
         {rows.map((row) => {
           const key = rowKey(row)
           const active = key === activeKey
+          // Clickable rows are reachable by keyboard and exposed as buttons.
+          const clickable = Boolean(onRowClick)
           return (
             <tr
               key={key}
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onKeyDown={
+                onRowClick
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onRowClick(row)
+                      }
+                    }
+                  : undefined
+              }
               className={`h-[28px] border-b border-border/60 transition-colors duration-120 ${
-                onRowClick ? 'cursor-pointer' : ''
+                clickable ? 'cursor-pointer' : ''
               } ${active ? 'bg-hover' : 'hover:bg-hover'}`}
             >
               {columns.map((c) => (

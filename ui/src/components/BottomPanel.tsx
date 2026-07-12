@@ -1,15 +1,51 @@
 // BottomPanel.tsx — Console (live exec output) + Problems (lint) tool panel.
-import { ChevronDown, CircleCheck } from 'lucide-react'
+import { ChevronDown, CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useLint } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useExecState } from '../app/execStore'
 import { uiStore, useUiState } from '../app/uiStore'
+import { violationTarget } from '../app/violations'
+import type { Violation } from '../api/types'
 import { Console } from './Console'
 import { EmptyState } from './EmptyState'
-import { StatusDot } from './StatusDot'
-import type { Tone } from './StatusDot'
 
-const SEVERITY_TONE: Record<string, Tone> = { error: 'error', warning: 'warn', warn: 'warn' }
+/** Icon + colour class per severity (error #E5544B, warn #C9A23F). */
+function severityStyle(severity: string): { Icon: LucideIcon; color: string } {
+  return severity === 'error'
+    ? { Icon: CircleAlert, color: 'text-error' }
+    : { Icon: TriangleAlert, color: 'text-warn' }
+}
+
+/** Number of error-severity violations — drives the Problems badge. */
+function errorCount(violations: Violation[]): number {
+  return violations.filter((v) => v.severity === 'error').length
+}
+
+function ProblemRow({ v }: { v: Violation }) {
+  const { Icon, color } = severityStyle(v.severity)
+  const target = violationTarget(v)
+  const body = (
+    <>
+      <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${color}`} />
+      <span className="shrink-0 font-mono text-[11px] text-faint">{v.rule}</span>
+      <span className="text-muted">{v.message}</span>
+    </>
+  )
+  if (!target) {
+    return <div className="flex items-start gap-2 px-3 py-1.5 text-[12px]">{body}</div>
+  }
+  return (
+    <button
+      type="button"
+      title={`Open ${target.title}`}
+      onClick={() => uiStore.openTab(target)}
+      className="flex w-full items-start gap-2 px-3 py-1.5 text-left text-[12px] transition-colors duration-120 hover:bg-hover"
+    >
+      {body}
+    </button>
+  )
+}
 
 function ProblemsTab() {
   const id = useProjectId()
@@ -21,22 +57,25 @@ function ProblemsTab() {
   return (
     <div className="h-full overflow-auto">
       {violations.map((v, i) => (
-        <div
-          key={i}
-          className="flex items-start gap-2 border-b border-border/60 px-3 py-1.5 text-[12px]"
-        >
-          <span className="mt-1">
-            <StatusDot tone={SEVERITY_TONE[v.severity] ?? 'warn'} />
-          </span>
-          <span className="font-mono text-[11px] text-faint">{v.rule}</span>
-          <span className="text-muted">{v.message}</span>
+        <div key={i} className="border-b border-border/60">
+          <ProblemRow v={v} />
         </div>
       ))}
     </div>
   )
 }
 
-function PanelTab({ id, label, count }: { id: 'console' | 'problems'; label: string; count?: number }) {
+function PanelTab({
+  id,
+  label,
+  count,
+  badgeTone,
+}: {
+  id: 'console' | 'problems'
+  label: string
+  count?: number
+  badgeTone?: 'faint' | 'error'
+}) {
   const { bottomTab } = useUiState()
   const active = bottomTab === id
   return (
@@ -49,7 +88,11 @@ function PanelTab({ id, label, count }: { id: 'console' | 'problems'; label: str
     >
       {active && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />}
       {label}
-      {count !== undefined && count > 0 && <span className="ml-1 tabular text-faint">{count}</span>}
+      {count !== undefined && count > 0 && (
+        <span className={`ml-1 tabular ${badgeTone === 'error' ? 'text-error' : 'text-faint'}`}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }
@@ -60,11 +103,12 @@ export function BottomPanel() {
   const { data: lint } = useLint(id)
   const { execs } = useExecState()
   const running = execs.filter((e) => e.projectId === id && e.status === 'running').length
+  const errors = errorCount(lint?.violations ?? [])
   return (
     <div className="flex h-full flex-col border-t border-border bg-panel">
       <div className="flex items-center border-b border-border">
         <PanelTab id="console" label="Console" count={running} />
-        <PanelTab id="problems" label="Problems" count={lint?.violations.length} />
+        <PanelTab id="problems" label="Problems" count={errors} badgeTone="error" />
         <button
           type="button"
           aria-label="Collapse panel"

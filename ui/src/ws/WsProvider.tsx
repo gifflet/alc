@@ -6,6 +6,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { keys } from '../api/keys'
 import { WsClient } from './client'
 import type { WsStatus } from './client'
 import { wsInvalidations } from './invalidate'
@@ -38,7 +39,14 @@ export function WsProvider({
   const [status, setStatus] = useState<WsStatus>(client.status)
 
   useEffect(() => {
-    const offStatus = client.onStatus(setStatus)
+    const offStatus = client.onStatus((s) => {
+      setStatus(s)
+      // Re-probe engine health whenever the link (re)opens — a dropped socket
+      // often means the backend or an engine bounced.
+      if (s === 'open' && projectId) {
+        queryClient.invalidateQueries({ queryKey: keys.engines(projectId) })
+      }
+    })
     const offMsg = client.on((msg) => {
       for (const key of wsInvalidations(msg)) {
         queryClient.invalidateQueries({ queryKey: key })
@@ -50,7 +58,7 @@ export function WsProvider({
       offMsg()
       client.close()
     }
-  }, [client, queryClient])
+  }, [client, queryClient, projectId])
 
   useEffect(() => {
     client.setProject(projectId)

@@ -12,27 +12,55 @@ import {
 import { useProjectId } from '../app/ProjectContext'
 import { openView } from '../components/ActivityBar'
 import { uiStore } from '../app/uiStore'
+import { scorecardHistory } from '../lib/scorecard'
+import type { ScorecardPoint } from '../lib/scorecard'
 import { Card, Metric, Pill } from '../components/primitives'
 import { EmptyState } from '../components/EmptyState'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusDot } from '../components/StatusDot'
 
+/** Per-report span bars, coloured by success — a compact trend under the totals. */
+function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
+  const max = Math.max(1, ...points.map((p) => p.span))
+  return (
+    <div className="mt-3 flex h-12 items-end gap-1 rounded-panel border border-border bg-base p-2">
+      {points.map((p) => (
+        <div
+          key={p.stem}
+          title={`${p.stem}: span=${p.span} · ${p.success ? 'ok' : 'failed'}`}
+          className="flex min-w-[4px] flex-1 flex-col justify-end"
+        >
+          <div
+            className={p.success ? 'w-full bg-live' : 'w-full bg-error'}
+            style={{ height: `${Math.max(6, (p.span / max) * 100)}%` }}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function ScorecardCard() {
   const id = useProjectId()
   const { data } = useScorecard(id)
+  const { data: queue } = useQueue(id)
   const s = data
+  const history = scorecardHistory(queue?.done ?? [])
   return (
     <Card title="Scorecard" icon={Gauge}>
       {s && s.reports > 0 ? (
-        <div className="grid grid-cols-4 gap-3">
-          <Metric label="span" value={s.span_total} tone="live" />
-          <Metric label="passes" value={s.passes_total} />
-          <Metric label="streak" value={s.streak_total} />
-          <Metric label="touch" value={s.touch_total} tone={s.touch_total > 0 ? 'error' : undefined} />
-          <Metric label="reports" value={s.reports} />
-          <Metric label="ok" value={s.successes} tone="live" />
-          <Metric label="failed" value={s.failures} tone={s.failures > 0 ? 'error' : undefined} />
-        </div>
+        <>
+          <div className="grid grid-cols-4 gap-3">
+            <Metric label="span" value={s.span_total} tone="live" />
+            <Metric label="passes" value={s.passes_total} />
+            <Metric label="streak" value={s.streak_total} />
+            <Metric label="touch" value={s.touch_total} tone={s.touch_total > 0 ? 'error' : undefined} />
+            <Metric label="reports" value={s.reports} />
+            <Metric label="ok" value={s.successes} tone="live" />
+            <Metric label="failed" value={s.failures} tone={s.failures > 0 ? 'error' : undefined} />
+          </div>
+          {history.length > 0 && <ScorecardHistory points={history} />}
+        </>
       ) : (
         <p className="text-[12px] text-faint">No archived reports yet.</p>
       )}
