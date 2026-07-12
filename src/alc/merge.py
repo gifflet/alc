@@ -1,8 +1,7 @@
-# merge.py — Post-batch auto-merge of the passed demand branches into main.
-# After the parallel demand batch, each SUCCESSFUL demand's branch (alc/tick-<hex>,
-# produced by the worktree exit-commit) is merged back into the current branch,
-# SEQUENTIALLY. A clean merge deletes the now-merged branch; a conflict aborts the
-# merge and LEAVES the branch for the operator to resolve — never a silent clobber.
+# merge.py — Post-batch integration of the passed demand branches into the current branch.
+# After a drain wave, each SUCCESSFUL demand's branch (alc/tick-<hex>, produced by the
+# worktree exit-commit) is replayed onto the current branch, LINEARLY. A clean integration
+# deletes the branch; a conflict LEAVES it for the operator to resolve — never a silent clobber.
 from __future__ import annotations
 
 import subprocess
@@ -16,7 +15,7 @@ class MergeReport:
     """Outcome of an auto-merge pass over a set of demand branches.
 
     Attributes:
-        merged: Branches merged into the current branch, then deleted (sorted order).
+        merged: Branches integrated into the current branch, then deleted (sorted order).
         conflicted: Branches left intact for the operator to resolve manually.
     """
 
@@ -40,69 +39,44 @@ class MergeReport:
         return line
 
 
-def _merge_message(repo_root: Path, branch: str) -> str:
-    """Return the merge commit message for *branch*: its tip subject.
-
-    The tip subject is already ``feat(auto): <title>`` (from the Part C exit-commit),
-    so reusing it keeps a consistent history. Falls back to ``Merge <branch>`` when
-    the subject can't be read (missing branch, git unavailable, etc.).
-    """
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "log", "-1", "--format=%s", branch],
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return f"Merge {branch}"
-    if result.returncode != 0:
-        return f"Merge {branch}"
-    subject = result.stdout.strip()
-    return subject or f"Merge {branch}"
-
-
 def auto_merge_branches(repo_root: Path, branches: list[str]) -> MergeReport:
-    """Sequentially merge each demand *branch* into the current branch.
+    """Integrate each demand *branch* into the current branch LINEARLY (cherry-pick).
 
-    Processes ``sorted(branches)`` (a stable, deterministic order — required so the
-    merge history is reproducible). For each branch:
+    Processes ``sorted(branches)``. For each branch, cherry-picks the commits it holds
+    that the current branch (``HEAD``) does not yet have — replaying the demand's own
+    ``feat(auto): <title>`` commit(s) onto the tip. This keeps history LINEAR: one commit
+    per demand, its OWN message, and NO merge commit — so a demand never shows up twice
+    (the old ``--no-ff`` merge created a merge commit that reused the subject, which read
+    like a duplicate).
 
-    - ``git -C <root> merge --no-ff <branch> -m <subject>`` where ``<subject>`` is the
-      branch tip's own subject (``feat(auto): <title>``). ``--no-ff`` forces a real
-      merge commit even when a fast-forward is possible (consistent history).
-      - returncode 0 -> clean merge: ``git branch -d <branch>`` (delete the now-merged
-        branch), append to ``merged``.
-      - returncode != 0 -> conflict (or any merge failure): ``git merge --abort``
-        (best-effort), LEAVE the branch, append to ``conflicted``, continue the loop.
+    - A clean cherry-pick deletes the (now-redundant) branch and records it as merged.
+    - A conflict runs ``git cherry-pick --abort`` and LEAVES the branch, recording it as
+      conflicted — never a silent clobber.
+    - A branch already contained in the current branch (nothing to replay) is just dropped.
 
-    Merges are serialized by construction (this runs post-batch, single-threaded), so
-    no git-mutation lock is needed here.
+    Integrations are serialized by construction (this runs post-batch/-wave, single-threaded),
+    so no git-mutation lock is needed here.
 
-    Never raises: a missing ``git`` (FileNotFoundError) degrades gracefully — a
-    ``[merge] git not found; ...`` warning is printed to stderr and whatever was
-    accumulated so far is returned, with the remaining branches counted as conflicted
-    (nothing could be merged), so no branch is silently lost.
+    Never raises: a missing ``git`` degrades gracefully — the remaining branches are recorded
+    as conflicted (nothing could be integrated), so no branch is silently lost.
 
-    Precondition: the current branch's working tree must be mergeable. Demand branches
-    EXCLUDE ``.alc/`` (Part C), so uncommitted ``.alc/`` queue state on main does NOT
-    block these merges (git only refuses when a merge would overwrite locally-modified
-    paths, and the branches never touch ``.alc/``). This helper adds no dirty-tree
-    guard — the drain (Part E) owns the merge context.
+    Precondition: the current branch's working tree must be replayable. Demand branches
+    EXCLUDE ``.alc/`` (Part C), so uncommitted ``.alc/`` queue state on the current branch does
+    NOT block the cherry-pick. This helper adds no dirty-tree guard — the drain owns the context.
     """
     report = MergeReport()
     ordered = sorted(branches)
 
     for i, branch in enumerate(ordered):
-        message = _merge_message(repo_root, branch)
         try:
-            merge = subprocess.run(
-                ["git", "-C", str(repo_root), "merge", "--no-ff", branch, "-m", message],
+            # Commits this branch holds that the current branch lacks, oldest-first so
+            # cherry-pick replays them in order (usually one: the worktree exit-commit).
+            rev = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-list", "--reverse", f"HEAD..{branch}"],
                 capture_output=True,
                 text=True,
             )
         except FileNotFoundError:
-            # git not installed — never raise out of the auto-merge pass. Whatever
-            # could not be merged is recorded as conflicted so no branch is lost.
             print(
                 "[merge] git not found; skipping auto-merge of remaining branches.",
                 file=sys.stderr,
@@ -110,19 +84,36 @@ def auto_merge_branches(repo_root: Path, branches: list[str]) -> MergeReport:
             report.conflicted.extend(ordered[i:])
             return report
 
-        if merge.returncode == 0:
-            # Clean merge: delete the now-merged branch (-d refuses an unmerged one).
+        if rev.returncode != 0:
+            # The branch can't be read (missing/ambiguous ref) — leave it, don't crash.
+            report.conflicted.append(branch)
+            continue
+
+        commits = rev.stdout.split()
+        if not commits:
+            # Already contained in the current branch — nothing to replay; drop the branch.
             subprocess.run(
-                ["git", "-C", str(repo_root), "branch", "-d", branch],
-                capture_output=True,
+                ["git", "-C", str(repo_root), "branch", "-D", branch], capture_output=True
+            )
+            report.merged.append(branch)
+            continue
+
+        cherry = subprocess.run(
+            ["git", "-C", str(repo_root), "cherry-pick", *commits],
+            capture_output=True,
+            text=True,
+        )
+        if cherry.returncode == 0:
+            # Cherry-pick creates NEW commits, so the branch is not "merged" in git's eyes;
+            # -D force-deletes the now-redundant branch (its work is on the current branch).
+            subprocess.run(
+                ["git", "-C", str(repo_root), "branch", "-D", branch], capture_output=True
             )
             report.merged.append(branch)
         else:
-            # Conflict (or any merge failure): abort so no MERGE_HEAD is left behind,
-            # leave the branch intact, and continue with the rest.
+            # Conflict: abort so no CHERRY_PICK_HEAD lingers, then leave the branch intact.
             subprocess.run(
-                ["git", "-C", str(repo_root), "merge", "--abort"],
-                capture_output=True,
+                ["git", "-C", str(repo_root), "cherry-pick", "--abort"], capture_output=True
             )
             report.conflicted.append(branch)
 

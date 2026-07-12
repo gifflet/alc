@@ -65,8 +65,9 @@ def _main_content(repo: Path, filename: str) -> str:
 
 
 def _merge_in_progress(repo: Path) -> bool:
-    """Return True if a merge is in progress (MERGE_HEAD present)."""
-    return (repo / ".git" / "MERGE_HEAD").exists()
+    """Return True if an integration is mid-flight (a merge OR cherry-pick in progress)."""
+    git = repo / ".git"
+    return (git / "MERGE_HEAD").exists() or (git / "CHERRY_PICK_HEAD").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -169,12 +170,12 @@ class TestAutoMergeEmpty:
 
 
 # ---------------------------------------------------------------------------
-# D4 — the merge commit message equals the branch tip subject.
+# D4 — the demand's OWN commit (message preserved) lands on the current branch.
 # ---------------------------------------------------------------------------
 
 
 class TestAutoMergeMessage:
-    def test_merge_commit_subject_is_branch_tip_subject(self, tmp_path: Path) -> None:
+    def test_head_subject_is_the_demand_commit_subject(self, tmp_path: Path) -> None:
         repo = _make_git_repo(tmp_path)
         _make_branch(
             repo, "alc/tick-msg", "x.txt", "x\n", "feat(auto): ship the feature"
@@ -183,8 +184,32 @@ class TestAutoMergeMessage:
         report = auto_merge_branches(repo, ["alc/tick-msg"])
 
         assert report.merged == ["alc/tick-msg"]
-        # A --no-ff merge commit's subject is the -m message = the branch tip subject.
+        # Cherry-pick replays the demand's OWN commit onto HEAD, message preserved
+        # (no merge commit reusing the subject).
         assert _head_subject(repo) == "feat(auto): ship the feature"
+
+
+# ---------------------------------------------------------------------------
+# D6 — integration is LINEAR: no merge commits, each demand appears exactly once.
+# ---------------------------------------------------------------------------
+
+
+class TestAutoMergeLinear:
+    def test_no_merge_commits_and_no_duplicate_subjects(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/tick-a", "a.txt", "a\n", "feat(auto): add A")
+        _make_branch(repo, "alc/tick-b", "b.txt", "b\n", "feat(auto): add B")
+
+        report = auto_merge_branches(repo, ["alc/tick-a", "alc/tick-b"])
+        assert report.merged == ["alc/tick-a", "alc/tick-b"]
+
+        # No merge commit was created (the old --no-ff made one per demand).
+        assert _git(repo, "log", "--merges", "--oneline").stdout.strip() == ""
+        # Each demand's subject appears EXACTLY ONCE on the current branch — the old
+        # approach showed it twice (the work commit + a merge commit reusing it).
+        subjects = _git(repo, "log", "--format=%s").stdout.splitlines()
+        assert subjects.count("feat(auto): add A") == 1
+        assert subjects.count("feat(auto): add B") == 1
 
 
 # ---------------------------------------------------------------------------
