@@ -46,6 +46,48 @@ def get_spec(collection: str) -> CollectionSpec:
     return spec
 
 
+# Minimal, valid scaffolds used when a unit is created with an empty payload.
+# Each parses cleanly through its loader; the operator fills in the details from
+# there. Kept here so the format lives with the loaders that validate it.
+_SCAFFOLDS: dict[str, str] = {
+    "blueprints": (
+        "---\n"
+        "name: {name}\n"
+        "purpose: Describe what this blueprint does.\n"
+        "compute_tier: standard\n"
+        "checks:\n"
+        "  - name: smoke\n"
+        '    command: ["true"]\n'
+        "---\n\n"
+        "## {name} workflow\n\n"
+        "1. Read the task and locate the relevant files.\n"
+        "2. Make the smallest change that satisfies it.\n"
+        "3. Run the checks to verify.\n"
+    ),
+    "flows": (
+        "name: {name}\n"
+        'description: ""\n'
+        "stages:\n"
+        "  - name: build\n"
+        "    blueprint: chore\n"
+    ),
+    "specialists": (
+        "name: {name}\n"
+        'area: ""\n'
+        "blueprint: chore\n"
+        "knowledge_path: .alc/knowledge/{name}.md\n"
+    ),
+    "loops": ("name: {name}\nstop:\n  max_cycles: 10\n"),
+    "primers": ("# {name}\n\nReusable context for this project.\n"),
+}
+
+
+def scaffold_raw(spec: CollectionSpec, name: str) -> str:
+    """Return a minimal valid raw payload for a new unit in *spec* (empty if none)."""
+    template = _SCAFFOLDS.get(spec.name)
+    return template.format(name=name) if template else ""
+
+
 def collection_dir(spec: CollectionSpec, root: Path, manifest: Manifest) -> Path:
     """Resolve the on-disk directory for *spec* under the project root."""
     return root / getattr(manifest, spec.dir_attr)
@@ -122,6 +164,8 @@ def write_item(
     path = directory / f"{name}{spec.suffix}"
     if create and path.exists():
         raise ApiError(f"{spec.name} '{name}' already exists", status=409)
+    if create and not raw.strip():
+        raw = scaffold_raw(spec, name)
     parsed = _dump(_parse_raw(spec, name, raw))
     directory.mkdir(parents=True, exist_ok=True)
     path.write_text(raw)

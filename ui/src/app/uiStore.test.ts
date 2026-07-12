@@ -51,6 +51,33 @@ describe('tabs', () => {
   })
 })
 
+describe('dirty tabs', () => {
+  it('marks and clears a tab as dirty', () => {
+    uiStore.openTab({ target: sourceTab, title: 'chore' })
+    const id = tabId(sourceTab)
+    expect(uiStore.getState().dirty[id]).toBeFalsy()
+    uiStore.setDirty(id, true)
+    expect(uiStore.getState().dirty[id]).toBe(true)
+    uiStore.setDirty(id, false)
+    expect(uiStore.getState().dirty[id]).toBeFalsy()
+  })
+
+  it('drops the dirty flag when the tab closes', () => {
+    uiStore.openTab({ target: sourceTab, title: 'chore' })
+    const id = tabId(sourceTab)
+    uiStore.setDirty(id, true)
+    uiStore.closeTab(id)
+    expect(uiStore.getState().dirty[id]).toBeUndefined()
+  })
+
+  it('clears all dirty flags on reset', () => {
+    uiStore.openTab({ target: sourceTab, title: 'chore' })
+    uiStore.setDirty(tabId(sourceTab), true)
+    uiStore.reset()
+    expect(uiStore.getState().dirty).toEqual({})
+  })
+})
+
 describe('panels', () => {
   it('toggles the left tool window collapsed flag', () => {
     const before = uiStore.getState().leftCollapsed

@@ -485,6 +485,8 @@ def write_prompt(root: Path, name: str, raw: str, create: bool) -> dict:
             )
         if file.exists():
             raise ApiError(f"prompt '{name}' already exists", status=409)
+        if not raw.strip():
+            raw = f"# {name}\n\nReusable prompt fragment for this project.\n"
 
     if reserved:
         missing = validate_prompt_override(name, raw)

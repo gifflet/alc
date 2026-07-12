@@ -94,6 +94,48 @@ class TestBlueprintWrite:
         assert client.delete(f"/api/projects/{registered}/blueprints/ghost").status_code == 404
 
 
+class TestScaffoldCreate:
+    """POST with an empty raw scaffolds a minimal, valid unit for the collection."""
+
+    def test_create_blueprint_scaffold(self, client, registered: str, project: Path) -> None:
+        resp = client.post(
+            f"/api/projects/{registered}/blueprints", json={"name": "docs"}
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["parsed"]["name"] == "docs"
+        assert body["parsed"]["checks"]
+        assert (project / ".alc" / "blueprints" / "docs.md").exists()
+
+    def test_create_flow_scaffold(self, client, registered: str, project: Path) -> None:
+        resp = client.post(f"/api/projects/{registered}/flows", json={"name": "review"})
+        assert resp.status_code == 201
+        assert resp.json()["parsed"]["name"] == "review"
+        assert (project / ".alc" / "flows" / "review.yaml").exists()
+
+    def test_create_specialist_scaffold(self, client, registered: str) -> None:
+        resp = client.post(
+            f"/api/projects/{registered}/specialists", json={"name": "api"}
+        )
+        assert resp.status_code == 201
+        assert resp.json()["parsed"]["blueprint"] == "chore"
+
+    def test_create_loop_scaffold(self, client, registered: str) -> None:
+        resp = client.post(f"/api/projects/{registered}/loops", json={"name": "nightly"})
+        assert resp.status_code == 201
+        assert resp.json()["parsed"]["stop"]["max_cycles"] > 0
+
+    def test_create_primer_scaffold(self, client, registered: str, project: Path) -> None:
+        resp = client.post(f"/api/projects/{registered}/primers", json={"name": "house"})
+        assert resp.status_code == 201
+        assert (project / ".alc" / "primers" / "house.md").exists()
+
+    def test_create_free_prompt_scaffold(self, client, registered: str, project: Path) -> None:
+        resp = client.post(f"/api/projects/{registered}/prompts", json={"name": "style"})
+        assert resp.status_code == 201
+        assert (project / ".alc" / "prompts" / "style.md").read_text().strip()
+
+
 class TestPromptWrite:
     def test_put_reserved_override(self, client, registered: str, project: Path) -> None:
         # A valid override keeps the required {failures} placeholder.

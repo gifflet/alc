@@ -1,0 +1,306 @@
+// SourceEditor.tsx — Editable source + structured form for a config file.
+//
+// Replaces the read-only viewer: Monaco (lazy-loaded so it stays out of the main
+// bundle) backs the Source view, with CodeView as the instant-highlight fallback
+// while the editor chunk loads. Manifest and blueprints also get a structured
+// Form view. Dirty state drives the tab dot + close guard; the server validates
+// every save and 422 details render in a panel below the editor.
+import { Suspense, lazy, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { AlertTriangle, Check, FileWarning, Lock, RotateCcw, Save } from 'lucide-react'
+import { ApiError } from '../api/client'
+import {
+  useCollectionItem,
+  useManifest,
+  usePrompt,
+  useSaveCollectionItem,
+  useSaveManifest,
+  useSavePrompt,
+} from '../api/hooks'
+import { useProjectId } from '../app/ProjectContext'
+import { tabId } from '../app/uiStore'
+import { uiStore } from '../app/uiStore'
+import type { SourceResource } from '../app/uiStore'
+import { getDraft, setDraft as cacheDraft } from '../lib/draftCache'
+import type { CollectionName } from '../api/types'
+import { CodeView } from '../components/CodeView'
+import { EmptyState } from '../components/EmptyState'
+import { Loading } from '../components/primitives'
+
+// Lazy so neither Monaco nor the `yaml` round-trip library (used by the forms)
+// lands in the initial bundle — both load on first edit / form toggle.
+const CodeEditor = lazy(() => import('../components/CodeEditor'))
+const ManifestForm = lazy(() =>
+  import('./forms/ManifestForm').then((m) => ({ default: m.ManifestForm })),
+)
+const BlueprintForm = lazy(() =>
+  import('./forms/BlueprintForm').then((m) => ({ default: m.BlueprintForm })),
+)
+
+const MD_RESOURCES = new Set<SourceResource>(['blueprints', 'primers', 'prompts'])
+
+function langFor(resource: SourceResource): 'yaml' | 'markdown' {
+  return MD_RESOURCES.has(resource) ? 'markdown' : 'yaml'
+}
+
+interface SaveLike {
+  mutateAsync: (raw: string) => Promise<{ raw: string }>
+  isPending: boolean
+}
+
+function EditorShell({
+  id,
+  serverRaw,
+  isLoading,
+  isError,
+  language,
+  readOnly = false,
+  readOnlyNote,
+  save,
+  renderForm,
+}: {
+  id: string
+  serverRaw: string | undefined
+  isLoading: boolean
+  isError: boolean
+  language: 'yaml' | 'markdown'
+  readOnly?: boolean
+  readOnlyNote?: string
+  save?: SaveLike
+  renderForm?: (value: string, onChange: (v: string) => void) => ReactNode
+}) {
+  // Seed from the per-tab cache so edits survive switching away and back.
+  const cached = getDraft(id)
+  const [draft, setDraftState] = useState(cached?.draft ?? '')
+  const [baseline, setBaseline] = useState<string | null>(cached?.baseline ?? null)
+  const [mode, setMode] = useState<'source' | 'form'>('source')
+  const [error, setError] = useState<ApiError | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  const commit = (nextDraft: string, nextBaseline: string) => {
+    setDraftState(nextDraft)
+    setBaseline(nextBaseline)
+    cacheDraft(id, { draft: nextDraft, baseline: nextBaseline })
+  }
+
+  // Adopt server content on first load and whenever there are no pending edits.
+  useEffect(() => {
+    if (serverRaw === undefined) return
+    if (baseline === null || draft === baseline) commit(serverRaw, serverRaw)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverRaw])
+
+  const dirty = baseline !== null && draft !== baseline
+
+  useEffect(() => {
+    uiStore.setDirty(id, dirty)
+  }, [id, dirty])
+
+  if (isLoading) return <Loading />
+  if (isError || serverRaw === undefined) {
+    return <EmptyState icon={FileWarning} message="Could not load this file." />
+  }
+
+  const onChange = (v: string) => {
+    setDraftState(v)
+    cacheDraft(id, { draft: v, baseline: baseline ?? v })
+    setSaved(false)
+  }
+
+  const doSave = async () => {
+    if (readOnly || !save || !dirty) return
+    setError(null)
+    try {
+      const data = await save.mutateAsync(draft)
+      commit(data.raw, data.raw)
+      setSaved(true)
+    } catch (e) {
+      setError(e instanceof ApiError ? e : new ApiError('Save failed.', 0, null))
+    }
+  }
+
+  const revert = () => {
+    if (baseline !== null) commit(baseline, baseline)
+    setError(null)
+  }
+
+  const onKeyDownCapture = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault()
+      void doSave()
+    }
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" onKeyDownCapture={onKeyDownCapture}>
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-panel px-2">
+        <div className="flex items-center gap-1">
+          {renderForm && (
+            <div className="flex overflow-hidden rounded-panel border border-border">
+              {(['form', 'source'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={`px-2 py-0.5 text-[11px] capitalize transition-colors duration-120 ${
+                    mode === m ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-hover'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {readOnly ? (
+            <span className="flex items-center gap-1 text-[11px] text-faint">
+              <Lock className="h-3 w-3" />
+              {readOnlyNote ?? 'read-only'}
+            </span>
+          ) : (
+            <>
+              {saved && !dirty && (
+                <span className="flex items-center gap-1 text-[11px] text-live">
+                  <Check className="h-3 w-3" />
+                  saved
+                </span>
+              )}
+              {dirty && <span className="text-[11px] text-warn">unsaved</span>}
+              <button
+                type="button"
+                onClick={revert}
+                disabled={!dirty}
+                className="flex items-center gap-1 rounded-panel border border-border px-2 py-0.5 text-[11px] text-muted transition-colors duration-120 hover:bg-hover hover:text-primary disabled:opacity-40"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Revert
+              </button>
+              <button
+                type="button"
+                onClick={() => void doSave()}
+                disabled={!dirty || save?.isPending}
+                className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[11px] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+              >
+                <Save className="h-3 w-3" />
+                Save
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {mode === 'form' && renderForm ? (
+          <Suspense fallback={<Loading />}>{renderForm(draft, onChange)}</Suspense>
+        ) : (
+          <Suspense fallback={<CodeView code={draft} lang={language} />}>
+            <CodeEditor value={draft} language={language} readOnly={readOnly} onChange={onChange} />
+          </Suspense>
+        )}
+      </div>
+
+      {error && <ErrorPanel error={error} />}
+    </div>
+  )
+}
+
+function ErrorPanel({ error }: { error: ApiError }) {
+  return (
+    <div className="max-h-32 shrink-0 overflow-auto border-t border-error/40 bg-error/10 px-3 py-2 text-[12px]">
+      <div className="flex items-center gap-1.5 font-medium text-error">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        {error.message}
+      </div>
+      {error.violations.length > 0 && (
+        <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[11px] text-error/90">
+          {error.violations.map((v, i) => (
+            <li key={i}>
+              <span className="text-faint">{v.rule}:</span> {v.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Resource-specific wiring (one hook set each, then the shared shell)
+// ---------------------------------------------------------------------------
+
+function ManifestEditor() {
+  const id = useProjectId()
+  const { data, isLoading, isError } = useManifest(id)
+  const save = useSaveManifest(id)
+  return (
+    <EditorShell
+      id={tabId({ type: 'source', resource: 'manifest', name: 'manifest' })}
+      serverRaw={data?.raw}
+      isLoading={isLoading}
+      isError={isError}
+      language="yaml"
+      save={save}
+      renderForm={(value, onChange) => <ManifestForm value={value} onChange={onChange} />}
+    />
+  )
+}
+
+function PromptEditor({ name }: { name: string }) {
+  const id = useProjectId()
+  const { data, isLoading, isError } = usePrompt(id, name)
+  const save = useSavePrompt(id, name)
+  // A reserved prompt that has not been ejected resolves to its built-in default;
+  // editing it in place would be a lie — eject it from the tree first.
+  const readOnly = Boolean(data?.reserved && !data?.ejected)
+  return (
+    <EditorShell
+      id={tabId({ type: 'source', resource: 'prompts', name })}
+      serverRaw={data?.raw}
+      isLoading={isLoading}
+      isError={isError}
+      language="markdown"
+      readOnly={readOnly}
+      readOnlyNote={readOnly ? 'reserved default — eject to edit' : undefined}
+      save={save}
+    />
+  )
+}
+
+function CollectionEditor({ collection, name }: { collection: CollectionName; name: string }) {
+  const id = useProjectId()
+  const { data, isLoading, isError } = useCollectionItem(id, collection, name)
+  const manifest = useManifest(id)
+  const save = useSaveCollectionItem(id, collection, name)
+
+  const parsed = manifest.data?.parsed as
+    | { compute_tiers?: Record<string, unknown>; check_sets?: Record<string, unknown> }
+    | undefined
+  const tiers = parsed?.compute_tiers ? Object.keys(parsed.compute_tiers) : []
+  const checkSets = parsed?.check_sets ? Object.keys(parsed.check_sets) : []
+
+  const renderForm =
+    collection === 'blueprints'
+      ? (value: string, onChange: (v: string) => void) => (
+          <BlueprintForm value={value} onChange={onChange} tiers={tiers} checkSets={checkSets} />
+        )
+      : undefined
+
+  return (
+    <EditorShell
+      id={tabId({ type: 'source', resource: collection, name })}
+      serverRaw={data?.raw}
+      isLoading={isLoading}
+      isError={isError}
+      language={langFor(collection)}
+      save={save}
+      renderForm={renderForm}
+    />
+  )
+}
+
+export function SourceEditor({ resource, name }: { resource: SourceResource; name: string }) {
+  if (resource === 'manifest') return <ManifestEditor />
+  if (resource === 'prompts') return <PromptEditor name={name} />
+  return <CollectionEditor collection={resource} name={name} />
+}

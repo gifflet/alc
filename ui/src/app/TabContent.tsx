@@ -7,7 +7,7 @@ import { Runs } from '../views/Runs'
 import { RunDetail } from '../views/RunDetail'
 import { Loops } from '../views/Loops'
 import { LoopDetail } from '../views/LoopDetail'
-import { SourceViewer } from '../views/SourceViewer'
+import { SourceEditor } from '../views/SourceEditor'
 import { useUiState } from './uiStore'
 import type { PrimaryView, Tab } from './uiStore'
 
@@ -30,7 +30,7 @@ function renderTab(tab: Tab): React.ReactElement {
     case 'loop':
       return <LoopDetail name={t.name} />
     case 'source':
-      return <SourceViewer resource={t.resource} name={t.name} />
+      return <SourceEditor resource={t.resource} name={t.name} />
   }
 }
 

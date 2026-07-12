@@ -5,6 +5,7 @@
 // Panel sizing/collapse persists to localStorage; open tabs are session-only.
 import { useSyncExternalStore } from 'react'
 import type { CollectionName } from '../api/types'
+import { clearAllDrafts, clearDraft } from '../lib/draftCache'
 
 export type PrimaryView = 'dashboard' | 'queue' | 'runs' | 'loops'
 
@@ -27,6 +28,8 @@ export interface Tab {
 export interface UiState {
   tabs: Tab[]
   activeTabId: string | null
+  /** Tab ids with unsaved editor changes (drives the tab dirty dot + close guard). */
+  dirty: Record<string, boolean>
   leftWidth: number
   leftCollapsed: boolean
   bottomHeight: number
@@ -89,7 +92,7 @@ function createStore() {
 
   function initial(): UiState {
     const panels = loadPanels()
-    return { tabs: [], activeTabId: null, ...panels }
+    return { tabs: [], activeTabId: null, dirty: {}, ...panels }
   }
 
   function persistPanels(s: UiState): void {
@@ -120,6 +123,7 @@ function createStore() {
       return () => listeners.delete(listener)
     },
     reset(): void {
+      clearAllDrafts()
       set(initial())
     },
     openTab(tab: { target: TabTarget; title: string; closable?: boolean }): void {
@@ -139,10 +143,19 @@ function createStore() {
         const neighbour = tabs[idx] ?? tabs[idx - 1] ?? null
         activeTabId = neighbour ? neighbour.id : null
       }
-      set({ ...state, tabs, activeTabId })
+      const { [id]: _closed, ...dirty } = state.dirty
+      clearDraft(id)
+      set({ ...state, tabs, activeTabId, dirty })
     },
     setActiveTab(id: string): void {
       set({ ...state, activeTabId: id })
+    },
+    setDirty(id: string, value: boolean): void {
+      if (Boolean(state.dirty[id]) === value) return
+      const dirty = { ...state.dirty }
+      if (value) dirty[id] = true
+      else delete dirty[id]
+      set({ ...state, dirty })
     },
     setLeftWidth(width: number): void {
       set({ ...state, leftWidth: clamp(width, LEFT_MIN, LEFT_MAX) }, true)

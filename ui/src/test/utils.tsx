@@ -26,19 +26,58 @@ function jsonResponse(data: unknown, status = 200): Response {
   } as Response
 }
 
-type Routes = Record<string, unknown>
+/** One recorded fetch call, exposed for assertions on mutations. */
+export interface FetchCall {
+  url: string
+  method: string
+  body: unknown
+}
+
+/** Wrap a status + body so a route handler can return a non-200 response. */
+export function res(status: number, body: unknown): { __res: true; status: number; body: unknown } {
+  return { __res: true, status, body }
+}
+
+type Handler = (call: FetchCall) => unknown
+type Routes = Record<string, unknown | Handler>
+
+/** Installed fetch mock: `calls` records every request for assertions. */
+export interface FetchMock {
+  calls: FetchCall[]
+}
 
 /**
  * Install a global.fetch that matches a request URL against a routes map by
- * substring (first match wins). Unmatched URLs resolve to 404.
+ * substring (first match wins). A route value may be plain data (200 JSON), a
+ * `res(status, body)` wrapper, or a handler `(call) => data | res(...)`.
+ * Unmatched URLs resolve to 404. The returned mock records every call.
  */
-export function installFetch(routes: Routes): void {
+export function installFetch(routes: Routes): FetchMock {
   const entries = Object.entries(routes)
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const mock: FetchMock = { calls: [] }
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
-    for (const [pattern, data] of entries) {
-      if (url.includes(pattern)) return jsonResponse(data)
+    const method = (init?.method ?? 'GET').toUpperCase()
+    let body: unknown = null
+    if (init?.body != null) {
+      try {
+        body = JSON.parse(init.body as string)
+      } catch {
+        body = init.body
+      }
+    }
+    const call: FetchCall = { url, method, body }
+    mock.calls.push(call)
+    for (const [pattern, value] of entries) {
+      if (!url.includes(pattern)) continue
+      const result = typeof value === 'function' ? (value as Handler)(call) : value
+      if (result && typeof result === 'object' && (result as { __res?: boolean }).__res) {
+        const r = result as { status: number; body: unknown }
+        return jsonResponse(r.body, r.status)
+      }
+      return jsonResponse(result)
     }
     return jsonResponse({ detail: `no stub for ${url}` }, 404)
   }) as typeof fetch
+  return mock
 }

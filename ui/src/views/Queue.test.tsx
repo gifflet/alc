@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Queue } from './Queue'
-import { installFetch, renderWithProviders } from '../test/utils'
+import { installFetch, renderWithProviders, res } from '../test/utils'
+import type { FetchCall } from '../test/utils'
 import type { FlowReport, QueueTask } from '../api/types'
 
 const task: QueueTask = {
@@ -58,5 +59,68 @@ describe('Queue', () => {
     await userEvent.click(row)
     expect(await screen.findByText(/engine: mock/)).toBeInTheDocument()
     expect(screen.getByText(/commit: abcdef1234/)).toBeInTheDocument()
+  })
+})
+
+const failed: FlowReport = { ...report, success: false }
+
+describe('Queue actions', () => {
+  it('enqueues a task from the dialog', async () => {
+    const mock = installFetch({
+      '/queue/retry': { enqueued: [] },
+      '/queue': (call: FetchCall) =>
+        call.method === 'POST' ? { stem: 'new' } : { pending: [], done: [] },
+      '/flows': [{ name: 'ship', mtime: 1 }],
+      '/specialists': [],
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Enqueue task/ }))
+    fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'do the thing' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Enqueue' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/queue'))
+    expect(post?.body).toMatchObject({ kind: 'flow', name: 'ship', task: 'do the thing', isolate: true })
+  })
+
+  it('retries a single failure', async () => {
+    const mock = installFetch({
+      '/queue/retry': { enqueued: ['ship-x'] },
+      '/queue': { pending: [], done: [{ stem: 'd1', mtime: 1, task, report: failed }] },
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry d1' }))
+    const retry = mock.calls.find((c) => c.url.includes('/queue/retry'))
+    expect(retry?.body).toEqual({ stem: 'd1' })
+  })
+
+  it('retries all failures from the header', async () => {
+    const mock = installFetch({
+      '/queue/retry': { enqueued: ['ship-x'] },
+      '/queue': { pending: [], done: [{ stem: 'd1', mtime: 1, task, report: failed }] },
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Retry all failures/ }))
+    const retry = mock.calls.find((c) => c.url.includes('/queue/retry'))
+    expect(retry?.body).toEqual({ all: true })
+  })
+
+  it('deletes a pending task after confirmation', async () => {
+    const mock = installFetch({
+      '/queue/retry': { enqueued: [] },
+      '/queue': (call: FetchCall) =>
+        call.method === 'DELETE'
+          ? res(204, {})
+          : { pending: [{ stem: 'p1', mtime: 1, task }], done: [] },
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete p1' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    const del = mock.calls.find((c) => c.method === 'DELETE')
+    expect(del?.url).toContain('/queue/p1')
   })
 })

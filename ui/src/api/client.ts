@@ -16,20 +16,25 @@ import type {
   PromptDetail,
   PromptEntry,
   Queue,
+  QueueTask,
   RawParsed,
   RunDetail,
   RunsPage,
   ScorecardTotals,
+  Violation,
 } from './types'
 
 export class ApiError extends Error {
   status: number
   detail: unknown
-  constructor(message: string, status: number, detail: unknown) {
+  /** Structured Policy Gate / validator violations, when the backend sent them. */
+  violations: Violation[]
+  constructor(message: string, status: number, detail: unknown, violations: Violation[] = []) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
+    this.violations = violations
   }
 }
 
@@ -40,15 +45,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     let detail: unknown = null
+    let violations: Violation[] = []
     let message = `${res.status} ${res.statusText}`
     try {
       const body = await res.json()
       detail = body?.detail ?? body
       if (typeof detail === 'string') message = detail
+      if (Array.isArray(body?.violations)) violations = body.violations as Violation[]
     } catch {
       // Non-JSON error body — keep the status line as the message.
     }
-    throw new ApiError(message, res.status, detail)
+    throw new ApiError(message, res.status, detail, violations)
   }
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
@@ -77,8 +84,48 @@ export const api = {
   getPrompt: (id: string, name: string) =>
     request<PromptDetail>(`${proj(id)}/prompts/${encodeURIComponent(name)}`),
 
+  // Config writers
+  putManifest: (id: string, raw: string) =>
+    request<RawParsed>(`${proj(id)}/manifest`, { method: 'PUT', body: JSON.stringify({ raw }) }),
+  putCollectionItem: (id: string, collection: CollectionName, name: string, raw: string) =>
+    request<RawParsed>(`${proj(id)}/${collection}/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ raw }),
+    }),
+  createCollectionItem: (id: string, collection: CollectionName, name: string, raw = '') =>
+    request<RawParsed>(`${proj(id)}/${collection}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, raw }),
+    }),
+  deleteCollectionItem: (id: string, collection: CollectionName, name: string) =>
+    request<void>(`${proj(id)}/${collection}/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  putPrompt: (id: string, name: string, raw: string) =>
+    request<PromptDetail>(`${proj(id)}/prompts/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ raw }),
+    }),
+  createPrompt: (id: string, name: string, raw = '') =>
+    request<PromptDetail>(`${proj(id)}/prompts`, {
+      method: 'POST',
+      body: JSON.stringify({ name, raw }),
+    }),
+  deletePrompt: (id: string, name: string) =>
+    request<void>(`${proj(id)}/prompts/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+
   // Queue / runs / loops
   getQueue: (id: string) => request<Queue>(`${proj(id)}/queue`),
+  enqueueTask: (id: string, task: Partial<QueueTask>) =>
+    request<{ stem: string }>(`${proj(id)}/queue`, {
+      method: 'POST',
+      body: JSON.stringify(task),
+    }),
+  deletePending: (id: string, stem: string) =>
+    request<void>(`${proj(id)}/queue/${encodeURIComponent(stem)}`, { method: 'DELETE' }),
+  retryQueue: (id: string, body: { stem?: string; all?: boolean }) =>
+    request<{ enqueued: string[] }>(`${proj(id)}/queue/retry`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listRuns: (id: string, limit = 50, offset = 0) =>
     request<RunsPage>(`${proj(id)}/runs?limit=${limit}&offset=${offset}`),
   getRun: (id: string, stem: string, offset = 0) =>
