@@ -26,6 +26,27 @@ describe('Runs', () => {
     expect(screen.getByText('live')).toBeInTheDocument()
   })
 
+  it('marks an interrupted run as stale, not live', async () => {
+    installFetch({
+      '/runs': {
+        runs: [
+          {
+            stem: 'stale-run',
+            kind: 'flow',
+            mtime: 1783820000,
+            size: 300,
+            finished: false,
+            stale: true,
+          },
+        ],
+        total: 1,
+      },
+    })
+    renderWithProviders(<Runs />)
+    expect(await screen.findByText('stale')).toBeInTheDocument()
+    expect(screen.queryByText('live')).not.toBeInTheDocument()
+  })
+
   it('opens a run tab when a row is clicked', async () => {
     installFetch({
       '/runs': {

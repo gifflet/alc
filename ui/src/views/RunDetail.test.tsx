@@ -35,4 +35,16 @@ describe('RunDetail', () => {
     // Event feed formats a check line.
     expect(screen.getByText(/Check smoke passed/)).toBeInTheDocument()
   })
+
+  it('shows stale (not live) for an interrupted run flagged by the backend', async () => {
+    const partial = [
+      { ts: '2026-07-13T02:15:44Z', event: 'flow_started', flow: 'demand', task: 'fix it' },
+      { ts: '2026-07-13T02:16:00Z', event: 'stage_started', stage: 'implement' },
+      { ts: '2026-07-13T02:16:01Z', event: 'mandate_started', blueprint: 'dev' },
+    ]
+    installFetch({ '/runs/': { events: partial, next_offset: 3, stale: true } })
+    renderWithProviders(<RunDetail stem="20260713T0215-unit-demand-fix" />)
+    expect(await screen.findByText('stale')).toBeInTheDocument()
+    expect(screen.queryByText('live')).not.toBeInTheDocument()
+  })
 })

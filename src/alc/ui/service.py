@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -365,6 +366,26 @@ def _run_finished(path: Path) -> bool:
     return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
 
 
+# Grace beyond a turn's max lifetime before a still-unfinished run is deemed dead.
+# A running turn is killed at manifest.default_timeout_s, so a run whose log has
+# gone quiet for longer than that (plus this margin) has no live process behind
+# it — it was interrupted, not running.
+_STALE_MARGIN_S = 300
+
+
+def _stale_after_seconds(root: Path) -> float:
+    """Idle seconds after which an unfinished run is presumed dead (interrupted)."""
+    try:
+        return load_manifest(operator_layer(root)).default_timeout_s + _STALE_MARGIN_S
+    except (OSError, ValidationError, ValueError):
+        return 1800 + _STALE_MARGIN_S
+
+
+def _run_stale(mtime: float, finished: bool, stale_after: float, now: float) -> bool:
+    """True when an UNFINISHED run's log has been idle past the interrupted threshold."""
+    return not finished and (now - mtime) > stale_after
+
+
 def list_runs(root: Path, limit: int = 50, offset: int = 0) -> dict:
     """List run logs (newest first) with simple pagination."""
     runs_dir = _runs_dir(root)
@@ -376,16 +397,20 @@ def list_runs(root: Path, limit: int = 50, offset: int = 0) -> dict:
     )
     total = len(files)
     page = files[offset : offset + limit]
+    stale_after = _stale_after_seconds(root)
+    now = time.time()
     runs = []
     for path in page:
         st = path.stat()
+        finished = _run_finished(path)
         runs.append(
             {
                 "stem": path.stem,
                 "kind": _run_kind(path.stem),
                 "mtime": st.st_mtime,
                 "size": st.st_size,
-                "finished": _run_finished(path),
+                "finished": finished,
+                "stale": _run_stale(st.st_mtime, finished, stale_after, now),
             }
         )
     return {"runs": runs, "total": total}
@@ -410,7 +435,10 @@ def read_run(root: Path, stem: str, offset: int = 0) -> dict:
             events.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-    return {"events": events, "next_offset": len(lines)}
+    stale = _run_stale(
+        path.stat().st_mtime, _run_finished(path), _stale_after_seconds(root), time.time()
+    )
+    return {"events": events, "next_offset": len(lines), "stale": stale}
 
 
 # ---------------------------------------------------------------------------

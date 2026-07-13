@@ -12,6 +12,16 @@ import { StatusDot } from '../components/StatusDot'
 import { formatBytes } from '../lib/format'
 import type { RunSummary } from '../api/types'
 
+type RunState = 'finished' | 'stale' | 'live'
+
+/** A finished run closed with its terminal event; a stale run is unfinished but
+ * its log has gone quiet past the interrupted threshold (no live process); a
+ * live run is unfinished and still being written. */
+function runState(r: RunSummary): RunState {
+  if (r.finished) return 'finished'
+  return r.stale ? 'stale' : 'live'
+}
+
 export function Runs() {
   const id = useProjectId()
   const { activeTabId } = useUiState()
@@ -28,7 +38,16 @@ export function Runs() {
       key: 'status',
       header: '',
       className: 'w-6',
-      render: (r) => <StatusDot tone={r.finished ? 'idle' : 'running'} pulse={!r.finished} />,
+      render: (r) => {
+        const s = runState(r)
+        return (
+          <StatusDot
+            tone={s === 'finished' ? 'idle' : s === 'stale' ? 'warn' : 'running'}
+            pulse={s === 'live'}
+            title={s === 'stale' ? 'interrupted — no live process is writing this run' : undefined}
+          />
+        )
+      },
     },
     { key: 'kind', header: 'Kind', className: 'w-16 font-mono text-faint', render: (r) => r.kind },
     {
@@ -41,12 +60,12 @@ export function Runs() {
       key: 'state',
       header: 'State',
       className: 'w-20',
-      render: (r) =>
-        r.finished ? (
-          <span className="text-faint">finished</span>
-        ) : (
-          <span className="text-running">live</span>
-        ),
+      render: (r) => {
+        const s = runState(r)
+        const cls =
+          s === 'finished' ? 'text-faint' : s === 'stale' ? 'text-warn' : 'text-running'
+        return <span className={cls}>{s}</span>
+      },
     },
     { key: 'size', header: 'Size', className: 'w-20 tabular text-faint', render: (r) => formatBytes(r.size) },
     { key: 'when', header: 'When', className: 'w-24', render: (r) => <RelativeTime value={r.mtime} /> },

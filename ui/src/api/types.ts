@@ -134,6 +134,9 @@ export interface RunSummary {
   mtime: number
   size: number
   finished: boolean
+  // An UNFINISHED run whose log has gone quiet past the interrupted threshold
+  // (manifest.default_timeout_s + margin): no live process behind it.
+  stale: boolean
 }
 
 export interface RunsPage {
@@ -153,6 +156,7 @@ export interface RunEvent {
 export interface RunDetail {
   events: RunEvent[]
   next_offset: number
+  stale: boolean
 }
 
 // ---------------------------------------------------------------------------

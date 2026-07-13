@@ -130,6 +130,40 @@ class TestRunsFinished:
         assert finished["20260101T000002-task-done-cccccc"] is True
         assert finished["20260101T000003-run-bare-dddddd"] is True
 
+    def test_stale_flag_marks_an_interrupted_run(
+        self, client, registered: str, project: Path
+    ) -> None:
+        import os
+        import time
+
+        runs = project / ".alc" / "runs"
+        # An interrupted flow (no terminal event) whose log went quiet a day ago —
+        # well past any turn timeout — has no live process behind it: stale.
+        self._write_run(
+            project,
+            "20260101T000010-flow-interrupted-eeeeee",
+            ["flow_started", "stage_started", "mandate_started"],
+        )
+        day_ago = time.time() - 24 * 3600
+        os.utime(runs / "20260101T000010-flow-interrupted-eeeeee.jsonl", (day_ago, day_ago))
+        # A freshly written unfinished run is live (not stale); a finished run is
+        # never stale regardless of age.
+        self._write_run(
+            project, "20260101T000011-flow-live-ffffff", ["flow_started", "mandate_started"]
+        )
+        self._write_run(
+            project, "20260101T000012-flow-done-gggggg", ["flow_started", "flow_finished"]
+        )
+
+        by = {
+            r["stem"]: r
+            for r in client.get(f"/api/projects/{registered}/runs").json()["runs"]
+        }
+        assert by["20260101T000010-flow-interrupted-eeeeee"]["stale"] is True
+        assert by["20260101T000010-flow-interrupted-eeeeee"]["finished"] is False
+        assert by["20260101T000011-flow-live-ffffff"]["stale"] is False
+        assert by["20260101T000012-flow-done-gggggg"]["stale"] is False
+
 
 class TestLintAndEngines:
     def test_lint_scaffolded_project_has_no_errors(self, client, registered: str) -> None:

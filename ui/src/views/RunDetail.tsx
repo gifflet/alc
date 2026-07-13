@@ -21,6 +21,8 @@ export function RunDetail({ stem }: { stem: string }) {
   const id = useProjectId()
   const { client } = useWs()
   const [events, setEvents] = useState<RunEvent[]>([])
+  // A live WS event proves a process is still writing this run — clears stale.
+  const [live, setLive] = useState(false)
 
   const query = useQuery({
     queryKey: keys.run(id, stem),
@@ -37,6 +39,7 @@ export function RunDetail({ stem }: { stem: string }) {
     const off = client.on((msg) => {
       if (msg.type === 'run_event' && msg.project_id === id && msg.stem === stem) {
         setEvents((prev) => [...prev, msg.event])
+        setLive(true)
       }
     })
     return off
@@ -47,20 +50,24 @@ export function RunDetail({ stem }: { stem: string }) {
   }
 
   const timeline = buildTimeline(events)
+  // Unfinished + backend flagged stale + no live event since mount = interrupted.
+  const isStale = !timeline.finished && (query.data?.stale ?? false) && !live
   const statusTone =
     timeline.success === true ? 'live' : timeline.success === false ? 'error' : 'running'
 
   return (
     <div className="flex h-full flex-col overflow-auto p-4">
       <header className="mb-3 flex items-center gap-3">
-        <StatusDot tone={statusTone} pulse={!timeline.finished} />
+        <StatusDot tone={isStale ? 'warn' : statusTone} pulse={!timeline.finished && !isStale} />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-[14px] font-medium text-primary">{timeline.title || stem}</h1>
-            {!timeline.finished ? (
-              <Pill tone="running">live</Pill>
-            ) : (
+            {timeline.finished ? (
               <Pill tone={statusTone}>{timeline.success ? 'success' : 'failed'}</Pill>
+            ) : isStale ? (
+              <Pill tone="warn">stale</Pill>
+            ) : (
+              <Pill tone="running">live</Pill>
             )}
           </div>
           <p className="truncate text-[12px] text-muted">{timeline.task}</p>
