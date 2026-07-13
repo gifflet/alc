@@ -36,8 +36,13 @@ from alc.queue import (
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
 
-# Run-log events that mark a run as finished (no more lines expected).
-_TERMINAL_EVENTS = {"mandate_finished", "flow_finished", "task_finished"}
+# A run finishes at the terminal event for its KIND (mirrors the detail view's
+# buildTimeline): a flow at ``flow_finished``, a task at ``task_finished``. A
+# flow/task run's inner ``mandate_finished`` lines are NOT terminal — the run
+# is still live until its wrapper closes; only a bare mandate run (no flow/task
+# wrapper) finishes at its own ``mandate_finished``.
+_WRAPPER_STARTS = {"flow_started", "task_started"}
+_WRAPPER_TERMINALS = {"flow_finished", "task_finished"}
 
 
 def operator_layer(root: Path) -> Path:
@@ -336,17 +341,28 @@ def _run_kind(stem: str) -> str:
 
 
 def _run_finished(path: Path) -> bool:
-    """Return True when the run's last event is a terminal event (best-effort)."""
+    """Return True when the run reached the terminal event for its kind.
+
+    Mirrors the detail view (buildTimeline) so the runs list and the run detail
+    never disagree: a flow/task run's inner ``mandate_finished`` is not terminal
+    — only ``flow_finished`` / ``task_finished`` closes it; a bare mandate run
+    (no flow/task wrapper) closes at its ``mandate_finished``.
+    """
     try:
         lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
     except OSError:
         return False
-    if not lines:
-        return False
-    try:
-        return json.loads(lines[-1]).get("event") in _TERMINAL_EVENTS
-    except json.JSONDecodeError:
-        return False
+    events: set[str] = set()
+    for ln in lines:
+        try:
+            event = json.loads(ln).get("event")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, str):
+            events.add(event)
+    if events & _WRAPPER_TERMINALS:
+        return True
+    return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
 
 
 def list_runs(root: Path, limit: int = 50, offset: int = 0) -> dict:

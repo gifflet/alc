@@ -1,6 +1,8 @@
 # test_api_read.py — Read-only per-project endpoints.
 from __future__ import annotations
 
+from pathlib import Path
+
 
 class TestManifest:
     def test_get_manifest_raw_and_parsed(self, client, registered: str) -> None:
@@ -77,6 +79,56 @@ class TestQueueRunsEmpty:
         body = client.get(f"/api/projects/{registered}/scorecard").json()
         assert body["reports"] == 0
         assert body["successes"] == 0
+
+
+class TestRunsFinished:
+    """The runs list's ``finished`` flag must agree with the run detail: a
+    flow/task run's inner ``mandate_finished`` is NOT terminal — the run stays
+    live until ``flow_finished`` / ``task_finished``; a bare mandate run closes
+    at its own ``mandate_finished``."""
+
+    def _write_run(self, project: Path, stem: str, events: list[str]) -> None:
+        runs = project / ".alc" / "runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        body = "".join(f'{{"event": "{e}"}}\n' for e in events)
+        (runs / f"{stem}.jsonl").write_text(body)
+
+    def test_finished_flag_matches_run_kind(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # A flow still mid-flight: its last stage's mandate finished, but no
+        # flow_finished yet → the list must NOT call it finished.
+        self._write_run(
+            project,
+            "20260101T000000-flow-live-aaaaaa",
+            ["flow_started", "stage_started", "mandate_started", "mandate_finished"],
+        )
+        # A flow that reached flow_finished → finished.
+        self._write_run(
+            project,
+            "20260101T000001-flow-done-bbbbbb",
+            ["flow_started", "mandate_started", "mandate_finished", "flow_finished"],
+        )
+        # A task that reached task_finished → finished.
+        self._write_run(
+            project,
+            "20260101T000002-task-done-cccccc",
+            ["task_started", "mandate_started", "mandate_finished", "task_finished"],
+        )
+        # A bare mandate run (no flow/task wrapper) closes at mandate_finished.
+        self._write_run(
+            project,
+            "20260101T000003-run-bare-dddddd",
+            ["mandate_started", "mandate_finished"],
+        )
+
+        runs = client.get(f"/api/projects/{registered}/runs").json()["runs"]
+        finished = {r["stem"]: r["finished"] for r in runs}
+
+        assert finished["20260101T000000-flow-live-aaaaaa"] is False
+        assert finished["20260101T000001-flow-done-bbbbbb"] is True
+        assert finished["20260101T000002-task-done-cccccc"] is True
+        assert finished["20260101T000003-run-bare-dddddd"] is True
 
 
 class TestLintAndEngines:
