@@ -75,10 +75,31 @@ def _run_unit(
 
     try:
         repo_root = git_toplevel(project_root)
+
+        # Detect a committing flow BEFORE the worktree exists so the worktree can OWN
+        # the single commit (skip_commit + exclude .alc/) — the reconciliation the queue
+        # drain does. Otherwise the FlowRunner commits INSIDE the worktree, IsolatedWorktree
+        # records no staged change (wt.committed False), UnitResult.branch is None, and the
+        # demand's work is discarded on cleanup (never merged).
+        flow = None
+        is_committing_flow = False
+        commit_message = manifest.worktree_commit_message
+        if kind == "flow":
+            flow = load_flow(project_root / manifest.flows_dir, name)
+            if flow.commit is not None and flow.commit.enabled:
+                is_committing_flow = True
+                try:
+                    commit_message = flow.commit.message.format(
+                        name=flow.name, task=(task.splitlines()[0] if task else "")
+                    )
+                except (KeyError, IndexError, ValueError):
+                    commit_message = f"chore(auto): {flow.name}"
+
         wt = IsolatedWorktree(
             repo_root,
             label=f"fanout-{name}",
-            commit_message=manifest.worktree_commit_message,
+            commit_message=commit_message,
+            exclude_paths=((".alc/",) if is_committing_flow else ()),
         )
         # Use the context manager manually so we can inspect wt after __exit__
         # (mirrors cli.py: enter -> run -> __exit__ under try/finally).
@@ -95,13 +116,13 @@ def _run_unit(
             # worktree_provision -> no-op, byte-identical to before.
             provision_worktree(wt_path, project_root, manifest.worktree_provision)
             if kind == "flow":
-                flow = load_flow(project_root / manifest.flows_dir, name)
                 runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
                 flow_report = runner.run(
                     flow=flow,
                     task=task,
                     engine_override=engine_override,
                     workdir=wt_path,
+                    skip_commit=is_committing_flow,
                 )
             elif kind == "specialist":
                 # Resolve the Specialist (and its Knowledge File for the Learn write)

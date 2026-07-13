@@ -80,6 +80,19 @@ worktree_provision:
   - copy: data/seed.txt
 """
 
+# A COMMITTING flow (terminal commit enabled) — its worktree must own the single
+# commit so a mergeable branch results.
+_COMMITTING_FLOW = """\
+name: demand
+description: A committing flow for fan-out reconciliation tests.
+stages:
+  - name: do
+    blueprint: chore
+commit:
+  enabled: true
+  message: "feat(auto): {task}"
+"""
+
 # A blueprint whose check asserts the provisioned file is present in the worktree.
 _PROBE = """\
 ---
@@ -571,3 +584,53 @@ class TestRunConductParallelMerges:
         assert report.left == []
         assert (repo / "fix.txt").read_text() == "fixed\n"  # applied to HEAD
         assert "alc/fanout-dev-x" not in _branches(repo)  # merged branch deleted
+
+
+class TestRunFanoutCommittingFlowBranch:
+    """A committing flow dispatched via fan-out must leave a MERGEABLE branch: the
+    worktree owns the single commit (skip_commit + exclude .alc/), so
+    UnitResult.branch is set — else the demand's work is lost on cleanup, never
+    merged (regression: conduct --parallel silently dropped committing demands)."""
+
+    def test_committing_flow_produces_a_branch(self, tmp_path: Path, monkeypatch) -> None:
+        from alc.engine import Capabilities, EngineResult
+
+        class _WriteEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                (request.workdir / "feature.txt").write_text("built by the demand\n")
+                return EngineResult(ok=True, output_text="[mock] wrote feature.txt")
+
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: _WriteEngine())
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_MANIFEST)
+        (alc / "blueprints" / "chore.md").write_text(_CHORE)
+        (alc / "flows" / "demand.yaml").write_text(_COMMITTING_FLOW)
+        _commit_all(repo, "seed operator layer")
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+        units = [{"kind": "flow", "name": "demand", "task": "add a feature"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        unit = report.units[0]
+        assert unit.branch is not None  # reconciliation left a mergeable branch
+        files = subprocess.run(
+            ["git", "-C", str(repo), "ls-tree", "-r", "--name-only", unit.branch],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert "feature.txt" in files  # the demand's work rode the branch
