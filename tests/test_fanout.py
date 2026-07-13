@@ -63,6 +63,37 @@ blueprint: chore
 knowledge_path: .alc/specialists/dev.knowledge.md
 """
 
+# A manifest that provisions a gitignored runtime file into each worktree.
+_MANIFEST_PROVISION = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+engines:
+  mock:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+worktree_provision:
+  - copy: data/seed.txt
+"""
+
+# A blueprint whose check asserts the provisioned file is present in the worktree.
+_PROBE = """\
+---
+name: probe
+purpose: Assert the worktree was provisioned.
+compute_tier: standard
+checks:
+  - name: data-present
+    command: ["test", "-f", "data/seed.txt"]
+---
+# Workflow
+1. Do nothing; the check asserts the provisioned runtime file is present.
+"""
+
 
 def _init_git_repo(repo: Path) -> None:
     """Initialize a git repo with committed identity config inside *repo*."""
@@ -453,3 +484,34 @@ class TestProcessQueueIsolatedSpecialistGitignored:
         assert len(results) == 1
         assert results[0].success is True, results[0]
         assert (queue_dir / "done" / "s0.yaml").exists()
+
+
+class TestRunFanoutProvisionsWorktree:
+    """A fan-out unit must provision gitignored runtime deps into its worktree —
+    parity with the queue drain. Without it a `needs_service` qa (or any check
+    that reads a provisioned path, e.g. the SQLite data dir) fails because the
+    file was never checked out into the fresh worktree."""
+
+    def test_provisioned_file_is_present_in_the_worktree(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        (repo / ".gitignore").write_text("data/\n")
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_MANIFEST_PROVISION)
+        (alc / "blueprints" / "probe.md").write_text(_PROBE)
+        _commit_all(repo, "seed operator layer (data/ gitignored)")
+        # Gitignored runtime data lives only in the main tree (never committed),
+        # so a fresh worktree lacks it unless provisioning copies it in.
+        (repo / "data").mkdir()
+        (repo / "data" / "seed.txt").write_text("db\n")
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+        units = [{"kind": "blueprint", "name": "probe", "task": "probe"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        assert report.units[0].success is True

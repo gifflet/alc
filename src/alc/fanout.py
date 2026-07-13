@@ -14,7 +14,12 @@ from alc.intake import load_blueprint, load_flow, load_specialist
 from alc.models import FanoutReport, Manifest, UnitResult
 from alc.runner import MandateRunner
 from alc.specialist import run_specialist
-from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
+from alc.worktree import (
+    IsolatedWorktree,
+    git_toplevel,
+    is_git_repo,
+    provision_worktree,
+)
 
 
 def run_unit(
@@ -83,6 +88,12 @@ def _run_unit(
         flow_report = None
         specialist_report = None
         try:
+            # Provision gitignored runtime deps (node_modules/data/.env) into the
+            # worktree so the unit's dev/qa can run the REAL app there — parity with
+            # the queue drain (queue._process_task). Without this a `needs_service`
+            # qa cannot start the app (e.g. its data dir is absent). Empty
+            # worktree_provision -> no-op, byte-identical to before.
+            provision_worktree(wt_path, project_root, manifest.worktree_provision)
             if kind == "flow":
                 flow = load_flow(project_root / manifest.flows_dir, name)
                 runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
