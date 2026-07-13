@@ -433,6 +433,8 @@ class ConductReport(BaseModel):
     units: list[UnitResult] = []         # populated by parallel dispatch
     enqueued_files: list[str] = []       # populated in enqueue mode
     success: bool | None = None          # overall run outcome (None in enqueue mode)
+    merged: list[str] = []               # parallel run: branches integrated into HEAD
+    left: list[str] = []                 # parallel run: branches left for manual resolution
 
 
 # ---------------------------------------------------------------------------

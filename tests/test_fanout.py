@@ -515,3 +515,59 @@ class TestRunFanoutProvisionsWorktree:
 
         assert report.success is True, report.units[0].error
         assert report.units[0].success is True
+
+
+class TestRunConductParallelMerges:
+    """A `run` conduct must APPLY its work: after a successful --parallel dispatch
+    the unit branches are integrated into HEAD (like the queue drain), not left
+    stranded. Conflicting branches surface as `left`."""
+
+    def test_successful_unit_branch_is_merged_into_head(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from alc.conduct import conduct
+        from alc.models import ConductorPlan, FanoutReport, PlannedUnit, UnitResult
+
+        repo = _make_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        base = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        # A real branch holding one commit that HEAD does not have — the artifact a
+        # successful fan-out unit would leave behind.
+        subprocess.run(
+            ["git", "-C", str(repo), "checkout", "-q", "-b", "alc/fanout-dev-x"],
+            check=True, capture_output=True,
+        )
+        (repo / "fix.txt").write_text("fixed\n")
+        _commit_all(repo, "feat(auto): fix")
+        subprocess.run(
+            ["git", "-C", str(repo), "checkout", "-q", base],
+            check=True, capture_output=True,
+        )
+        assert not (repo / "fix.txt").exists()  # HEAD lacks the fix pre-merge
+
+        canned_plan = ConductorPlan(
+            items=[PlannedUnit(kind="specialist", name="dev", task="x")]
+        )
+        monkeypatch.setattr("alc.conduct.plan_flows", lambda *a, **k: canned_plan)
+        canned_fanout = FanoutReport(
+            units=[
+                UnitResult(
+                    kind="specialist", name="dev", task="x",
+                    success=True, branch="alc/fanout-dev-x",
+                )
+            ],
+            success=True,
+        )
+        monkeypatch.setattr("alc.fanout.run_fanout", lambda *a, **k: canned_fanout)
+
+        report = conduct(manifest, operator_layer, "goal", parallel=True)
+
+        assert report.merged == ["alc/fanout-dev-x"]
+        assert report.left == []
+        assert (repo / "fix.txt").read_text() == "fixed\n"  # applied to HEAD
+        assert "alc/fanout-dev-x" not in _branches(repo)  # merged branch deleted

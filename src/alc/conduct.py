@@ -655,12 +655,28 @@ def conduct(
                 engine_override=engine_override,
                 max_workers=max_workers,
             )
+            # A `run` conduct must APPLY its work, not strand it on per-unit
+            # branches: integrate every successful unit's branch into the current
+            # branch, exactly as the queue drain does. Conflicting branches are
+            # left intact for manual resolution (surfaced as merged/left).
+            from alc.merge import auto_merge_branches
+            from alc.worktree import git_toplevel
+
+            branches = [u.branch for u in fanout.units if u.success and u.branch]
+            merged: list[str] = []
+            left: list[str] = []
+            if branches:
+                merge_report = auto_merge_branches(git_toplevel(project_root), branches)
+                merged, left = merge_report.merged, merge_report.conflicted
+                print(f"▶ conduct: {merge_report.summary()}", file=sys.stderr, flush=True)
             return ConductReport(
                 goal=goal,
                 mode="run",
                 plan=plan,
                 units=fanout.units,
                 success=fanout.success,
+                merged=merged,
+                left=left,
             )
         print(
             "--parallel ignored: not inside a git repository; running serially.",
