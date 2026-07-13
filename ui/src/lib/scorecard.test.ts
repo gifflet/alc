@@ -16,6 +16,7 @@ const done = (stem: string, mtime: number, r: FlowReport | null): DoneTask => ({
   mtime,
   task: null,
   report: r,
+  outstanding: false,
 })
 
 describe('scorecardHistory', () => {

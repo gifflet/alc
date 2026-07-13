@@ -117,6 +117,9 @@ export interface DoneTask {
   mtime: number
   task: QueueTask | null
   report: FlowReport | null
+  // Retryable iff this is an OUTSTANDING failure: the latest failed attempt of a
+  // lineage no later retry resolved. A failure fixed by a later attempt is false.
+  outstanding: boolean
 }
 
 export interface Queue {

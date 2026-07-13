@@ -239,6 +239,11 @@ def read_queue(root: Path) -> dict:
 
     done_dir = queue_dir / "done"
     if done_dir.is_dir():
+        # A done task is RETRYABLE only when it is an OUTSTANDING failure: the latest
+        # failed attempt of a lineage that no later retry has resolved. A failure
+        # whose lineage was later fixed (success elsewhere) is NOT retryable — so the
+        # UI must not offer a retry there, matching what `retry all` actually does.
+        outstanding_stems = {f.stem for f in outstanding_failures(done_dir)}
         for report_file in sorted(done_dir.glob("*.report.json")):
             stem = report_file.name[: -len(".report.json")]
             task_file = done_dir / f"{stem}.yaml"
@@ -260,6 +265,7 @@ def read_queue(root: Path) -> dict:
                     "mtime": report_file.stat().st_mtime,
                     "task": task,
                     "report": report,
+                    "outstanding": stem in outstanding_stems,
                 }
             )
     return {"pending": pending, "done": done}

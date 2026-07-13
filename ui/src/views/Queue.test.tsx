@@ -102,7 +102,10 @@ describe('Queue actions', () => {
   it('retries a single failure', async () => {
     const mock = installFetch({
       '/queue/retry': { enqueued: ['ship-x'] },
-      '/queue': { pending: [], done: [{ stem: 'd1', mtime: 1, task, report: failed }] },
+      '/queue': {
+        pending: [],
+        done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: true }],
+      },
     })
     renderWithProviders(<Queue />)
 
@@ -114,13 +117,33 @@ describe('Queue actions', () => {
   it('retries all failures from the header', async () => {
     const mock = installFetch({
       '/queue/retry': { enqueued: ['ship-x'] },
-      '/queue': { pending: [], done: [{ stem: 'd1', mtime: 1, task, report: failed }] },
+      '/queue': {
+        pending: [],
+        done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: true }],
+      },
     })
     renderWithProviders(<Queue />)
 
     await userEvent.click(await screen.findByRole('button', { name: /Retry all failures/ }))
     const retry = mock.calls.find((c) => c.url.includes('/queue/retry'))
     expect(retry?.body).toEqual({ all: true })
+  })
+
+  it('offers no retry on a failure already resolved by a later attempt', async () => {
+    // report.success=false but NOT outstanding (a later retry in its lineage
+    // succeeded) -> no retry button and no "Retry all" (retry all would re-enqueue
+    // nothing). This matches what `alc retry` actually does.
+    installFetch({
+      '/queue/retry': { enqueued: [] },
+      '/queue': {
+        pending: [],
+        done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: false }],
+      },
+    })
+    renderWithProviders(<Queue />)
+    expect(await screen.findByText('failed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry d1' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry all failures/ })).not.toBeInTheDocument()
   })
 
   it('deletes a pending task after confirmation', async () => {

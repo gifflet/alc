@@ -32,6 +32,51 @@ def _write_failed_archive(project: Path, stem: str, task: str = "do the thing") 
     (done / f"{stem}.report.json").write_text(report.model_dump_json(indent=2))
 
 
+def _write_success_retry(project: Path, stem: str, retry_of: str) -> None:
+    """Write a SUCCESSFUL retry archive that resolves the ``retry_of`` lineage."""
+    done = project / ".alc" / "queue" / "done"
+    done.mkdir(parents=True, exist_ok=True)
+    (done / f"{stem}.yaml").write_text(
+        "flow: ship\ntask: 'do the thing'\nengine: mock\nisolate: false\n"
+        f"retries: 1\nretry_of: {retry_of}\n"
+    )
+    report = FlowReport(
+        flow="ship",
+        engine="mock",
+        success=True,
+        stages=[
+            RunReport(
+                blueprint="chore",
+                engine="mock",
+                success=True,
+                attempts=[],
+                scorecard=Scorecard(span=1, passes=1, streak=1, touch=0),
+                output_text="all checks passed",
+            )
+        ],
+        scorecard=Scorecard(span=1, passes=1, streak=1, touch=0),
+    )
+    (done / f"{stem}.report.json").write_text(report.model_dump_json(indent=2))
+
+
+class TestOutstandingFlag:
+    def test_read_queue_marks_only_outstanding_failures(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # Unresolved failure -> retryable (outstanding).
+        _write_failed_archive(project, "alone")
+        # Resolved lineage: an original failure fixed by a later successful retry
+        # -> the original failure is NOT outstanding (retrying it is a no-op).
+        _write_failed_archive(project, "orig")
+        _write_success_retry(project, "retry1", retry_of="orig")
+
+        done = client.get(f"/api/projects/{registered}/queue").json()["done"]
+        by = {d["stem"]: d for d in done}
+        assert by["alone"]["outstanding"] is True
+        assert by["orig"]["outstanding"] is False
+        assert by["retry1"]["outstanding"] is False
+
+
 class TestEnqueue:
     def test_enqueue_creates_pending_task(self, client, registered: str, project: Path) -> None:
         resp = client.post(

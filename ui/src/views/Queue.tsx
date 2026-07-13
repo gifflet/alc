@@ -119,7 +119,6 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
         {done.map((d) => {
           const open = expanded === d.stem
           const success = d.report?.success ?? null
-          const failed = success === false
           return (
             <Fragment key={d.stem}>
               <tr
@@ -161,7 +160,7 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                   <RelativeTime value={d.mtime} />
                 </td>
                 <td className="px-2">
-                  {failed && (
+                  {d.outstanding && (
                     <button
                       type="button"
                       aria-label={`Retry ${d.stem}`}
@@ -299,7 +298,7 @@ export function Queue() {
   if (isLoading) return <Loading />
   const pending = data?.pending ?? []
   const done = data?.done ?? []
-  const failures = done.filter((d) => d.report && !d.report.success)
+  const failures = done.filter((d) => d.outstanding)
 
   const submitEnqueue = (task: Parameters<typeof enqueue.mutate>[0]) =>
     enqueue.mutate(task, {
