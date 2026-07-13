@@ -312,9 +312,17 @@ def _process_task_body(
             the specialist path has no terminal commit and ignores it.
             """
             if qt.kind == "specialist":
-                # A specialist run in a worktree resolves its Knowledge File against
-                # the worktree so the Learn write lands on the isolated branch.
-                ol = (workdir / operator_layer.name) if workdir is not None else operator_layer
+                # Resolve the Specialist (definition + Knowledge File) against the
+                # worktree only when the Operator Layer is TRACKED there, so a Learn
+                # write lands on the isolated branch. A gitignored .alc/ is absent
+                # from the fresh worktree (git checks out only tracked files) — fall
+                # back to the main Operator Layer, else load_specialist raises
+                # FileNotFoundError. Same guarantee as the conduct fan-out path.
+                ol = operator_layer
+                if workdir is not None:
+                    wt_ol = workdir / operator_layer.name
+                    if wt_ol.is_dir():
+                        ol = wt_ol
                 return _run_specialist_task(manifest, ol, qt, unit_name, workdir, env)
             flow = load_flow(flows_dir, unit_name)
             runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)

@@ -428,3 +428,28 @@ class TestProcessQueueParallelIsolated:
             line for line in wt_list.splitlines() if line.startswith("worktree ")
         ]
         assert len(worktree_entries) == 1, f"Stray worktrees found:\n{wt_list}"
+
+
+class TestProcessQueueIsolatedSpecialistGitignored:
+    """The isolated queue drain (cycles/loops) must run a specialist task even
+    when .alc/ is gitignored — the fresh worktree omits the untracked Operator
+    Layer, so the Specialist falls back to the main .alc/ (same as fan-out)."""
+
+    def test_isolated_specialist_task_falls_back_to_main_operator_layer(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _make_gitignored_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        queue_dir = repo / manifest.queue_dir
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "s0.yaml").write_text(
+            "kind: specialist\nname: dev\ntask: tidy the module\nisolate: true\n"
+        )
+
+        results = process_queue(manifest, operator_layer, max_workers=1)
+
+        assert len(results) == 1
+        assert results[0].success is True, results[0]
+        assert (queue_dir / "done" / "s0.yaml").exists()
