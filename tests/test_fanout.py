@@ -55,6 +55,14 @@ stages:
     blueprint: chore
 """
 
+# A specialist that acts through the chore blueprint.
+_SPECIALIST_DEV = """\
+name: dev
+area: the test codebase
+blueprint: chore
+knowledge_path: .alc/specialists/dev.knowledge.md
+"""
+
 
 def _init_git_repo(repo: Path) -> None:
     """Initialize a git repo with committed identity config inside *repo*."""
@@ -92,6 +100,30 @@ def _make_alc_repo(base: Path) -> Path:
     (alc / "flows" / "single.yaml").write_text(_SINGLE_FLOW)
 
     _commit_all(repo, "seed operator layer")
+    return repo
+
+
+def _make_gitignored_alc_repo(base: Path) -> Path:
+    """Build a git repo whose .alc/ Operator Layer is GITIGNORED (untracked).
+
+    ``git worktree add`` checks out only tracked files, so a fresh worktree does
+    NOT contain .alc/ — mirroring a real dogfood project. A conduct specialist
+    unit must still resolve its definition from the main .alc/.
+    """
+    repo = base / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    (repo / ".gitignore").write_text(".alc/\n")
+    (repo / "seed.txt").write_text("x\n")
+    _commit_all(repo, "seed (no .alc committed)")
+
+    alc = repo / ".alc"
+    (alc / "blueprints").mkdir(parents=True)
+    (alc / "specialists").mkdir(parents=True)
+    (alc / "manifest.yaml").write_text(_MANIFEST)
+    (alc / "blueprints" / "chore.md").write_text(_CHORE)
+    (alc / "specialists" / "dev.yaml").write_text(_SPECIALIST_DEV)
+    # Deliberately NOT committed: .alc/ is gitignored, so a worktree omits it.
     return repo
 
 
@@ -274,6 +306,29 @@ class TestRunUnitRequiresGit:
                 name="chore",
                 task="anything",
             )
+
+
+class TestRunUnitGitignoredOperatorLayer:
+    """A specialist unit must run even when .alc/ is gitignored: the fresh
+    worktree omits the (untracked) Operator Layer, so the Specialist must fall
+    back to the main .alc/ instead of raising FileNotFoundError."""
+
+    def test_specialist_unit_falls_back_to_main_operator_layer(
+        self, tmp_path: Path
+    ) -> None:
+        repo = _make_gitignored_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        units = [{"kind": "specialist", "name": "dev", "task": "tidy the module"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True
+        unit = report.units[0]
+        assert unit.kind == "specialist"
+        assert unit.success is True
+        assert unit.error is None
+        assert unit.specialist_report is not None
 
 
 # ---------------------------------------------------------------------------

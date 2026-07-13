@@ -93,15 +93,22 @@ def _run_unit(
                     workdir=wt_path,
                 )
             elif kind == "specialist":
-                # Resolve the Specialist and its Knowledge File against the worktree
-                # so the Learn write lands on this unit's branch, not the main tree.
+                # Resolve the Specialist (and its Knowledge File for the Learn write)
+                # against the worktree when the Operator Layer is TRACKED there, so a
+                # Learn update lands on this unit's branch. A gitignored .alc/ is absent
+                # from a fresh worktree (git checks out only tracked files) — fall back
+                # to the main Operator Layer so the unit still runs, exactly as the
+                # queue path does (that Learn write is unversioned either way).
                 wt_operator_layer = wt_path / operator_layer.name
+                unit_operator_layer = (
+                    wt_operator_layer if wt_operator_layer.is_dir() else operator_layer
+                )
                 specialist = load_specialist(
-                    wt_operator_layer.parent / manifest.specialists_dir, name
+                    unit_operator_layer.parent / manifest.specialists_dir, name
                 )
                 specialist_report = run_specialist(
                     manifest=manifest,
-                    operator_layer=wt_operator_layer,
+                    operator_layer=unit_operator_layer,
                     specialist=specialist,
                     task=task,
                     engine_override=engine_override,
