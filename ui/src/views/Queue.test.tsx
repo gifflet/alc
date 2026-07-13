@@ -47,6 +47,22 @@ describe('Queue', () => {
     expect(screen.getByText('ok')).toBeInTheDocument()
   })
 
+  it('shows the retry attempt badge and reveals the carried feedback on expand', async () => {
+    const retried: QueueTask = {
+      ...task,
+      task: 'add a login page\n\n--- retry feedback ---\nthe smoke check failed: boom',
+      retries: 2,
+      retry_of: 'ship-root',
+    }
+    installFetch({ '/queue': { pending: [{ stem: 'p1', mtime: 1, task: retried }], done: [] } })
+    renderWithProviders(<Queue />)
+    // The attempt number is surfaced as a badge.
+    expect(await screen.findByText('retry #2')).toBeInTheDocument()
+    // Expanding the pending row reveals the full body incl. the carried feedback.
+    await userEvent.click(screen.getByText('add a login page'))
+    expect(await screen.findByText(/the smoke check failed: boom/)).toBeInTheDocument()
+  })
+
   it('expands a done row to reveal the report summary', async () => {
     installFetch({
       '/queue': {

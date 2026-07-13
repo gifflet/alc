@@ -11,10 +11,34 @@ import { Loading, Pill } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
 import { EnqueueDialog } from './EnqueueDialog'
 import { ApiError } from '../api/client'
-import type { DoneTask, FlowReport, PendingTask } from '../api/types'
+import type { DoneTask, FlowReport, PendingTask, QueueTask } from '../api/types'
 
 function firstLine(text: string): string {
   return text.split('\n')[0]
+}
+
+/** A re-executed task's attempt number — surfaced so a retry is visible at a glance. */
+function RetryBadge({ task }: { task: QueueTask | null }) {
+  if (!task?.retries) return null
+  return <Pill tone="warn">retry #{task.retries}</Pill>
+}
+
+/** The full task body — for a retry this shows the lineage root it descends from
+ * plus the carried failure feedback appended below the intent, both of which the
+ * one-line summary hides. */
+function TaskBody({ task }: { task: QueueTask }) {
+  return (
+    <div className="border-l-2 border-border bg-base px-3 py-2">
+      {task.retry_of && (
+        <div className="mb-1 font-mono text-[11px] text-faint">
+          ↩ retry lineage of <span className="text-muted">{task.retry_of}</span>
+        </div>
+      )}
+      <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted">
+        {task.task}
+      </pre>
+    </div>
+  )
 }
 
 function DrainDialog({ onClose }: { onClose: () => void }) {
@@ -112,7 +136,7 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                 className="h-[28px] cursor-pointer border-b border-border/60 transition-colors duration-120 hover:bg-hover"
               >
                 <td className="px-2">
-                  {d.report ? (
+                  {d.report || d.task ? (
                     open ? (
                       <ChevronDown className="h-3.5 w-3.5 text-faint" />
                     ) : (
@@ -121,7 +145,10 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                   ) : null}
                 </td>
                 <td className="truncate px-2 text-muted">
-                  {d.task ? firstLine(d.task.task) : d.stem}
+                  <span className="flex items-center gap-2">
+                    <span className="truncate">{d.task ? firstLine(d.task.task) : d.stem}</span>
+                    <RetryBadge task={d.task} />
+                  </span>
                 </td>
                 <td className="px-2">
                   {success === null ? (
@@ -150,10 +177,11 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                   )}
                 </td>
               </tr>
-              {open && d.report && (
+              {open && (
                 <tr>
                   <td colSpan={5} className="p-0">
-                    <ReportSummary report={d.report} />
+                    {d.task && <TaskBody task={d.task} />}
+                    {d.report && <ReportSummary report={d.report} />}
                   </td>
                 </tr>
               )}
@@ -172,10 +200,12 @@ function PendingRows({
   pending: PendingTask[]
   onDelete: (stem: string) => void
 }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
   return (
     <table className="w-full border-collapse text-[12px]">
       <thead>
         <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
+          <th className="w-6 px-2 py-1" />
           <th className="px-2 py-1 font-medium">Task</th>
           <th className="w-20 px-2 py-1 font-medium">Kind</th>
           <th className="w-28 px-2 py-1 font-medium">Unit</th>
@@ -185,29 +215,72 @@ function PendingRows({
         </tr>
       </thead>
       <tbody>
-        {pending.map((p) => (
-          <tr key={p.stem} className="group h-[28px] border-b border-border/60 hover:bg-hover">
-            <td className="truncate px-2 text-muted">{firstLine(p.task.task)}</td>
-            <td className="px-2 font-mono text-faint">{p.task.kind}</td>
-            <td className="px-2 text-muted">{p.task.name ?? p.task.flow}</td>
-            <td className="px-2">
-              {p.task.isolate ? <Pill tone="accent">yes</Pill> : <span className="text-faint">no</span>}
-            </td>
-            <td className="px-2 font-mono text-faint">
-              {p.task.depends_on.length ? p.task.depends_on.join(', ') : '—'}
-            </td>
-            <td className="px-2">
-              <button
-                type="button"
-                aria-label={`Delete ${p.stem}`}
-                onClick={() => onDelete(p.stem)}
-                className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-error group-hover:opacity-100"
+        {pending.map((p) => {
+          const open = expanded === p.stem
+          return (
+            <Fragment key={p.stem}>
+              <tr
+                role="button"
+                tabIndex={0}
+                aria-expanded={open}
+                onClick={() => setExpanded(open ? null : p.stem)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setExpanded(open ? null : p.stem)
+                  }
+                }}
+                className="group h-[28px] cursor-pointer border-b border-border/60 transition-colors duration-120 hover:bg-hover"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </td>
-          </tr>
-        ))}
+                <td className="px-2">
+                  {open ? (
+                    <ChevronDown className="h-3.5 w-3.5 text-faint" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 text-faint" />
+                  )}
+                </td>
+                <td className="truncate px-2 text-muted">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate">{firstLine(p.task.task)}</span>
+                    <RetryBadge task={p.task} />
+                  </span>
+                </td>
+                <td className="px-2 font-mono text-faint">{p.task.kind}</td>
+                <td className="px-2 text-muted">{p.task.name ?? p.task.flow}</td>
+                <td className="px-2">
+                  {p.task.isolate ? (
+                    <Pill tone="accent">yes</Pill>
+                  ) : (
+                    <span className="text-faint">no</span>
+                  )}
+                </td>
+                <td className="px-2 font-mono text-faint">
+                  {p.task.depends_on.length ? p.task.depends_on.join(', ') : '—'}
+                </td>
+                <td className="px-2">
+                  <button
+                    type="button"
+                    aria-label={`Delete ${p.stem}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete(p.stem)
+                    }}
+                    className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-error group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </td>
+              </tr>
+              {open && (
+                <tr>
+                  <td colSpan={7} className="p-0">
+                    <TaskBody task={p.task} />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          )
+        })}
       </tbody>
     </table>
   )
