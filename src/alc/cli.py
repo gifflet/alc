@@ -189,6 +189,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     """Run `alc run <blueprint> "<task>" [--engine NAME] [--isolate]`."""
     from alc.bundle import summarize_bundle, write_bundle
+    from alc.commitmsg import make_commit_message_provider
     from alc.events import bind_run_log, new_run_log_path
     from alc.intake import load_blueprint, load_manifest
     from alc.primer import load_primer
@@ -249,7 +250,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     if use_isolate:
         repo_root = git_toplevel(Path.cwd())
         wt = IsolatedWorktree(
-            repo_root, label="run", commit_message=manifest.worktree_commit_message
+            repo_root,
+            label="run",
+            commit_message=manifest.worktree_commit_message,
+            message_provider=make_commit_message_provider(
+                manifest=manifest,
+                operator_layer=operator_layer,
+                workdir=repo_root,
+                fallback=manifest.worktree_commit_message,
+                engine_override=args.engine,
+            ),
         )
         # Use the context manager manually so we can inspect wt after __exit__.
         wt_path = wt.__enter__()
@@ -683,6 +693,7 @@ def cmd_specialist(args: argparse.Namespace) -> int:
 def cmd_flow(args: argparse.Namespace) -> int:
     """Run `alc flow <flow_name> "<task>" [--engine NAME] [--isolate]`."""
     from alc.bundle import summarize_bundle, write_bundle
+    from alc.commitmsg import make_commit_message_provider
     from alc.events import bind_run_log, new_run_log_path
     from alc.flow import FlowRunner
     from alc.intake import load_flow, load_manifest
@@ -751,7 +762,16 @@ def cmd_flow(args: argparse.Namespace) -> int:
     if use_isolate:
         repo_root = git_toplevel(Path.cwd())
         wt = IsolatedWorktree(
-            repo_root, label="flow", commit_message=manifest.worktree_commit_message
+            repo_root,
+            label="flow",
+            commit_message=manifest.worktree_commit_message,
+            message_provider=make_commit_message_provider(
+                manifest=manifest,
+                operator_layer=operator_layer,
+                workdir=repo_root,
+                fallback=manifest.worktree_commit_message,
+                engine_override=args.engine,
+            ),
         )
         wt_path = wt.__enter__()
         exc_info = (None, None, None)

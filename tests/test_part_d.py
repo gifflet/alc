@@ -136,14 +136,17 @@ class TestWorktreeCommitMessage:
         assert _last_commit_subject(repo, wt.branch) == f"wip: {wt.branch}"
         _cleanup_branch(repo, wt.branch)
 
-    def test_bad_template_falls_back_without_crashing(self, tmp_path: Path) -> None:
+    def test_unknown_placeholder_used_verbatim(self, tmp_path: Path) -> None:
+        # With the str.replace fix, an unknown placeholder like {nope} is not a
+        # format error — it is passed verbatim to git commit.  This is intentional:
+        # the fix removes the try/except so task text containing literal braces
+        # (e.g. JSON) never crashes the exit-commit and never falls back silently.
         repo = _make_git_repo(tmp_path)
         wt = IsolatedWorktree(repo, "test", commit_message="{nope}")
         with wt as path:
             (path / "agent.txt").write_text("edit\n")
-        # The unknown placeholder must not crash the exit-commit; it falls back.
         assert wt.committed is True
-        assert _last_commit_subject(repo, wt.branch) == f"alc: {wt.branch}"
+        assert _last_commit_subject(repo, wt.branch) == "{nope}"
         _cleanup_branch(repo, wt.branch)
 
     def test_default_message_unchanged(self, tmp_path: Path) -> None:

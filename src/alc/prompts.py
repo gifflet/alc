@@ -190,6 +190,29 @@ Its address is exported as the environment variable `$ALC_BASE_URL` (e.g. `http:
   host or port and never assume `localhost:3000` — use `$ALC_BASE_URL` verbatim.
 """
 
+# The `commit-message` prompt — ALC uses this to ask the engine to generate a
+# Conventional Commits subject from the staged diff. Core-owned default; an operator
+# override in the prompt store transparently replaces it.
+# NOTE: {diff} is injected via str.replace, NOT .format(), so the diff's own braces
+# never crash the injection. The frozenset still declares {diff} so the lint
+# (validate_prompt_override) can verify an override preserves the placeholder.
+_COMMIT_MESSAGE_TEMPLATE = """\
+Generate exactly ONE line: a Conventional Commits subject for the staged diff below.
+
+Rules:
+- Format: <type>(<scope>): <description>  (scope is optional but recommended)
+- type must be one of: feat, fix, chore, refactor, docs, test, ci, perf, build, style, revert
+- Choose the type that best matches the actual change shown in the diff
+- Use the imperative mood (e.g. "add", "fix", "remove"), not past tense
+- Maximum 72 characters total
+- No trailing period
+- No body, no footer, no Co-Authored-By line
+- No backticks, no quotes around the output
+- Output ONLY the subject line — no explanation, no preamble
+
+Staged diff:
+{diff}"""
+
 
 _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     "plan-contract": (_PLAN_CONTRACT_TEMPLATE, frozenset({"catalog"})),
@@ -202,6 +225,9 @@ _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     "repair": (_REPAIR_TEMPLATE, frozenset({"failures"})),
     "runtime-conventions": (_RUNTIME_CONVENTIONS_TEMPLATE, frozenset()),
     "service-conventions": (_SERVICE_CONVENTIONS_TEMPLATE, frozenset()),
+    # {diff} is declared so override validation can check the placeholder is present;
+    # the actual injection uses str.replace (not .format) to avoid brace-collision.
+    "commit-message": (_COMMIT_MESSAGE_TEMPLATE, frozenset({"diff"})),
 }
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from alc.commitmsg import make_commit_message_provider
 from alc.events import bind_run_log, emit, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import load_flow, load_specialist
@@ -365,11 +366,21 @@ def _process_task_body(
                 except Exception:
                     pass  # a load failure surfaces via the outer try/except
 
+            # Build the commit-message provider. Fallback is the rendered demand
+            # message (already has {name}/{task} filled) or the worktree template.
+            queue_message_provider = make_commit_message_provider(
+                manifest=manifest,
+                operator_layer=operator_layer,
+                workdir=repo_root,
+                fallback=demand_message,
+                engine_override=qt.engine,
+            )
             wt = IsolatedWorktree(
                 repo_root,
                 label="tick",
                 commit_message=demand_message,
                 exclude_paths=((".alc/",) if is_committing_demand else ()),
+                message_provider=queue_message_provider,
             )
             wt_path = wt.__enter__()
             exc_info = (None, None, None)

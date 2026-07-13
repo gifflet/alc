@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -153,6 +154,7 @@ def commit_workdir(
     workdir: Path,
     message: str,
     exclude: tuple[str, ...] = (".alc/",),
+    message_provider: Callable[[str], str] | None = None,
 ) -> str | None:
     """Stage and commit everything in *workdir* (except *exclude*), return the sha.
 
@@ -175,9 +177,12 @@ def commit_workdir(
 
     Args:
         workdir: Directory to stage and commit in (the Flow's shared workdir).
-        message: The commit message, used verbatim.
+        message: The commit message, used verbatim when *message_provider* is None.
         exclude: Path prefixes to keep out of the commit (default: the ``.alc/``
             control-plane state, which must never land in a demand's commit).
+        message_provider: Optional callable ``(diff: str) -> str``.  When set,
+            called with the staged diff text after staging; its return value
+            replaces *message*.  On any failure *message* is used as fallback.
 
     Returns:
         The new commit's sha, or None when there is nothing to commit or any git
@@ -211,12 +216,24 @@ def commit_workdir(
             )
 
         # Nothing staged -> exit 0 -> skip the commit (no empty commits).
-        diff = subprocess.run(
+        diff_check = subprocess.run(
             ["git", "-C", str(root), "diff", "--cached", "--quiet"],
             capture_output=True,
         )
-        if diff.returncode == 0:
+        if diff_check.returncode == 0:
             return None
+
+        # When a provider is set, capture the staged diff and generate a message.
+        if message_provider is not None:
+            try:
+                diff_text = subprocess.run(
+                    ["git", "-C", str(root), "diff", "--cached"],
+                    capture_output=True,
+                    text=True,
+                ).stdout
+                message = message_provider(diff_text)
+            except Exception:
+                pass  # provider failure -> keep the original message
 
         commit = subprocess.run(
             ["git", "-C", str(root), "commit", "-m", message],

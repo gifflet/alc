@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from alc.commit import commit_workdir, has_non_alc_changes, revert_workdir
+from alc.commitmsg import make_commit_message_provider
 from alc.events import emit
 from alc.intake import load_blueprint, load_specialist, resolve_checks
 from alc.models import (
@@ -390,9 +391,21 @@ class FlowRunner:
                     f"falling back to: {message!r}",
                     file=sys.stderr,
                 )
+            # Build a provider so the commit message can be generated from the diff.
+            # The rendered `message` is the fallback when generation fails/is invalid.
+            flow_message_provider = make_commit_message_provider(
+                manifest=self._manifest,
+                operator_layer=self._operator_layer,
+                workdir=effective_workdir,
+                fallback=message,
+                engine_override=engine_override,
+            )
             # `.alc/` is ALWAYS protected; the operator's commit.exclude only ADDS.
             commit_sha = commit_workdir(
-                effective_workdir, message, exclude=(".alc/", *flow.commit.exclude)
+                effective_workdir,
+                message,
+                exclude=(".alc/", *flow.commit.exclude),
+                message_provider=flow_message_provider,
             )
 
         # Observe: close the flow with its outcome (and commit sha when created).

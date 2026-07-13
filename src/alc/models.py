@@ -148,6 +148,10 @@ class Manifest(BaseModel):
     #     bounded by max_task_retries), so a retry runs promptly and works on `alc tick`.
     #   "deferred" — drained by the NEXT drain pass (next cycle / next tick).
     retry_strategy: Literal["immediate", "deferred"] = "immediate"
+    # When True, ALC calls the engine to generate a Conventional Commits subject
+    # from the staged diff for every control-plane commit; the static template is
+    # the fallback when generation fails or the engine output is invalid.
+    generate_commit_messages: bool = True
     worktree_commit_message: str = "alc: {branch}"  # exit-commit template ({branch} placeholder)
     # Gitignored runtime deps provisioned INTO each worktree before the engine turn
     # (node_modules/.env/data). Empty = today's behavior (a worktree carries only

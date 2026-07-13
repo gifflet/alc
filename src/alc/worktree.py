@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from alc.models import ProvisionSpec
@@ -121,6 +122,7 @@ class IsolatedWorktree:
         label: str,
         commit_message: str = "alc: {branch}",
         exclude_paths: tuple[str, ...] = (),
+        message_provider: Callable[[str], str] | None = None,
     ) -> None:
         self._repo_root = repo_root
         self.branch: str = f"alc/{label}-{uuid.uuid4().hex[:8]}"
@@ -133,6 +135,9 @@ class IsolatedWorktree:
         # `git reset -q -- <entry>` step). Default () -> no reset -> commits
         # everything incl. `.alc/` exactly as before (byte-identical).
         self._exclude_paths = exclude_paths
+        # Optional callable (diff: str) -> str that generates the commit message
+        # from the staged diff.  When None the static _commit_message is used.
+        self._message_provider = message_provider
         # When False the exit commits nothing and deletes the branch, discarding
         # whatever the agent wrote. Settable by the caller after __enter__.
         self.commit_on_exit: bool = True
@@ -180,56 +185,73 @@ class IsolatedWorktree:
         unstaged after ``git add -A`` (mirroring commit_workdir's step 2) so those
         prefixes (e.g. ``.alc/``) never land in the exit-commit.
 
-        Exceptions from the body are never suppressed.
+        Concurrency design: staging, diff capture, and message generation run
+        OUTSIDE ``_GIT_MUTATION_LOCK`` — they operate on this worktree's isolated
+        index and never touch the shared repo structure.  Only ``git commit``,
+        ``git worktree remove``, and ``git branch -D`` (all of which mutate the
+        shared repo) are held under the lock.  This lets concurrent fan-out units
+        generate their commit messages (including an engine call) in parallel
+        without serialising on the lock.
 
-        The entire add/diff/commit/remove/branch mutation sequence is held under
-        ``_GIT_MUTATION_LOCK`` so concurrent fan-out never runs two ``git worktree
-        remove`` on the same repo at once.
+        Exceptions from the body are never suppressed.
         """
+        # --- Phase 1: stage, diff-check, and message generation (lock-free) ---
+        has_changes = False
+        message = self._commit_message.replace("{branch}", self.branch)
+
+        try:
+            if not self.commit_on_exit:
+                # The caller is discarding this worktree's work.
+                has_changes = False
+            else:
+                # Stage everything the agent may have written.
+                subprocess.run(
+                    ["git", "-C", str(self.path), "add", "-A"],
+                    capture_output=True,
+                )
+
+                # Unstage excluded prefixes (mirrors commit_workdir step 2)
+                # so e.g. `.alc/` never lands in a demand's exit-commit.
+                for entry in self._exclude_paths:
+                    subprocess.run(
+                        ["git", "-C", str(self.path), "reset", "-q", "--", entry],
+                        capture_output=True,
+                    )
+
+                # Detect whether there is anything staged.
+                diff_check = subprocess.run(
+                    ["git", "-C", str(self.path), "diff", "--cached", "--quiet"],
+                    capture_output=True,
+                )
+                has_changes = diff_check.returncode == 1  # 1 => differences exist
+
+                if has_changes and self._message_provider is not None:
+                    try:
+                        diff_text = subprocess.run(
+                            ["git", "-C", str(self.path), "diff", "--cached"],
+                            capture_output=True,
+                            text=True,
+                        ).stdout
+                        message = self._message_provider(diff_text)
+                    except Exception:
+                        pass  # provider failure -> keep the template-rendered message
+        except Exception as _stage_exc:
+            # Stage phase failed: attempt best-effort cleanup under the lock and
+            # re-raise so the caller knows something went wrong.
+            with _GIT_MUTATION_LOCK:
+                subprocess.run(
+                    ["git", "-C", str(self._repo_root), "worktree", "remove",
+                     "--force", str(self.path)],
+                    capture_output=True,
+                )
+            raise
+
+        # --- Phase 2: commit + worktree-remove + branch-delete (under lock) ---
         with _GIT_MUTATION_LOCK:
             try:
-                if not self.commit_on_exit:
-                    # The caller is discarding this worktree's work: commit
-                    # nothing and route straight to the delete-branch cleanup.
-                    has_changes = False
-                else:
-                    # Stage everything the agent may have written.
-                    subprocess.run(
-                        ["git", "-C", str(self.path), "add", "-A"],
-                        capture_output=True,
-                    )
-
-                    # Unstage excluded prefixes (mirrors commit_workdir step 2)
-                    # so e.g. `.alc/` never lands in a demand's exit-commit.
-                    for entry in self._exclude_paths:
-                        subprocess.run(
-                            ["git", "-C", str(self.path), "reset", "-q", "--", entry],
-                            capture_output=True,
-                        )
-
-                    # Detect whether there is anything staged.
-                    diff = subprocess.run(
-                        ["git", "-C", str(self.path), "diff", "--cached", "--quiet"],
-                        capture_output=True,
-                    )
-                    has_changes = diff.returncode == 1  # returncode 1 => differences exist
-
                 if has_changes:
-                    # Render the template; a bad operator template must not crash
-                    # the exit-commit — fall back to the built-in default.
-                    try:
-                        message = self._commit_message.format(branch=self.branch)
-                    except (KeyError, IndexError, ValueError):
-                        message = f"alc: {self.branch}"
                     subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(self.path),
-                            "commit",
-                            "-m",
-                            message,
-                        ],
+                        ["git", "-C", str(self.path), "commit", "-m", message],
                         capture_output=True,
                         check=True,
                     )
@@ -237,44 +259,23 @@ class IsolatedWorktree:
 
                 # Remove the worktree (--force handles the unmerged-branch case).
                 subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(self._repo_root),
-                        "worktree",
-                        "remove",
-                        "--force",
-                        str(self.path),
-                    ],
+                    ["git", "-C", str(self._repo_root), "worktree", "remove",
+                     "--force", str(self.path)],
                     capture_output=True,
                 )
 
                 if not has_changes:
                     # Nothing was written — delete the empty branch too.
                     subprocess.run(
-                        [
-                            "git",
-                            "-C",
-                            str(self._repo_root),
-                            "branch",
-                            "-D",
-                            self.branch,
-                        ],
+                        ["git", "-C", str(self._repo_root), "branch", "-D", self.branch],
                         capture_output=True,
                     )
             except Exception:
-                # Attempt best-effort cleanup even if something above failed, then
-                # re-raise so the caller knows something went wrong.
+                # Best-effort cleanup: remove the worktree if still present,
+                # then re-raise so the caller knows something went wrong.
                 subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(self._repo_root),
-                        "worktree",
-                        "remove",
-                        "--force",
-                        str(self.path),
-                    ],
+                    ["git", "-C", str(self._repo_root), "worktree", "remove",
+                     "--force", str(self.path)],
                     capture_output=True,
                 )
                 raise

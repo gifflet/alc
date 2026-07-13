@@ -8,6 +8,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from alc.commitmsg import make_commit_message_provider
 from alc.events import bind_run_log, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import load_blueprint, load_flow, load_specialist
@@ -95,11 +96,22 @@ def _run_unit(
                 except (KeyError, IndexError, ValueError):
                     commit_message = f"chore(auto): {flow.name}"
 
+        # Build the commit-message provider for this unit. For a committing flow
+        # the fallback is the already-rendered message; for a specialist/blueprint
+        # the fallback contains {branch} so the worktree fills it via replace.
+        message_provider = make_commit_message_provider(
+            manifest=manifest,
+            operator_layer=operator_layer,
+            workdir=repo_root,  # resolved after wt.path is known; close enough
+            fallback=commit_message,
+            engine_override=engine_override,
+        )
         wt = IsolatedWorktree(
             repo_root,
             label=f"fanout-{name}",
             commit_message=commit_message,
             exclude_paths=((".alc/",) if is_committing_flow else ()),
+            message_provider=message_provider,
         )
         # Use the context manager manually so we can inspect wt after __exit__
         # (mirrors cli.py: enter -> run -> __exit__ under try/finally).
