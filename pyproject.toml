@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "alc"
-version = "0.35.0"
+version = "0.35.1"
 description = "ALC — Agentic Layer Compiler & Runtime: a control plane for agentic coding."
 requires-python = ">=3.12"
 dependencies = [

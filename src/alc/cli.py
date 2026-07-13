@@ -9,6 +9,36 @@ import sys
 from pathlib import Path
 
 
+class _ResilientStderr:
+    """Wrap a stream so PROGRESS writes never crash the work on a closed reader.
+
+    When ALC runs as a subprocess (the web IDE's exec, a cron drain) and the read
+    end of stderr closes mid-run — a cancelled exec, a disconnected client — a
+    plain ``print(..., file=sys.stderr)`` raises BrokenPipeError. Unguarded, that
+    propagates out of an engine turn and fails the task with a spurious traceback
+    (which then becomes a retry's "feedback"). Swallowing the write error keeps a
+    broken progress pipe from ever failing the actual work.
+    """
+
+    def __init__(self, wrapped: object) -> None:
+        self._wrapped = wrapped
+
+    def write(self, s: str) -> int:
+        try:
+            return self._wrapped.write(s)
+        except (BrokenPipeError, OSError):
+            return len(s)
+
+    def flush(self) -> None:
+        try:
+            self._wrapped.flush()
+        except (BrokenPipeError, OSError):
+            pass
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._wrapped, name)
+
+
 def _find_operator_layer() -> Path:
     """Return the .alc/ directory, searching from cwd upward."""
     cwd = Path.cwd()
@@ -983,6 +1013,9 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 def main() -> None:
     """Console-script entrypoint."""
+    # A broken stderr pipe (cancelled exec / disconnected client) must never crash
+    # the work — only the progress output is lost. Guard every stderr write once.
+    sys.stderr = _ResilientStderr(sys.stderr)  # type: ignore[assignment]
     parser = argparse.ArgumentParser(
         prog="alc",
         description="ALC — Agentic Layer Compiler & Runtime",
