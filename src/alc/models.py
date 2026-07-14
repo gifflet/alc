@@ -139,6 +139,10 @@ class Manifest(BaseModel):
     fanout_concurrency: int = 4     # parallel workers for `alc conduct --parallel`
     plan_tier: str = "standard"     # compute tier for Conductor planning turns
     check_output_chars: int = 4096  # chars captured from a check's output into repair context
+    # Per-check wall-clock kill deadline. A hung check (e.g. a test leaving an open
+    # handle) would otherwise freeze the whole drain forever; ALC kills it (and its
+    # child process group) after this and reports the check as timed out.
+    check_timeout_s: int = 600
     bundle_output_chars: int = 1500  # chars of output_text kept in a bundle replay summary
     # Per-task retry cap for the queue drain. 0 = OFF = current behavior: a failed
     # task is re-enqueued with the failure feedback only while qt.retries < this.

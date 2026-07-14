@@ -148,16 +148,24 @@ class AssuranceLoop:
                 attempt=attempt_index,
                 checks=[c.name for c in checks],
             )
-            check_results = self._verifier.run(checks, request.workdir)
-            for cr in check_results:
-                # output_tail reuses the verifier's already-truncated output.
-                emit(
+            # Emit check_started/check_finished in REAL TIME (per check) so a slow or
+            # HUNG check is visible as it runs — which check, and whether it timed out
+            # — instead of a silent freeze while it blocks the drain.
+            check_results = self._verifier.run(
+                checks,
+                request.workdir,
+                on_check_start=lambda name, a=attempt_index: emit(
+                    "check_started", attempt=a, name=name
+                ),
+                on_check_done=lambda cr, a=attempt_index: emit(
                     "check_finished",
-                    attempt=attempt_index,
+                    attempt=a,
                     name=cr.name,
                     passed=cr.passed,
                     output_tail=cr.output,
-                )
+                    timed_out=cr.timed_out,
+                ),
+            )
             failed = [cr for cr in check_results if not cr.passed]
 
             attempts.append(

@@ -132,4 +132,13 @@ describe('describeEvent', () => {
     const label = describeEvent({ ts: 't', event: 'engine_activity', note: 'Bash: grep -rn STEPS .' })
     expect(label).toBe('↳ Bash: grep -rn STEPS .')
   })
+  it('labels a running check so a hang is attributable', () => {
+    expect(describeEvent({ ts: 't', event: 'check_started', name: 'test' })).toBe('Check test running…')
+  })
+  it('surfaces a timed-out check distinctly from a plain failure', () => {
+    const timedOut = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: false, timed_out: true })
+    expect(timedOut).toBe('Check test timed out ⏱')
+    const failed = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: false })
+    expect(failed).toBe('Check test failed')
+  })
 })

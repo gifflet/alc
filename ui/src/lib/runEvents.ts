@@ -232,8 +232,13 @@ export function describeEvent(event: RunEvent): string {
       const checks = Array.isArray(event.checks) ? event.checks.length : 0
       return `Verify attempt ${num(event, 'attempt') + 1} — ${checks} check${checks === 1 ? '' : 's'}`
     }
+    case 'check_started':
+      // Emitted as each check begins so a slow/hung check is visible AS it runs.
+      return `Check ${str(event, 'name')} running…`
     case 'check_finished':
-      return `Check ${str(event, 'name')} ${event.passed ? 'passed' : 'failed'}`
+      return `Check ${str(event, 'name')} ${
+        event.timed_out ? 'timed out ⏱' : event.passed ? 'passed' : 'failed'
+      }`
     case 'mandate_finished':
       return `Mandate finished — ${event.success ? 'success' : 'failure'}`
     case 'flow_started':

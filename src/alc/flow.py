@@ -260,7 +260,8 @@ class FlowRunner:
                 # Verify-only stage: run checks as a pure gate — no engine turn.
                 wd = workdir or Path.cwd()
                 check_results = Verifier(
-                    max_output_chars=self._manifest.check_output_chars
+                    max_output_chars=self._manifest.check_output_chars,
+                    timeout_s=self._manifest.check_timeout_s,
                 ).run(resolve_checks(self._manifest, blueprint), wd)
                 all_passed = all(cr.passed for cr in check_results)
                 summary_lines = [

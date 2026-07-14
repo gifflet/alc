@@ -172,6 +172,7 @@ class TestMandateIntegration:
             "act_started",
             "act_finished",
             "verify_started",
+            "check_started",
             "check_finished",
             "mandate_finished",
         ]

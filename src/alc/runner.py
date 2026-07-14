@@ -264,7 +264,9 @@ def execute_mandate(
     state_before = _git_state(effective_workdir)
 
     # Run the Assurance Loop — use Blueprint's repair budget when set, else keep default.
-    verifier = Verifier(max_output_chars=manifest.check_output_chars)
+    verifier = Verifier(
+        max_output_chars=manifest.check_output_chars, timeout_s=manifest.check_timeout_s
+    )
     loop_kwargs: dict = {}
     if blueprint.max_repairs is not None:
         loop_kwargs["max_repairs"] = blueprint.max_repairs
