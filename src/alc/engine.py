@@ -76,31 +76,49 @@ class ProgressPrinter:
     """
 
     def __init__(
-        self, prefix: str = "    • ", max_width: int = 100, max_lines: int = 500
+        self,
+        prefix: str = "    • ",
+        max_width: int = 100,
+        max_lines: int = 500,
+        event: str | None = None,
     ) -> None:
         self._prefix = prefix
         self._max_width = max_width
         self._max_lines = max_lines
+        # When set, each PRINTED line is also persisted to the bound run log as
+        # emit(event, note=<full line>) — engine-agnostic: any adapter that routes
+        # granular activity (tool uses, notes) through a printer with an event name
+        # gets it in the run detail, with zero per-engine code.
+        self._event = event
         self._lock = threading.Lock()
         self._printed = 0
         self._suppressed = 0
         self._last: str | None = None
 
     def emit(self, line: str) -> None:
-        """Print one progress line, subject to truncate / collapse-repeat / cap."""
+        """Print one progress line, subject to truncate / collapse-repeat / cap.
+
+        When constructed with an ``event`` name, the (untruncated) line is also
+        appended to the bound run log — the run detail's engine-activity feed. That
+        emission is best-effort and a no-op when no run log is bound.
+        """
         line = line.strip()
         if not line:
             return
-        line = line[: self._max_width]
+        truncated = line[: self._max_width]
         with self._lock:
-            if line == self._last:
+            if truncated == self._last:
                 return
-            self._last = line
+            self._last = truncated
             if self._printed >= self._max_lines:
                 self._suppressed += 1
                 return
             self._printed += 1
-        print(f"{self._prefix}{line}", file=sys.stderr, flush=True)
+        print(f"{self._prefix}{truncated}", file=sys.stderr, flush=True)
+        if self._event:
+            from alc.events import emit as emit_event
+
+            emit_event(self._event, note=line)
 
     def close(self) -> None:
         """Emit a one-line summary if the cap suppressed any lines. Idempotent."""

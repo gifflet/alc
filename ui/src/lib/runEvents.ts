@@ -248,6 +248,11 @@ export function describeEvent(event: RunEvent): string {
       return `Task ${str(event, 'name')} (${str(event, 'kind')})`
     case 'task_finished':
       return `Task finished — ${event.success ? 'success' : 'failure'}`
+    case 'engine_activity':
+      // The engine's granular activity (Bash/Read/Edit/… for claude-code; the
+      // model's notes for others) — nested under the macro events so an operator
+      // sees WHAT the engine actually did, engine-agnostically.
+      return `↳ ${str(event, 'note') ?? 'activity'}`
     default:
       return event.event
   }

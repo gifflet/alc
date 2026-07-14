@@ -128,4 +128,8 @@ describe('describeEvent', () => {
   it('labels a passing check', () => {
     expect(describeEvent(MANDATE_RUN[4])).toContain('smoke')
   })
+  it('nests engine activity (tool uses) under the macro events', () => {
+    const label = describeEvent({ ts: 't', event: 'engine_activity', note: 'Bash: grep -rn STEPS .' })
+    expect(label).toBe('↳ Bash: grep -rn STEPS .')
+  })
 })

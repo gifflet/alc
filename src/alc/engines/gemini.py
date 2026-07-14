@@ -131,7 +131,9 @@ class GeminiEngine:
         # few lines + a summary); the stdout progress stream gets a generous cap.
         # Both collapse consecutive repeats and truncate — generic, content-agnostic.
         err_printer = ProgressPrinter(max_lines=6)
-        note_printer = ProgressPrinter()
+        # The event name persists each note to the run log for the detail's activity
+        # feed — engine-agnostic (the stderr printer above stays unpersisted).
+        note_printer = ProgressPrinter(event="engine_activity")
 
         try:
             proc = subprocess.Popen(

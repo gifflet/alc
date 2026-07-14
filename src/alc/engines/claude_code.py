@@ -106,7 +106,8 @@ class ClaudeCodeEngine:
         start = time.monotonic()
         # Route tool-call notes through the shared progress printer (collapse repeats,
         # truncate, and a generous cap) — the same generic noise control every engine uses.
-        printer = ProgressPrinter()
+        # The event name persists each note to the run log for the detail's activity feed.
+        printer = ProgressPrinter(event="engine_activity")
 
         try:
             proc = subprocess.Popen(
