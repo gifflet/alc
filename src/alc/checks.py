@@ -1,11 +1,20 @@
-# checks.py — `alc checks audit`: re-detect the project's stack(s), compare
-# against the Manifest's current check_sets and each Blueprint's resolved
-# checks, and PROPOSE upgrades. Pure/read-only: this module never writes —
-# proposing is the whole job (roadmap-phase-2.md T13). The CLI (`alc checks
-# audit`) prints what this returns; applying a proposal is a manual edit or
-# `alc team hire --force`.
+# checks.py — `alc checks audit` and `alc checks history`: two read-only
+# `alc checks` actions.
+#
+# `audit` re-detects the project's stack(s), compares against the Manifest's
+# current check_sets and each Blueprint's resolved checks, and PROPOSES
+# upgrades (roadmap-phase-2.md T13).
+#
+# `history` aggregates the run logs' `check_finished` events (roadmap-phase-3.md
+# T10) into per-check pass-rate, mean duration, and a flake score — the data
+# `flaky: N` (T11) and a quarantine decision are read against.
+#
+# Both are pure/read-only: neither ever writes — proposing/reporting is the
+# whole job. The CLI (`alc checks <action>`) prints what these return; applying
+# an audit proposal is a manual edit or `alc team hire --force`.
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,3 +111,101 @@ def audit_checks(
     ]
 
     return ChecksAudit(check_sets=check_sets, smoke_only_blueprints=smoke_only_blueprints)
+
+
+# ---------------------------------------------------------------------------
+# `alc checks history` (roadmap-phase-3.md T10)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CheckHistory:
+    """Aggregate history for one check, computed from every ``check_finished``
+    event across the run logs.
+
+    ``flake_score`` is the fraction of consecutive pass/fail TRANSITIONS in
+    chronological order — 0.0 means the outcome never flips (whether it always
+    passes or is simply always broken), 1.0 means it flips on every single run.
+    Only alternating outcomes raise it, so a check that is consistently broken
+    is not conflated with one that is actually flaky.
+    """
+
+    name: str
+    runs: int
+    passes: int
+    pass_rate: float
+    mean_duration_s: float
+    flake_score: float
+
+
+def _iter_check_finished(runs_dir: Path):
+    """Yield every well-formed ``check_finished`` event under *runs_dir*.
+
+    Chronological order: run-log files are named ``<UTCts>-...`` (see
+    ``events.new_run_log_path``), so sorting by filename sorts by time; within
+    one file, events are already in the order they were appended. Best-effort:
+    an unreadable file, a malformed JSON line, or an event missing the fields
+    this needs is skipped rather than aborting the whole aggregation.
+    """
+    if not runs_dir.is_dir():
+        return
+    for log_file in sorted(runs_dir.glob("*.jsonl")):
+        try:
+            lines = log_file.read_text().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                event.get("event") != "check_finished"
+                or not isinstance(event.get("name"), str)
+                or not isinstance(event.get("passed"), bool)
+            ):
+                continue
+            yield event
+
+
+def check_history(runs_dir: Path) -> list[CheckHistory]:
+    """Aggregate every ``check_finished`` event under *runs_dir*, per check name.
+
+    ``duration_s`` is additive (roadmap-phase-3.md T9): an event from an OLDER
+    run log that lacks it is still counted for pass-rate/flake-score, just
+    excluded from the mean-duration average.
+
+    Returns one CheckHistory per check name that appeared at least once,
+    sorted by name. An absent or empty runs_dir yields an empty list.
+    """
+    passed_by_name: dict[str, list[bool]] = {}
+    durations_by_name: dict[str, list[float]] = {}
+
+    for event in _iter_check_finished(runs_dir):
+        name = event["name"]
+        passed_by_name.setdefault(name, []).append(event["passed"])
+        duration = event.get("duration_s")
+        if isinstance(duration, int | float):
+            durations_by_name.setdefault(name, []).append(float(duration))
+
+    history: list[CheckHistory] = []
+    for name in sorted(passed_by_name):
+        outcomes = passed_by_name[name]
+        runs = len(outcomes)
+        passes = sum(1 for p in outcomes if p)
+        transitions = sum(1 for a, b in zip(outcomes, outcomes[1:], strict=False) if a != b)
+        durations = durations_by_name.get(name, [])
+        history.append(
+            CheckHistory(
+                name=name,
+                runs=runs,
+                passes=passes,
+                pass_rate=passes / runs,
+                mean_duration_s=(sum(durations) / len(durations)) if durations else 0.0,
+                flake_score=(transitions / (runs - 1)) if runs > 1 else 0.0,
+            )
+        )
+    return history

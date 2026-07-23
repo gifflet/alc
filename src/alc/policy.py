@@ -65,6 +65,12 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           never match a changed
                                                           -file path, silently
                                                           protecting nothing.
+    13. manifest.quarantined_checks, for each name listed  (warn) — PERMANENT for
+                                                          as long as it is listed
+                                                          (roadmap-phase-3.md T11):
+                                                          a quarantine that the
+                                                          lint stays silent about
+                                                          would be invisible debt.
 
     Rule 1 is the ONE relaxation in the whole gate (roadmap-phase-3.md T1): a
     Blueprint declaring `mode: spike` still gets flagged for having no checks,
@@ -82,6 +88,21 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     planning stage legitimately produces no executable code.
     """
     violations: list[Violation] = []
+
+    # Rule 13: every quarantined check is a PERMANENT warn for as long as it is
+    # listed — a quarantine the lint stays silent about would be invisible debt.
+    for name in manifest.quarantined_checks:
+        violations.append(
+            Violation(
+                rule="quarantined-check",
+                severity="warn",
+                message=(
+                    f"Check '{name}' is quarantined (manifest.quarantined_checks) — "
+                    "it still runs but cannot fail a run. Remove it from the list "
+                    "once it is reliable again."
+                ),
+            )
+        )
 
     # Rule 4: default_engine must be declared in manifest.engines.
     if manifest.default_engine not in manifest.engines:

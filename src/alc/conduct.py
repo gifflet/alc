@@ -510,6 +510,7 @@ def dispatch_enqueue(
     engine_override: str | None = None,
     isolate: bool = True,
     prefix: str = "conduct",
+    priority: int = 0,
 ) -> list[str]:
     """Write one queue task YAML file per PlannedUnit item.
 
@@ -532,6 +533,8 @@ def dispatch_enqueue(
             so demand tasks share the workdir.
         prefix: Filename prefix that records provenance. Default ``conduct`` (the
             Conductor); the ``kind: plan`` replenish passes ``plan``.
+        priority: Value written as each task's ``priority`` field (0 = omitted,
+            keeping files legacy-clean and the drain order byte-identical).
 
     Returns:
         Sorted list of filenames (stems only, not full paths) that were written.
@@ -570,6 +573,8 @@ def dispatch_enqueue(
             task_data["id"] = item.id
         if item.depends_on:
             task_data["depends_on"] = item.depends_on
+        if priority:
+            task_data["priority"] = priority
 
         (queue_dir / filename).write_text(yaml.safe_dump(task_data, sort_keys=True))
         written.append(filename)

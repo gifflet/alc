@@ -1395,7 +1395,7 @@ def _enqueue_entries_from_file(path: Path) -> list[dict]:
 def cmd_enqueue(args: argparse.Namespace) -> int:
     """Run `alc enqueue <name> "<task>" [--kind flow|specialist] [--engine NAME] \
 [--isolate/--no-isolate] [--id ID] [--depends-on ID] [--touches PATH] \
-[--from-file PATH] [--json]`.
+[--priority N] [--from-file PATH] [--json]`.
 
     Writes queue task file(s) straight to disk — no planner turn. Each item's
     target unit is validated (``load_flow`` / ``load_specialist``) BEFORE
@@ -1465,6 +1465,7 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
         engine_override=args.engine,
         isolate=args.isolate,
         prefix="enqueue",
+        priority=getattr(args, "priority", 0),
     )
 
     if getattr(args, "json", False):
@@ -1985,7 +1986,9 @@ def cmd_runs(args: argparse.Namespace) -> int:
 
 
 def cmd_checks(args: argparse.Namespace) -> int:
-    """Run `alc checks <action>`: dispatch to the one action, `audit`, today."""
+    """Run `alc checks <action>`: dispatch to `audit` or `history`."""
+    if args.checks_action == "history":
+        return _checks_history(args)
     return _checks_audit(args)
 
 
@@ -2031,6 +2034,42 @@ def _checks_audit(args: argparse.Namespace) -> int:
         print(
             f"Blueprint '{bp.blueprint}' resolves to only the smoke placeholder while "
             f"{stacks_desc} is detected — consider wiring real checks."
+        )
+
+    return 0
+
+
+def _checks_history(args: argparse.Namespace) -> int:
+    """`alc checks history [--json]`: pass-rate, mean duration and a flake score
+    per check, aggregated from the run logs' `check_finished` events.
+
+    Sibling action to `audit` (roadmap-phase-3.md T10) — never writes.
+    """
+    from dataclasses import asdict
+
+    from alc.checks import check_history
+    from alc.intake import load_manifest
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    runs_dir = operator_layer.parent / manifest.runs_dir
+
+    history = check_history(runs_dir)
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json([asdict(h) for h in history])
+        return 0
+
+    if not history:
+        print("No check history yet — run `alc run`/`alc tick` to populate the run logs.")
+        return 0
+
+    for h in history:
+        print(
+            f"{h.name}: pass_rate={h.pass_rate:.0%} runs={h.runs} "
+            f"mean_duration={h.mean_duration_s:.2f}s flake_score={h.flake_score:.2f}"
         )
 
     return 0
@@ -2373,6 +2412,17 @@ def main() -> None:
         help=(
             "File path/glob this unit will edit; overlapping touches are "
             "serialized automatically (repeatable)."
+        ),
+    )
+    enqueue_parser.add_argument(
+        "--priority",
+        dest="priority",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Tie-breaker among tasks ready in the same dependency wave, higher "
+            "runs first (default 0)."
         ),
     )
     enqueue_parser.add_argument(
@@ -2923,6 +2973,20 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Output the proposal as JSON (machine-readable).",
+    )
+
+    checks_history_parser = checks_subparsers.add_parser(
+        "history",
+        help=(
+            "Aggregate the run logs' check_finished events into per-check "
+            "pass-rate, mean duration, and a flake score; never writes."
+        ),
+    )
+    checks_history_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the history as JSON (machine-readable).",
     )
 
     # alc ui [--host H] [--port P] [--ui-dist PATH]

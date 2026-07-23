@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from alc.models import Check
@@ -22,6 +23,8 @@ class CheckResult:
     name: str
     passed: bool
     output: str  # combined stdout + stderr, truncated to _MAX_OUTPUT_CHARS
+    duration_s: float = 0.0  # wall-clock time spent running this check (all attempts)
+    exit_code: int | None = None  # the process's return code; None if it never started
     timed_out: bool = False  # the check was KILLED for exceeding the timeout
 
 
@@ -73,9 +76,32 @@ class Verifier:
         return results
 
     def _run_one(self, check: Check, workdir: Path) -> CheckResult:
-        """Run one check, bounded by the timeout; kill its whole process group on hang."""
+        """Run ``check``, bounded by the timeout; kill its whole process group on hang.
+
+        When ``check.flaky`` is set, a FAILING attempt is re-run up to that many
+        times — seconds spent here, in the Verifier, are cheap next to an engine
+        repair turn. The first PASS wins. Each attempt gets its OWN full
+        ``timeout_s`` budget: a flaky rerun is a fresh process, not a continuation
+        of a timed-out one, so the timeout is never divided or shrunk across
+        retries. The returned ``duration_s`` is the SUM of every attempt's wall
+        time — the check's real cost, visible in per-check history (`alc checks
+        history`) — while ``passed``/``output``/``exit_code``/``timed_out``
+        reflect only the LAST (deciding) attempt.
+        """
+        result = self._run_once(check, workdir)
+        total_duration = result.duration_s
+        retries_left = check.flaky
+        while not result.passed and retries_left > 0:
+            retries_left -= 1
+            result = self._run_once(check, workdir)
+            total_duration += result.duration_s
+        return replace(result, duration_s=total_duration)
+
+    def _run_once(self, check: Check, workdir: Path) -> CheckResult:
+        """Run ``check`` exactly ONE time and return that single attempt's result."""
         # The Check model guarantees exactly one of shell/command is set.
         argv = ["sh", "-c", check.shell] if check.shell is not None else check.command
+        start = time.monotonic()
         try:
             proc = subprocess.Popen(
                 argv,
@@ -87,14 +113,21 @@ class Verifier:
             )
         except (FileNotFoundError, OSError) as exc:
             return CheckResult(
-                name=check.name, passed=False, output=f"check could not start: {exc}"
+                name=check.name,
+                passed=False,
+                output=f"check could not start: {exc}",
+                duration_s=time.monotonic() - start,
             )
 
         try:
             stdout, stderr = proc.communicate(timeout=self._timeout_s)
             combined = ((stdout or "") + (stderr or ""))[: self._max_output_chars]
             return CheckResult(
-                name=check.name, passed=(proc.returncode == 0), output=combined
+                name=check.name,
+                passed=(proc.returncode == 0),
+                output=combined,
+                duration_s=time.monotonic() - start,
+                exit_code=proc.returncode,
             )
         except subprocess.TimeoutExpired:
             # Kill the WHOLE process group so a child (e.g. `pnpm` -> `node --test`)
@@ -115,5 +148,7 @@ class Verifier:
                     f"check '{check.name}' timed out after {self._timeout_s}s "
                     f"and was killed.\n{tail}"
                 ),
+                duration_s=time.monotonic() - start,
+                exit_code=proc.returncode,
                 timed_out=True,
             )

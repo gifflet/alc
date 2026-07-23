@@ -594,26 +594,37 @@ def _topological_waves(pending: list[Path]) -> list[list[Path]]:
     deps are only those ids present among the pending tasks (a dep on something
     not in this drain can't block it). Wave 0 is the files with no blocking dep;
     each next wave is the files whose blocking deps all landed in earlier waves.
-    Each wave is sorted by filename for determinism.
+    Each wave is ordered by ``(-priority, filename)`` — dependency ordering stays
+    authoritative (it decides which WAVE a file lands in); priority only breaks
+    ties AMONG files already ready in the same wave, higher priority first.
 
-    With NO ``depends_on`` anywhere, wave 0 already holds every file, so the
-    result is exactly ``[sorted(pending)]`` — one wave, byte-identical to the
-    pre-change single drain.
+    With NO ``depends_on`` anywhere and every task at the default priority (0),
+    wave 0 already holds every file in filename order, so the result is exactly
+    ``[sorted(pending)]`` — one wave, byte-identical to the pre-change single
+    drain.
 
     A dependency cycle (files remain but none is ready) never deadlocks: the
-    remaining files collapse into one final wave and a WARNING is printed.
+    remaining files collapse into one final wave (also priority-ordered) and a
+    WARNING is printed.
     """
-    # Read each file's id + deps once (unreadable -> no id, no deps).
+    # Read each file's id + deps + priority once (unreadable -> no id, no deps,
+    # priority 0).
     deps_by_file: dict[Path, list[str]] = {}
     id_by_file: dict[Path, str | None] = {}
+    priority_by_file: dict[Path, int] = {}
     for task_file in pending:
         try:
             qt = QueueTask.model_validate(yaml.safe_load(task_file.read_text()))
             id_by_file[task_file] = qt.id
             deps_by_file[task_file] = list(qt.depends_on)
+            priority_by_file[task_file] = qt.priority
         except Exception:
             id_by_file[task_file] = None
             deps_by_file[task_file] = []
+            priority_by_file[task_file] = 0
+
+    def _order_key(f: Path) -> tuple[int, Path]:
+        return (-priority_by_file[f], f)
 
     pending_ids = {id_by_file[f] for f in pending if id_by_file[f] is not None}
     # Blocking deps = declared deps that name an id present in THIS drain.
@@ -626,17 +637,19 @@ def _topological_waves(pending: list[Path]) -> list[list[Path]]:
     resolved_ids: set[str] = set()
 
     while remaining:
-        ready = sorted(f for f in remaining if blocking[f] <= resolved_ids)
+        ready = sorted(
+            (f for f in remaining if blocking[f] <= resolved_ids), key=_order_key
+        )
         if not ready:
             # A cycle among the remaining files — never deadlock: emit one final
-            # wave with everything left and warn (deterministic filename order).
+            # wave with everything left and warn (priority, then filename order).
             print(
                 "[drain] WARNING: dependency cycle detected; running remaining "
                 f"{len(remaining)} task(s) in one wave.",
                 file=sys.stderr,
                 flush=True,
             )
-            waves.append(sorted(remaining))
+            waves.append(sorted(remaining, key=_order_key))
             break
         waves.append(ready)
         for f in ready:

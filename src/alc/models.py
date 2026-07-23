@@ -21,6 +21,10 @@ class Check(BaseModel):
     name: str
     command: list[str] | None = None  # e.g. ["pytest", "-q"]
     shell: str | None = None          # e.g. 'test -z "$(git status --porcelain)"'
+    # How many times the Verifier re-runs THIS check after a FAILING attempt,
+    # before the control plane spends a repair engine turn on it (roadmap-phase-3.md
+    # T11) — seconds against a model call. 0 (default) = no rerun, byte-identical.
+    flaky: int = 0
 
     @model_validator(mode="after")
     def _exactly_one_form(self) -> "Check":
@@ -30,6 +34,13 @@ class Check(BaseModel):
                 f"Check '{self.name}' must declare exactly one of 'command' or 'shell'."
             )
         return self
+
+    @field_validator("flaky")
+    @classmethod
+    def _flaky_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("Check.flaky must be >= 0.")
+        return v
 
 
 class ReportSpec(BaseModel):
@@ -197,6 +208,33 @@ class Manifest(BaseModel):
     loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
     runs_dir: str = ".alc/runs"         # Structured per-run event logs (observability)
     variants_dir: str = ".alc/variants"  # Archived `alc explore` variant reports (`compare`/`adopt`)
+    # Declarative quarantine (roadmap-phase-3.md T11): a check named here still RUNS
+    # every attempt, but a failure of it can never fail the run — the AssuranceLoop
+    # excludes it from the checks that block success/trigger repair. It stays fully
+    # VISIBLE (recorded as failed in the run log and the report) so quarantine is
+    # never invisible debt, and the Policy Gate emits a PERMANENT warn for as long
+    # as it is listed. Empty (default) -> no-op, byte-identical.
+    quarantined_checks: list[str] = []
+
+
+class CheckOutcome(BaseModel):
+    """Full per-check record within one AttemptRecord (roadmap-phase-3.md T9).
+
+    Additive alongside ``AttemptRecord.failed_checks`` (kept working exactly as
+    before, for its existing readers): EVERY check run in the attempt appears
+    here, pass or fail, with its duration and exit code — the data `alc checks
+    history` and a quarantine both need. An old report parses fine with this
+    list simply empty (default ``[]``).
+    """
+
+    name: str
+    passed: bool
+    duration_s: float = 0.0
+    exit_code: int | None = None
+    timed_out: bool = False
+    # True when this check is named in manifest.quarantined_checks — a failure
+    # here is recorded (passed=False) but was NOT allowed to fail the run.
+    quarantined: bool = False
 
 
 class AttemptRecord(BaseModel):
@@ -205,6 +243,10 @@ class AttemptRecord(BaseModel):
     index: int
     engine_ok: bool
     failed_checks: list[str]
+    # Every check's full outcome for this attempt (roadmap-phase-3.md T9) — additive,
+    # default [] so an old report (with no `checks` key) still parses. `failed_checks`
+    # above is unchanged and keeps working exactly as it does today.
+    checks: list[CheckOutcome] = []
 
 
 class Scorecard(BaseModel):
@@ -358,6 +400,12 @@ class QueueTask(BaseModel):
     # ids of pending tasks this one builds on / shares files with; the waved drain
     # runs it only AFTER each precedent has merged. Empty = no blocking dependency.
     depends_on: list[str] = []
+    # Tie-breaker WITHIN a topological wave: the drain orders each wave by
+    # (-priority, filename), higher first. Dependency ordering stays authoritative
+    # — priority can never move a task ahead of one it depends on, it only decides
+    # who goes first among tasks that are ALREADY ready. Default 0 = today's
+    # filename-only ordering (byte-identical).
+    priority: int = 0
 
     def unit_name(self) -> str:
         """Return the unit name to dispatch: ``name`` when set, else ``flow``."""

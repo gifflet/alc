@@ -48,6 +48,32 @@ class TestVerifierTimeout:
         assert result.timed_out is False
 
 
+class TestVerifierOutcome:
+    def test_passing_check_reports_duration_and_exit_code(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run([Check(name="ok", command=["true"])], tmp_path)
+        assert result.exit_code == 0
+        assert result.duration_s >= 0.0
+
+    def test_failing_check_reports_nonzero_exit_code(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="boom", shell="exit 7")], tmp_path
+        )
+        assert result.exit_code == 7
+        assert result.duration_s >= 0.0
+
+    def test_check_that_cannot_start_has_no_exit_code(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="missing", command=["no-such-binary-xyz"])], tmp_path
+        )
+        assert result.passed is False
+        assert result.exit_code is None
+
+    def test_timed_out_check_still_reports_a_duration(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=1).run([Check(name="hang", shell="sleep 30")], tmp_path)
+        assert result.timed_out is True
+        assert result.duration_s >= 1.0
+
+
 class TestVerifierCallbacks:
     def test_callbacks_fire_per_check_in_order(self, tmp_path: Path) -> None:
         started: list[str] = []

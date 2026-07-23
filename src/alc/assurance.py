@@ -9,7 +9,7 @@ from fnmatch import fnmatch
 
 from alc.engine import Engine, EngineRequest, Usage
 from alc.events import emit
-from alc.models import AttemptRecord, Check, RunReport, Scorecard
+from alc.models import AttemptRecord, Check, CheckOutcome, RunReport, Scorecard
 from alc.prompts import _REPAIR_TEMPLATE
 from alc.verifier import CheckResult, Verifier
 
@@ -79,6 +79,11 @@ class AssuranceLoop:
                      workdir, called once per attempt. Bound by the caller
                      (runner.py) so this loop never gains a git dependency of
                      its own. Ignored when ``protect`` is empty.
+        quarantined: Check NAMES (manifest.quarantined_checks) that RUN but can
+                     never fail the run nor trigger a repair turn — a failure of
+                     one is still recorded (visible in the run log/report as
+                     failed), just excluded from what blocks success. Empty
+                     (default) -> no-op, byte-identical.
     """
 
     def __init__(
@@ -89,6 +94,7 @@ class AssuranceLoop:
         repair_template: str = _REPAIR_TEMPLATE,
         protect: list[str] | None = None,
         changed_files: Callable[[], list[str]] | None = None,
+        quarantined: list[str] | None = None,
     ) -> None:
         self._engine = engine
         self._verifier = verifier
@@ -96,6 +102,7 @@ class AssuranceLoop:
         self._repair_template = repair_template
         self._protect = protect or []
         self._changed_files = changed_files
+        self._quarantined = set(quarantined or [])
 
     def run(self, request: EngineRequest, checks: list[Check]) -> RunReport:
         """Execute the loop and return a RunReport with a Scorecard.
@@ -179,26 +186,53 @@ class AssuranceLoop:
                     passed=cr.passed,
                     output_tail=cr.output,
                     timed_out=cr.timed_out,
+                    duration_s=cr.duration_s,
+                    exit_code=cr.exit_code,
                 ),
             )
             protect_violation = self._check_protect()
             if protect_violation is not None:
                 check_results = [*check_results, protect_violation]
             failed = [cr for cr in check_results if not cr.passed]
+            # A quarantined check still RUNS and its failure is fully recorded
+            # (failed_checks, checks below) — it is simply excluded from what
+            # blocks success or spends a repair turn (roadmap-phase-3.md T11).
+            blocking_failed = [cr for cr in failed if cr.name not in self._quarantined]
+            quarantined_failed = [cr for cr in failed if cr.name in self._quarantined]
 
             attempts.append(
                 AttemptRecord(
                     index=attempt_index,
                     engine_ok=result.ok,
                     failed_checks=[cr.name for cr in failed],
+                    checks=[
+                        CheckOutcome(
+                            name=cr.name,
+                            passed=cr.passed,
+                            duration_s=cr.duration_s,
+                            exit_code=cr.exit_code,
+                            timed_out=cr.timed_out,
+                            quarantined=cr.name in self._quarantined,
+                        )
+                        for cr in check_results
+                    ],
                 )
             )
 
-            if not failed:
-                # All checks pass — success.
-                print("  ✓ all checks passed", file=sys.stderr, flush=True)
+            if not blocking_failed:
+                # Every BLOCKING check passes — success (a quarantined failure
+                # never fails the run, but stays visible in the log above).
+                if quarantined_failed:
+                    print(
+                        "  ✓ checks passed (quarantined failure ignored: "
+                        f"{', '.join(cr.name for cr in quarantined_failed)})",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                else:
+                    print("  ✓ all checks passed", file=sys.stderr, flush=True)
                 scorecard = Scorecard(
-                    span=len(check_results),
+                    span=sum(1 for cr in check_results if cr.passed),
                     passes=attempt_index + 1,
                     streak=1 if attempt_index == 0 else 0,
                     touch=0,
@@ -224,8 +258,9 @@ class AssuranceLoop:
                 break
 
             print("  → repairing…", file=sys.stderr, flush=True)
-            # --- Repair: compose a new directive with failure context ---
-            failure_section = self._build_failure_section(failed)
+            # --- Repair: compose a new directive with failure context — only the
+            # BLOCKING failures (a quarantined one never earns a repair turn).
+            failure_section = self._build_failure_section(blocking_failed)
             repair_directive = current_request.directive + failure_section
             current_request = EngineRequest(
                 directive=repair_directive,

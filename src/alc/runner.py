@@ -337,6 +337,10 @@ def execute_mandate(
         # never learns anything about git (see AssuranceLoop.__init__).
         loop_kwargs["protect"] = blueprint.protect
         loop_kwargs["changed_files"] = lambda: _changed_so_far(effective_workdir, state_before)
+    if manifest.quarantined_checks:
+        # T11: a manifest-declared quarantine still runs but can never fail the
+        # run or spend a repair turn (see AssuranceLoop.__init__).
+        loop_kwargs["quarantined"] = manifest.quarantined_checks
     if operator_layer is not None:
         # Resolve the reserved `repair` prompt through the override registry.
         from alc.prompts import resolve_prompt
