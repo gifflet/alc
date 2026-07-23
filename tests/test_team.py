@@ -261,13 +261,24 @@ class TestInitStage:
         assert "maintainer: hired" in out
         assert "grower: hired" in out
 
-    def test_pre_pmf_stage_hires_builder(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_pre_pmf_stage_hires_the_full_promised_combo(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
+        # roadmap-phase-3.md T3: the Prototyper pack completes the five packs, so
+        # `alc init --stage pre-pmf` finally installs everything it promises
+        # (prototyper + builder + sweeper) instead of reporting prototyper as
+        # "not available yet".
         monkeypatch.chdir(tmp_path)
 
         assert cmd_init(_init_ns(stage="pre-pmf")) == 0
+        out = capsys.readouterr().out
+
         assert (tmp_path / ".alc" / "flows" / "ship-hardened.yaml").is_file()
+        assert (tmp_path / ".alc" / "blueprints" / "spike.md").is_file()
+        assert "prototyper: hired" in out
+        assert "builder: hired" in out
+        assert "sweeper: hired" in out
+        assert "not available yet" not in out
 
     def test_strong_pmf_stage_hires_builder(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

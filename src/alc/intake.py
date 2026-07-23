@@ -106,6 +106,8 @@ def load_blueprint(blueprints_dir: Path, name: str) -> Blueprint:
         timeout_s=fm.get("timeout_s"),
         needs_service=fm.get("needs_service", False),
         archetype=fm.get("archetype"),
+        mode=fm.get("mode"),
+        protect=fm.get("protect") or [],
     )
 
 

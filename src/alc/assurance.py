@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
+from fnmatch import fnmatch
 
 from alc.engine import Engine, EngineRequest, Usage
 from alc.events import emit
 from alc.models import AttemptRecord, Check, RunReport, Scorecard
 from alc.prompts import _REPAIR_TEMPLATE
-from alc.verifier import Verifier
+from alc.verifier import CheckResult, Verifier
 
 
 def _usage_payload(usage: Usage) -> dict[str, int | float | None] | None:
@@ -68,6 +70,15 @@ class AssuranceLoop:
         repair_template: The repair addendum template with a single ``{failures}``
                      placeholder. Defaults to the embedded ``repair`` prompt;
                      execute_mandate passes the resolved override when present.
+        protect: Glob patterns (fnmatch, workdir-relative) an Act must never
+                     touch. After each attempt, ``changed_files()`` is crossed
+                     against these globs; any hit becomes a synthetic failed
+                     check (``protected-paths``) that feeds the same repair
+                     addendum as a real check failure. Empty (default) -> no-op.
+        changed_files: Callable returning the paths changed so far in the run's
+                     workdir, called once per attempt. Bound by the caller
+                     (runner.py) so this loop never gains a git dependency of
+                     its own. Ignored when ``protect`` is empty.
     """
 
     def __init__(
@@ -76,11 +87,15 @@ class AssuranceLoop:
         verifier: Verifier,
         max_repairs: int = 3,
         repair_template: str = _REPAIR_TEMPLATE,
+        protect: list[str] | None = None,
+        changed_files: Callable[[], list[str]] | None = None,
     ) -> None:
         self._engine = engine
         self._verifier = verifier
         self._max_repairs = max_repairs
         self._repair_template = repair_template
+        self._protect = protect or []
+        self._changed_files = changed_files
 
     def run(self, request: EngineRequest, checks: list[Check]) -> RunReport:
         """Execute the loop and return a RunReport with a Scorecard.
@@ -166,6 +181,9 @@ class AssuranceLoop:
                     timed_out=cr.timed_out,
                 ),
             )
+            protect_violation = self._check_protect()
+            if protect_violation is not None:
+                check_results = [*check_results, protect_violation]
             failed = [cr for cr in check_results if not cr.passed]
 
             attempts.append(
@@ -239,6 +257,33 @@ class AssuranceLoop:
             scorecard=scorecard,
             output_text=last_output,
             usage=usage_total,
+        )
+
+    def _check_protect(self) -> CheckResult | None:
+        """Return a synthetic failed CheckResult when this attempt touched a
+        protected path, else None.
+
+        Deterministic and engine-agnostic — fnmatch only, no git/subprocess
+        knowledge here. A no-op when ``protect`` is empty or no ``changed_files``
+        callable was bound (the caller degrades to None outside a git repo).
+        """
+        if not self._protect or self._changed_files is None:
+            return None
+        hits = [
+            path
+            for path in self._changed_files()
+            if any(fnmatch(path, glob) for glob in self._protect)
+        ]
+        if not hits:
+            return None
+        hit_list = "\n".join(f"  - {path}" for path in hits)
+        return CheckResult(
+            name="protected-paths",
+            passed=False,
+            output=(
+                "This attempt edited path(s) protected by the Blueprint's "
+                f"`protect:` globs — revert them:\n{hit_list}"
+            ),
         )
 
     def _build_failure_section(self, failed_checks) -> str:

@@ -50,6 +50,12 @@ class TestPackFilesSweeper:
         files = pack_files("sweeper", stacks=[])
         assert "compute_tier: standard" in files[".alc/blueprints/refactor.md"]
 
+    def test_refactor_blueprint_protects_tests_from_edits(self) -> None:
+        # roadmap-phase-3.md T4: the behavior-preserving guarantee stops being
+        # prose in the workflow and becomes enforcement.
+        content = pack_files("sweeper", stacks=[])[".alc/blueprints/refactor.md"]
+        assert 'protect: ["tests/**", "test/**"]' in content
+
     def test_refactor_blueprint_names_the_real_dead_code_command_per_stack(self) -> None:
         content = pack_files("sweeper", stacks=[])[".alc/blueprints/refactor.md"]
         assert "vulture" in content

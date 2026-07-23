@@ -66,6 +66,23 @@ def _changed_between(
     return sorted(changed)
 
 
+def _changed_so_far(workdir: Path, state_before: dict[str, str] | None) -> list[str]:
+    """Return paths changed in *workdir* since *state_before*, snapshotting fresh.
+
+    Bound into the AssuranceLoop as its ``changed_files`` callable so ``protect:``
+    can detect a violation per attempt, inside the loop — without the loop itself
+    gaining any git knowledge (see AssuranceLoop.__init__). Degrades to an empty
+    list — never raises — when *state_before* is None (not a git repo / git
+    missing) or the current snapshot cannot be read either.
+    """
+    if state_before is None:
+        return []
+    state_now = _git_state(workdir)
+    if state_now is None:
+        return []
+    return _changed_between(state_before, state_now)
+
+
 def _diffstat(
     workdir: Path, changed_files: list[str], state_after: dict[str, str]
 ) -> Diffstat | None:
@@ -309,6 +326,17 @@ def execute_mandate(
     loop_kwargs: dict = {}
     if blueprint.max_repairs is not None:
         loop_kwargs["max_repairs"] = blueprint.max_repairs
+    if blueprint.mode == "spike":
+        # T1: the ONE relaxation of the checks gate comes fenced — a spike gets
+        # exactly one engine turn, never a repair cycle, regardless of the
+        # Blueprint's own max_repairs (if any).
+        loop_kwargs["max_repairs"] = 0
+    if blueprint.protect:
+        # T4: `protect` must be detected PER ATTEMPT, inside the loop — pass the
+        # globs plus a callable that re-snapshots git on demand. The loop itself
+        # never learns anything about git (see AssuranceLoop.__init__).
+        loop_kwargs["protect"] = blueprint.protect
+        loop_kwargs["changed_files"] = lambda: _changed_so_far(effective_workdir, state_before)
     if operator_layer is not None:
         # Resolve the reserved `repair` prompt through the override registry.
         from alc.prompts import resolve_prompt
@@ -330,18 +358,26 @@ def execute_mandate(
         changed_files = _changed_between(state_before, state_after)
         diffstat = _diffstat(effective_workdir, changed_files, state_after)
 
+    scorecard = report.scorecard
+    if blueprint.mode == "spike":
+        # T1: a spike must never count toward the Scorecard's streak — the
+        # relaxed checks gate would otherwise let a "checked nothing" run
+        # masquerade as a disciplined one-shot.
+        scorecard = scorecard.model_copy(update={"streak": 0})
+
     # Patch the report's blueprint field to the real name (not the truncated directive).
     final_report = RunReport(
         blueprint=blueprint.name,
         engine=report.engine,
         success=report.success,
         attempts=report.attempts,
-        scorecard=report.scorecard,
+        scorecard=scorecard,
         output_text=report.output_text,
         changed_files=changed_files,
         diffstat=diffstat,
         usage=report.usage,
         archetype=blueprint.archetype,
+        spike=blueprint.mode == "spike",
     )
 
     # Observe: close the mandate with its outcome and scorecard.

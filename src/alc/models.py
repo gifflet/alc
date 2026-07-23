@@ -77,6 +77,19 @@ class Blueprint(BaseModel):
     # to the Mix Health work of a later phase. Behavior always lives in a named field,
     # never behind this string (see roadmap-phase-2.md's scope decisions).
     archetype: str | None = None
+    # `mode: spike` is the ONE relaxation of the checks gate (roadmap-phase-3.md
+    # T1) — a fenced exception, never a second policy language: Policy Gate rule 1
+    # drops from error to warn ONLY in this mode; the runner forces isolation,
+    # zero repair turns, and forbids commit/auto-merge; RunReport.spike is True and
+    # the run is excluded from the Scorecard streak. None (default) -> today's
+    # gate untouched, byte-identical.
+    mode: Literal["spike"] | None = None
+    # Glob patterns (fnmatch, workdir-relative) an Act must never touch. After each
+    # attempt, the control plane crosses the paths changed so far against these
+    # globs; any hit becomes a synthetic failed check (`protected-paths`) that
+    # feeds the same repair addendum as a real check failure (see assurance.py).
+    # Empty (default) -> no-op, byte-identical.
+    protect: list[str] = []
 
 
 class ProvisionSpec(BaseModel):
@@ -235,6 +248,10 @@ class RunReport(BaseModel):
     # Copied from Blueprint.archetype — reporting only, same zero-runtime-effect
     # contract as the field it mirrors.
     archetype: str | None = None
+    # True when Blueprint.mode == "spike" (roadmap-phase-3.md T1) — the fenced
+    # exception to the checks gate. Marks the run so downstream aggregation
+    # (Scorecard streak, `alc audit`, …) can tell a spike apart from a real demand.
+    spike: bool = False
 
     model_config = {"arbitrary_types_allowed": True}
 

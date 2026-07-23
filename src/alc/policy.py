@@ -58,6 +58,19 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           matching tool binary
                                                           on PATH); see `alc
                                                           checks audit`.
+    12. Blueprint protect globs, when declared, are well-formed relative
+        patterns                                    (error) — an absolute path
+                                                          or one that escapes the
+                                                          workdir via '..' can
+                                                          never match a changed
+                                                          -file path, silently
+                                                          protecting nothing.
+
+    Rule 1 is the ONE relaxation in the whole gate (roadmap-phase-3.md T1): a
+    Blueprint declaring `mode: spike` still gets flagged for having no checks,
+    but only as a warn — the exception is fenced everywhere else (the runner
+    forces isolation/zero-repairs/no-commit; see runner.py and rule 4 of
+    lint_flow below).
 
     Resolved checks = the named check_set's checks (if any) plus the Blueprint's own,
     so a Blueprint that only references a check_set still satisfies rule 1.
@@ -114,11 +127,13 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
             )
 
         # Rule 1: blueprint must resolve to at least one check (own checks + check_set).
+        # `mode: spike` is the ONE relaxation of this gate: still flagged, but only
+        # as a warn, never blocking the run (roadmap-phase-3.md T1).
         if not resolve_checks(manifest, bp):
             violations.append(
                 Violation(
                     rule="blueprint_has_checks",
-                    severity="error",
+                    severity="warn" if bp.mode == "spike" else "error",
                     message=(
                         f"Blueprint '{bp.name}' declares no checks — "
                         "an Assurance Loop without checks provides no guarantee."
@@ -227,6 +242,32 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                 )
             )
 
+        # Rule 12: protect globs, when declared, must be well-formed relative
+        # patterns. A changed-file path is always workdir-relative (git status
+        # output), so an absolute glob or one escaping the workdir via '..' can
+        # never match anything — a silent no-op that defeats the whole point of
+        # declaring `protect:` in the first place.
+        for glob in bp.protect:
+            reason: str | None = None
+            if not glob.strip():
+                reason = "empty"
+            elif Path(glob).is_absolute():
+                reason = "an absolute path"
+            elif ".." in Path(glob).parts:
+                reason = "escapes the workdir via '..'"
+            if reason is not None:
+                violations.append(
+                    Violation(
+                        rule="blueprint-protect-globs-valid",
+                        severity="error",
+                        message=(
+                            f"Blueprint '{bp.name}' declares protect glob '{glob}' "
+                            f"which is {reason} — it can never match a changed-file "
+                            "path (always workdir-relative)."
+                        ),
+                    )
+                )
+
     return violations
 
 
@@ -239,6 +280,7 @@ def lint_flow(
     flow: FlowDefinition,
     available_blueprints: set[str],
     available_specialists: set[str] | None = None,
+    stage_blueprints: dict[str, Blueprint] | None = None,
 ) -> list[Violation]:
     """Run Policy Gate rules specific to a FlowDefinition.
 
@@ -246,6 +288,11 @@ def lint_flow(
     1. Flow must declare at least one stage              (error) — no Assurance Loop otherwise.
     2. Every blueprint stage's blueprint must exist      (error) — resolvable execution.
     3. Every specialist stage's specialist must exist    (error) — resolvable execution.
+    4. A stage whose effective Blueprint declares mode: spike, combined with an
+       enabled commit block                              (error) — the spike
+       exception must never become a delivery path (roadmap-phase-3.md T1).
+       Only checked when *stage_blueprints* is supplied; omitting it (existing
+       call sites) skips rule 4 entirely, byte-identical to before it existed.
 
     The exactly-one-of blueprint/specialist rule (and verify_only requiring a
     blueprint) is already enforced by the FlowStage pydantic validator at intake.
@@ -255,6 +302,9 @@ def lint_flow(
         available_blueprints: Set of blueprint names present in the Operator Layer.
         available_specialists: Set of specialist names present in the Operator
             Layer. None is treated as an empty set (no specialists available).
+        stage_blueprints: {stage name: effective Blueprint}, when the caller has
+            already resolved one per stage (FlowRunner does, for the Policy
+            Gate). None skips rule 4.
 
     Returns:
         List of Violations (may be empty).
@@ -276,7 +326,10 @@ def lint_flow(
         )
         return violations  # no point checking stage refs if there are none
 
+    commit_enabled = flow.commit is not None and flow.commit.enabled
+
     # Rule 2/3: every stage's referenced blueprint or specialist must exist.
+    # Rule 4: a spike-mode stage may not sit inside a committing Flow.
     for stage in flow.stages:
         if stage.blueprint is not None and stage.blueprint not in available_blueprints:
             violations.append(
@@ -302,6 +355,22 @@ def lint_flow(
                     ),
                 )
             )
+
+        if stage_blueprints is not None and commit_enabled:
+            bp = stage_blueprints.get(stage.name)
+            if bp is not None and bp.mode == "spike":
+                violations.append(
+                    Violation(
+                        rule="flow-spike-forbids-commit",
+                        severity="error",
+                        message=(
+                            f"Flow '{flow.name}', stage '{stage.name}': blueprint "
+                            f"'{bp.name}' declares mode: spike, which cannot be "
+                            "combined with an enabled commit block — the spike "
+                            "exception must never become a delivery path."
+                        ),
+                    )
+                )
 
     return violations
 

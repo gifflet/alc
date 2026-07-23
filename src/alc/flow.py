@@ -193,7 +193,9 @@ class FlowRunner:
         available_specialists = {
             stage.specialist for stage in flow.stages if stage.specialist is not None
         }
-        violations += lint_flow(flow, available_blueprints, available_specialists)
+        violations += lint_flow(
+            flow, available_blueprints, available_specialists, stage_blueprints
+        )
 
         if has_errors(violations):
             error_msgs = [v.message for v in violations if v.severity == "error"]

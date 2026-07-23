@@ -137,6 +137,7 @@ compute_tier: standard
   # checks and fail Policy Gate rule 1. This inline check keeps it lint-clean.
   - name: smoke
     command: ["true"]
+protect: ["tests/**", "test/**"]
 report:
   format: json
   schema:
@@ -343,10 +344,59 @@ def _maintainer_files(
     }
 
 
-# Archetype name -> file-generator. `grower` ships PARTIAL (see _grower_files);
-# `prototyper` is a later wave and simply absent from this table until it lands
-# — `alc team hire` reports that plainly (see pack_files' KeyError) instead of
-# failing.
+# ---------------------------------------------------------------------------
+# Prototyper pack — a single throwaway `spike` Blueprint. `mode: spike` is the
+# ONE relaxation of the checks gate (roadmap-phase-3.md T1): it declares no
+# checks at all, and the Policy Gate downgrades that from error to warn only
+# in this mode. The control plane fences the rest (forced isolation, zero
+# repairs, no commit/auto-merge) — see runner.py and cli.py.
+# ---------------------------------------------------------------------------
+
+_PROTOTYPER_SPIKE = """\
+---
+name: spike
+purpose: Explore a technical question fast — throwaway code, no delivery guarantee.
+compute_tier: standard
+mode: spike
+report:
+  format: json
+  schema:
+    status: string
+    summary: string
+archetype: prototyper
+---
+
+## Spike Workflow
+
+1. Read the task as a question to answer or a hypothesis to test — not a feature to ship.
+2. Write the smallest throwaway code that answers it. Skip tests, polish, and edge
+   cases; this code is never merged.
+3. Summarize what you learned: does the approach work, what did it cost, what would a
+   real implementation need to handle that this spike skipped.
+4. Output a JSON report matching the schema:
+   ```json
+   {{"status": "ok", "summary": "<one sentence describing what the spike learned>"}}
+   ```
+
+This Blueprint declares `mode: spike`: the Policy Gate does not require checks here
+(rule 1 drops to a warn), and the control plane forces isolation, zero repair turns,
+and never commits or auto-merges what it wrote — a spike is disposable by construction.
+"""
+
+
+def _prototyper_files(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+) -> dict[str, str]:
+    """Build the Prototyper pack: a single throwaway `spike` Blueprint.
+
+    `stacks` is unused — `mode: spike` skips checks by design (Policy Gate rule
+    1 drops to a warn in that mode), so there is no stack-specific check_set to
+    reference; kept for signature parity with the other packs in PACKS.
+    """
+    return {".alc/blueprints/spike.md": _PROTOTYPER_SPIKE}
+
+
+# Archetype name -> file-generator. `grower` ships PARTIAL (see _grower_files).
 PACKS: dict[
     str, Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]]], dict[str, str]]
 ] = {
@@ -354,6 +404,7 @@ PACKS: dict[
     "sweeper": _sweeper_files,
     "maintainer": _maintainer_files,
     "grower": _grower_files,
+    "prototyper": _prototyper_files,
 }
 
 

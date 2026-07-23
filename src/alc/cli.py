@@ -333,6 +333,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     extra_context: str | None = "\n\n".join(parts) if parts else None
 
     use_isolate = args.isolate
+    if blueprint.mode == "spike":
+        # T1: the ONE relaxation of the checks gate comes fenced — force
+        # isolation regardless of --isolate so a spike's edits are never made
+        # directly against the operator's working tree.
+        use_isolate = True
     if use_isolate and not is_git_repo(Path.cwd()):
         print("--isolate ignored: not inside a git repository", file=sys.stderr)
         use_isolate = False
@@ -370,6 +375,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         except BaseException as exc:
             exc_info = (type(exc), exc, exc.__traceback__)
         finally:
+            if blueprint.mode == "spike":
+                # The exception must never become a delivery path: never commit,
+                # discard the branch regardless of outcome.
+                wt.commit_on_exit = False
             wt.__exit__(*exc_info)
 
         # Re-raise non-PolicyViolation exceptions after cleanup.
@@ -407,6 +416,25 @@ def cmd_run(args: argparse.Namespace) -> int:
         path = write_bundle(bundles_dir, args.blueprint, args.task, report)
         print(f"Bundle written: {path}")
     return 0 if report.success else 1
+
+
+def cmd_spike(args: argparse.Namespace) -> int:
+    """Run `alc spike "<task>" [--engine NAME]`.
+
+    Sugar over `alc run spike "<task>"`: no blueprint name to remember, no
+    isolate/commit ceremony to opt into — the Prototyper pack's `spike`
+    Blueprint declares `mode: spike`, which cmd_run itself fences (forced
+    isolation, zero repairs, no commit; see runner.py). This wrapper only
+    fills in the Blueprint name and the flags `alc run` exposes that a spike
+    has no use for.
+    """
+    args.blueprint = "spike"
+    args.isolate = False  # irrelevant: mode: spike forces isolation in cmd_run
+    args.primer = None
+    args.bundle = False
+    args.from_bundle = None
+    args.tier = None
+    return cmd_run(args)
 
 
 def _failure_reason(result, queue_dir) -> str:
@@ -2013,6 +2041,17 @@ def main() -> None:
         help="Override the Compute Tier for this invocation (flow: applies to every stage).",
     )
 
+    # alc spike "<task>" [--engine NAME]
+    spike_parser = subparsers.add_parser(
+        "spike",
+        help=(
+            'Sugar for `alc run spike "<task>"` — the Prototyper pack\'s spike '
+            "Blueprint, no blueprint name to remember."
+        ),
+    )
+    spike_parser.add_argument("task", help="Free-text task description.")
+    spike_parser.add_argument("--engine", default=None, help="Override the default engine.")
+
     # alc tick
     tick_parser = subparsers.add_parser(
         "tick",
@@ -2638,6 +2677,8 @@ def main() -> None:
         sys.exit(cmd_lint(args))
     elif args.command == "run":
         sys.exit(cmd_run(args))
+    elif args.command == "spike":
+        sys.exit(cmd_spike(args))
     elif args.command == "flow":
         sys.exit(cmd_flow(args))
     elif args.command == "tick":
