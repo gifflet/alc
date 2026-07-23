@@ -118,6 +118,35 @@ A lint that refuses agents and flows violating the rules (no Assurance Loop, not
 Single Mandate, missing report schema, over-budget context). This is what turns the
 practices from advice into a guarantee.
 
+### Spike — the fenced exception
+`mode: spike` on a Blueprint is the **one** relaxation of the checks gate ALC allows
+— not a general escape hatch, a single named field that is grepable and auditable by
+itself, never a side effect of a descriptive label like `archetype`. In this mode
+Policy Gate rule 1 (`blueprint_has_checks`) drops from error to warn, but every other
+guarantee tightens rather than loosens: the runner forces isolation, sets
+`max_repairs` to `0`, and forbids both commit and auto-merge; the run's
+`RunReport.spike` is `True` and it is excluded from the Scorecard `streak` (a
+one-shot spike proves nothing about repeatable delivery). Declaring `mode: spike`
+together with an enabled `CommitSpec` is itself a Policy Gate **error** — the
+exception can never become a delivery path. `alc spike "<task>"` is the entry point:
+sugar over `alc run` against the Prototyper pack's `spike` Blueprint, no blueprint
+name to remember and no isolation/commit flags to opt into.
+
+### `protect:` — deterministic behavior-preservation
+A Blueprint's `protect: [globs]` is the half of "don't touch what you're not
+supposed to" that does not depend on the model remembering an instruction. After
+every Act, the control plane diffs the paths changed so far (inside the Assurance
+Loop, per attempt — not once for the whole run) against the declared globs
+(`fnmatch`); any hit becomes a synthetic failed check (`protected-paths`) that feeds
+the same repair addendum a real check failure would ("you edited a protected path;
+revert it") — no new mechanism, the existing Act → Verify → Repair cycle does the
+work. Outside a git repository, or when git itself is unavailable, `protect`
+degrades to a silent no-op rather than raising — a guard that cannot compute its
+answer must never be the reason a run fails. The Sweeper pack's `refactor` Blueprint
+declares `protect: ["tests/**", "test/**"]`, turning "a refactor must not touch
+tests" from workflow prose an agent could ignore into something the control plane
+itself enforces.
+
 ### Archetype Pack & the Team metaphor
 An **Archetype Pack** is scaffolded content — Blueprints, Flows, Specialists, Loops —
 for one of the five roles a codebase moves through over its life. `alc team hire
@@ -129,7 +158,7 @@ only verb an operator sees.
 
 | Archetype | Role | What the pack ships |
 |---|---|---|
-| **Prototyper** | Churns out new ideas; most don't ship | not yet shipped |
+| **Prototyper** | Churns out new ideas; most don't ship | a `spike` Blueprint (`mode: spike`) fencing the checks gate; `alc spike "<task>"` is the entry point |
 | **Builder** | Turns a prototype into production-quality product/infra | `test` (test authoring) and `qa` (live e2e) Blueprints, a hardened `ship-hardened` Flow |
 | **Sweeper** | Cleans the UI, simplifies code, removes features (*unship*) | a `janitor` Specialist naming the real dead-code command per detected stack, a `refactor` Blueprint, a `sweep` Loop, an `unship` Flow |
 | **Grower** | Iterates a built product to improve Product-Market Fit | **partial**: a DIY issue/error-sweep Specialist (`listen`) only — real signal intake, metric checks, and the `regression` replenish kind are later-phase work |

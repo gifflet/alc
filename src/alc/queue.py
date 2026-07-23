@@ -19,6 +19,7 @@ from alc.flow import FlowRunner
 from alc.intake import load_flow, load_specialist
 from alc.merge import auto_merge_branches
 from alc.models import FlowReport, Manifest, QueueTask, RunReport, Scorecard, TickResult
+from alc.notify import fire as notify_fire
 from alc.specialist import run_specialist
 from alc.textutil import slugify as _slugify
 from alc.worktree import (
@@ -452,6 +453,19 @@ def _process_task_body(
     )
     task_file.rename(done_dir / task_file.name)
 
+    # Push notify: the failure is already detected (`success` is False) — tell
+    # the operator's configured command/webhook so a 3am failure isn't silent.
+    # Fires regardless of whether an auto-retry follows. manifest.notify absent
+    # (default) -> notify_fire no-ops, byte-identical to today.
+    if not success:
+        notify_fire(
+            manifest.notify.on_task_failed if manifest.notify else None,
+            "task_failed",
+            task=task_file.name,
+            flow=flow_name,
+            reason=_failure_reason(report),
+        )
+
     # Auto-retry with feedback: a failed task whose lineage has retries left is
     # re-enqueued (forward-only) carrying the failure output so the next drain
     # pass can fix the specific reason. With max_task_retries == 0 (default) this
@@ -741,7 +755,10 @@ def process_queue(
                 if (r := wave_results.get(f)) is not None and r.branch and r.auto_merge
             ]
             if merge_branches:
-                report = auto_merge_branches(git_toplevel(project_root), merge_branches)
+                merge_notify = manifest.notify.on_merge_conflict if manifest.notify else None
+                report = auto_merge_branches(
+                    git_toplevel(project_root), merge_branches, notify=merge_notify
+                )
                 for r in wave_results.values():
                     if r.branch and r.auto_merge:
                         r.merged = r.branch in report.merged  # True merged / False left

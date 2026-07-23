@@ -154,6 +154,23 @@ class ProvisionSpec(BaseModel):
         return self.link or self.copy_ or self.clone  # type: ignore[return-value]
 
 
+class NotifyConfig(BaseModel):
+    """Push channel for unattended failure (roadmap-phase-3.md T12).
+
+    Each field is either a command (argv list, run with the JSON payload on its
+    stdin) or a webhook URL (a str, POSTed the JSON payload) — no per-service
+    adapters; the operator already knows how to fan a command/URL out to Slack,
+    email, or a pager. None (default) -> that hook is off, byte-identical to
+    today. Fired by ``alc.notify.fire`` at the point each failure is already
+    detected (``queue.py``, ``loop.py``, ``merge.py``); delivery never raises.
+    """
+
+    on_task_failed: list[str] | str | None = None
+    on_loop_stopped: list[str] | str | None = None
+    on_budget_exceeded: list[str] | str | None = None
+    on_merge_conflict: list[str] | str | None = None
+
+
 class Manifest(BaseModel):
     """Root of the Operator Layer — loaded from .alc/manifest.yaml."""
 
@@ -215,6 +232,10 @@ class Manifest(BaseModel):
     # never invisible debt, and the Policy Gate emits a PERMANENT warn for as long
     # as it is listed. Empty (default) -> no-op, byte-identical.
     quarantined_checks: list[str] = []
+    # Push notifications for unattended failure (roadmap-phase-3.md T12): a command
+    # or webhook fired where the control plane already detects the failure. None
+    # (default) -> notify off, byte-identical to today.
+    notify: NotifyConfig | None = None
 
 
 class CheckOutcome(BaseModel):

@@ -9,6 +9,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from alc.notify import NotifyTarget
+from alc.notify import fire as notify_fire
+
 
 @dataclass
 class MergeReport:
@@ -39,7 +42,9 @@ class MergeReport:
         return line
 
 
-def auto_merge_branches(repo_root: Path, branches: list[str]) -> MergeReport:
+def auto_merge_branches(
+    repo_root: Path, branches: list[str], notify: NotifyTarget = None
+) -> MergeReport:
     """Integrate each demand *branch* into the current branch LINEARLY (cherry-pick).
 
     Processes ``sorted(branches)``. For each branch, cherry-picks the commits it holds
@@ -63,6 +68,13 @@ def auto_merge_branches(repo_root: Path, branches: list[str]) -> MergeReport:
     Precondition: the current branch's working tree must be replayable. Demand branches
     EXCLUDE ``.alc/`` (Part C), so uncommitted ``.alc/`` queue state on the current branch does
     NOT block the cherry-pick. This helper adds no dirty-tree guard — the drain owns the context.
+
+    ``notify`` (roadmap-phase-3.md T12) is the Manifest's ``notify.on_merge_conflict``
+    target, fired ONCE with every conflicted branch name when this pass leaves at
+    least one behind — including the "git not found" case, which is a conflict from
+    the operator's point of view (nothing got integrated). None (default) -> no-op,
+    byte-identical to today. Delivery itself never raises (see ``alc.notify``), so it
+    cannot compromise this function's own never-raise contract.
     """
     report = MergeReport()
     ordered = sorted(branches)
@@ -82,6 +94,7 @@ def auto_merge_branches(repo_root: Path, branches: list[str]) -> MergeReport:
                 file=sys.stderr,
             )
             report.conflicted.extend(ordered[i:])
+            _notify_conflicts(notify, report)
             return report
 
         if rev.returncode != 0:
@@ -117,4 +130,14 @@ def auto_merge_branches(repo_root: Path, branches: list[str]) -> MergeReport:
             )
             report.conflicted.append(branch)
 
+    _notify_conflicts(notify, report)
     return report
+
+
+def _notify_conflicts(notify: NotifyTarget, report: MergeReport) -> None:
+    """Fire ``on_merge_conflict`` once, naming every branch this pass left behind.
+
+    No-op when nothing conflicted (a fully clean pass) or *notify* is unset.
+    """
+    if report.conflicted:
+        notify_fire(notify, "merge_conflict", branches=list(report.conflicted))

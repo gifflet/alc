@@ -70,6 +70,7 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc init [--setup]` | Gera um Operator Layer `.alc/` padrão; detecta o stack do projeto e cria checks reais (e instala a skill do editor) |
 | `alc lint` | Valida o Operator Layer contra o Policy Gate |
 | `alc run <blueprint> "<tarefa>"` | Roda um Blueprint como um Single Mandate verificado; `--tier NOME` substitui o compute tier para esta invocação |
+| `alc spike "<tarefa>"` | Açúcar sobre o Blueprint `spike` do Prototyper (`mode: spike`) — uma exceção cercada ao gate de checks: força isolamento, zero reparos, proíbe commit/auto-merge, fica fora do streak do Scorecard |
 | `alc flow <flow> "<tarefa>"` | Roda um pipeline multi-estágio (ex.: plan → build); `--tier NOME` aplica a todos os estágios; estágios verify-only atuam como check gates puros (só checks, sem turno de engine) |
 | `alc conduct "<objetivo>" [--parallel]` | Deixa o ALC escolher quais Flows rodar; `--parallel` despacha unidades independentes em paralelo em worktrees isoladas; `--enqueue` para enfileirar |
 | `alc specialist <nome> "<tarefa>"` | Roda um Specialist de área (Recall → Act → Learn) |
@@ -77,6 +78,9 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc enqueue <nome> "<tarefa>"` | Escreve uma tarefa direto na fila, sem turno de planner; `--kind flow\|specialist`, `--touches` serializa automaticamente edições que se sobrepõem, `--from-file` enfileira várias de uma vez |
 | `alc land [branch...] [--all]` | Integra branches de demanda `alc/*` na branch atual (cherry-pick linear); sem argumentos, lista as não mergeadas |
 | `alc discard [branch...] [--all-unmerged]` | Apaga branches `alc/*` à força, poda worktrees obsoletas (`--worktrees`) ou remove bundles antigos (`--bundles --older-than N`) — sempre pede confirmação |
+| `alc explore <blueprint> "<tarefa>" --variants N` | Roda N variantes da mesma unidade em worktrees isoladas (produto cartesiano opcional `--engine`/`--tier`); nunca faz auto-merge — imprime uma tabela por variante (branch, checks, scorecard, custo, diffstat) |
+| `alc compare <branch\|stem>...` | Põe as variantes exploradas lado a lado — as mesmas colunas que o `explore` imprime |
+| `alc adopt <branch>` | Integra a variante escolhida e descarta as demais branches `alc/variant-*` perdedoras — sempre pede confirmação |
 | `alc primer new <nome>` | Cria um novo arquivo Primer em `.alc/primers/<nome>.md` |
 | `alc new <kind> <nome>` | Cria um novo blueprint/flow/specialist/loop/primer a partir de um template do core; `--from NOME` clona uma unidade existente |
 | `alc status [--json]` | Retrato de saúde num único comando, para monitoração: tarefas pendentes, falhas em aberto, estado dos loops, branches não mergeadas — sempre sai com código 0 |
@@ -84,6 +88,7 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc audit --since 7d` | Agrega os reports arquivados da fila numa janela de tempo: contagem de tarefas, totais/médias do Scorecard, arquivos alterados e uso/custo de engine |
 | `alc team hire\|list\|retire\|status` | Cria, lista ou aposenta um Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — parcial); `alc init --stage pre-pmf\|growth\|strong-pmf` instala o combo de um estágio |
 | `alc checks audit [--json]` | Redetecta o(s) stack(s) e PROPÕE upgrades de check_set contra o Manifest — nunca escreve; aponta checks ainda comentados por falta de binário |
+| `alc schedule install\|list\|remove <tick\|cycle NOME> --every 15m` | Gera e administra a entrada de cron (ou imprime a linha para colar, quando não há `crontab` disponível) que dispara `alc tick`/`alc cycle` num intervalo — install idempotente, remove restrito ao que o próprio ALC marcou |
 | `alc setup [--engine]` | Instala/atualiza a skill user-level do editor (Claude Code ou Gemini) |
 | `alc ui [--port 8642]` | Sobe a IDE web (dashboard, fila, runs ao vivo, loops, config) — requer o extra opcional `ui` |
 

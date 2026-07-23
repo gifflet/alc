@@ -1,9 +1,10 @@
 # cli.py — argparse entrypoint for ALC.
 # Provides subcommands: `alc init` (supports --setup and --stage), `alc lint`,
-# `alc run`, `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`,
-# `alc conduct`, `alc enqueue`, `alc new`, `alc team`, `alc cycle`, `alc loop`,
-# `alc specialist`, `alc setup`, `alc status`, `alc runs`, `alc audit`,
-# `alc checks`.
+# `alc run`, `alc spike`, `alc flow`, `alc tick`, `alc retry`, `alc land`,
+# `alc discard`, `alc explore`, `alc compare`, `alc adopt`, `alc conduct`,
+# `alc enqueue`, `alc primer`, `alc new`, `alc team`, `alc prompts`, `alc cycle`,
+# `alc loop`, `alc specialist`, `alc setup`, `alc status`, `alc runs`,
+# `alc audit`, `alc checks`, `alc schedule`, `alc ui`.
 from __future__ import annotations
 
 import argparse
@@ -2075,6 +2076,138 @@ def _checks_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_schedule(args: argparse.Namespace) -> int:
+    """Run `alc schedule install|list|remove <tick|cycle NAME> --every 15m`.
+
+    Generates and manages the crontab entry that fires `alc tick` or
+    `alc cycle NAME` on a cadence (roadmap-phase-3.md T13) — the first cron
+    line an operator would otherwise have to compose by hand.
+    """
+    if args.schedule_action == "install":
+        return _schedule_install(args)
+    if args.schedule_action == "remove":
+        return _schedule_remove(args)
+    return _schedule_list(args)
+
+
+def _schedule_target(args: argparse.Namespace) -> tuple[str, str | None] | None:
+    """Validate target/name and return (target, name), or None (prints the error).
+
+    'cycle' requires a loop NAME; 'tick' takes none — a NAME given to 'tick' is
+    almost certainly a typo for 'cycle', so it is rejected rather than ignored.
+    """
+    target = args.target
+    name = args.name
+    if target == "cycle" and not name:
+        print("[ERROR] `schedule ... cycle` requires a loop NAME", file=sys.stderr)
+        return None
+    if target == "tick" and name:
+        print(f"[ERROR] `schedule ... tick` takes no NAME (got '{name}')", file=sys.stderr)
+        return None
+    return target, (name if target == "cycle" else None)
+
+
+def _schedule_label(target: str, name: str | None) -> str:
+    """Human label for a target/name pair, e.g. 'cycle deliver' or 'tick'."""
+    return f"{target} {name}" if name else target
+
+
+def _schedule_install(args: argparse.Namespace) -> int:
+    from alc.schedule import (
+        build_line,
+        has_crontab,
+        parse_every,
+        read_crontab,
+        resolve_binary,
+        upsert,
+        write_crontab,
+    )
+
+    resolved = _schedule_target(args)
+    if resolved is None:
+        return 1
+    target, name = resolved
+
+    try:
+        cron_expr = parse_every(args.every)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    project_root = _find_operator_layer().parent
+    line = build_line(target, name, project_root, cron_expr, resolve_binary())
+
+    if not has_crontab():
+        print("No `crontab` on this platform — add this line to your scheduler:")
+        print(f"  {line}")
+        return 0
+
+    if not write_crontab(upsert(read_crontab(), target, name, line)):
+        print("[ERROR] could not write the crontab — add this line yourself (crontab -e):")
+        print(f"  {line}")
+        return 1
+
+    print(f"Installed: {line}")
+    return 0
+
+
+def _schedule_remove(args: argparse.Namespace) -> int:
+    from alc.schedule import has_crontab, marker, read_crontab, remove, write_crontab
+
+    resolved = _schedule_target(args)
+    if resolved is None:
+        return 1
+    target, name = resolved
+    label = _schedule_label(target, name)
+
+    if not has_crontab():
+        print("No `crontab` on this platform — nothing to remove.")
+        return 0
+
+    lines = read_crontab()
+    tag = marker(target, name)
+    matched = [line for line in lines if tag in line]
+    if not matched:
+        print(f"No scheduled entry for '{label}'.")
+        return 0
+
+    if not write_crontab(remove(lines, target, name)):
+        print(
+            "[ERROR] could not update the crontab — remove this line yourself "
+            "(crontab -e):",
+            file=sys.stderr,
+        )
+        for line in matched:
+            print(f"  {line}", file=sys.stderr)
+        return 1
+
+    print(f"Removed the scheduled entry for '{label}'.")
+    return 0
+
+
+def _schedule_list(args: argparse.Namespace) -> int:
+    from alc.schedule import has_crontab, list_entries, read_crontab
+
+    if not has_crontab():
+        print("No `crontab` on this platform.")
+        return 0
+
+    entries = list_entries(read_crontab())
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(entries)
+        return 0
+
+    if not entries:
+        print("No ALC-scheduled entries. Run: alc schedule install tick --every 15m")
+        return 0
+    for line in entries:
+        print(line)
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Run `alc audit --since 7d|24h|30m [--json]`: aggregate archived queue reports.
 
@@ -2989,6 +3122,59 @@ def main() -> None:
         help="Output the history as JSON (machine-readable).",
     )
 
+    # alc schedule install|list|remove <tick|cycle NAME> --every 15m
+    schedule_parser = subparsers.add_parser(
+        "schedule",
+        help=(
+            "Generate and manage the crontab entry that fires `alc tick` or "
+            "`alc cycle NAME` on a cadence."
+        ),
+    )
+    schedule_subparsers = schedule_parser.add_subparsers(
+        dest="schedule_action", required=True
+    )
+
+    schedule_install_parser = schedule_subparsers.add_parser(
+        "install",
+        help=(
+            "Write (or update) the crontab entry, idempotently — running it "
+            "twice never produces two entries."
+        ),
+    )
+    schedule_install_parser.add_argument(
+        "target", choices=["tick", "cycle"], help="What to schedule."
+    )
+    schedule_install_parser.add_argument(
+        "name", nargs="?", default=None, help="Loop name — required for 'cycle', omit for 'tick'."
+    )
+    schedule_install_parser.add_argument(
+        "--every",
+        required=True,
+        metavar="CADENCE",
+        help="How often to fire, e.g. '15m' or '1h'.",
+    )
+
+    schedule_list_parser = schedule_subparsers.add_parser(
+        "list", help="List the crontab entries ALC itself installed."
+    )
+    schedule_list_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the entries as JSON (machine-readable).",
+    )
+
+    schedule_remove_parser = schedule_subparsers.add_parser(
+        "remove",
+        help="Remove ALC's crontab entry for a target — never touches an operator-written line.",
+    )
+    schedule_remove_parser.add_argument(
+        "target", choices=["tick", "cycle"], help="What to unschedule."
+    )
+    schedule_remove_parser.add_argument(
+        "name", nargs="?", default=None, help="Loop name — required for 'cycle', omit for 'tick'."
+    )
+
     # alc ui [--host H] [--port P] [--ui-dist PATH]
     ui_parser = subparsers.add_parser(
         "ui",
@@ -3076,6 +3262,8 @@ def main() -> None:
         sys.exit(cmd_audit(args))
     elif args.command == "checks":
         sys.exit(cmd_checks(args))
+    elif args.command == "schedule":
+        sys.exit(cmd_schedule(args))
     elif args.command == "ui":
         sys.exit(cmd_ui(args))
     else:

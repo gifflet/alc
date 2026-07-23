@@ -22,6 +22,7 @@ from alc.models import (
     Manifest,
     RunReport,
 )
+from alc.notify import fire as notify_fire
 from alc.queue import process_queue
 
 # ---------------------------------------------------------------------------
@@ -413,6 +414,26 @@ def run_replenish(
 
 
 # ---------------------------------------------------------------------------
+# Push notify (roadmap-phase-3.md T12)
+# ---------------------------------------------------------------------------
+
+
+def _notify_stop(manifest: Manifest, loop_name: str, reason: str, cycle: int) -> None:
+    """Fire the loop-stop notify hooks for a loop that just transitioned to stopped.
+
+    ``on_loop_stopped`` always fires (any reason); ``on_budget_exceeded`` fires
+    additionally when the reason is specifically "budget". manifest.notify absent
+    (default) -> both no-op, byte-identical to today.
+    """
+    notify = manifest.notify
+    if notify is None:
+        return
+    notify_fire(notify.on_loop_stopped, "loop_stopped", loop=loop_name, reason=reason, cycle=cycle)
+    if reason == "budget":
+        notify_fire(notify.on_budget_exceeded, "budget_exceeded", loop=loop_name, cycle=cycle)
+
+
+# ---------------------------------------------------------------------------
 # One cycle
 # ---------------------------------------------------------------------------
 
@@ -432,6 +453,9 @@ def run_cycle(
     A pre-stop short-circuits: neither replenish nor drain runs, the state is
     marked stopped, and a zeroed CycleRecord carrying the reason is returned
     (still appended to the ledger for observability).
+
+    Either stop path fires ``manifest.notify.on_loop_stopped`` (and, when the
+    reason is "budget", also ``on_budget_exceeded``) — see ``_notify_stop``.
     """
     loops = loops_dir(manifest, operator_layer)
     ledger = ledger_path(loops, loop_def.name)
@@ -451,6 +475,7 @@ def run_cycle(
             stopped_reason=pre,
         )
         append_ledger(ledger, record)
+        _notify_stop(manifest, loop_def.name, pre, new_state.cycle)
         return new_state, record
 
     # (b) Replenish (Mode A only).
@@ -516,6 +541,7 @@ def run_cycle(
             update={"status": "stopped", "stopped_reason": post}
         )
         record = record.model_copy(update={"stopped_reason": post})
+        _notify_stop(manifest, loop_def.name, post, new_state.cycle)
 
     # (h) Record the cycle.
     append_ledger(ledger, record)
