@@ -192,6 +192,10 @@ export interface ScorecardTotals {
   passes_total: number
   streak_total: number
   touch_total: number
+  // Optional: an older backend that predates these two fields omits them —
+  // the UI must degrade gracefully rather than break.
+  net_lines_total?: number | null
+  runs_with_warnings?: number
 }
 
 // ---------------------------------------------------------------------------

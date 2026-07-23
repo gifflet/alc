@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scorecardHistory } from './scorecard'
+import { formatNetLines, scorecardHistory } from './scorecard'
 import type { DoneTask, FlowReport } from '../api/types'
 
 const report = (span: number, success: boolean): FlowReport => ({
@@ -40,5 +40,24 @@ describe('scorecardHistory', () => {
 
   it('returns an empty list when nothing is reported', () => {
     expect(scorecardHistory([done('a', 1, null)])).toEqual([])
+  })
+})
+
+describe('formatNetLines', () => {
+  it('signs a negative total with a minus sign', () => {
+    expect(formatNetLines(-142)).toBe('−142')
+  })
+
+  it('signs a positive total with a plus sign', () => {
+    expect(formatNetLines(58)).toBe('+58')
+  })
+
+  it('renders a zero total without a sign', () => {
+    expect(formatNetLines(0)).toBe('0')
+  })
+
+  it('returns null for a missing or absent total (no diffstat data)', () => {
+    expect(formatNetLines(null)).toBeNull()
+    expect(formatNetLines(undefined)).toBeNull()
   })
 })

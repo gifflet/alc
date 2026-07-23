@@ -12,7 +12,7 @@ import {
 import { useProjectId } from '../app/ProjectContext'
 import { openView } from '../components/ActivityBar'
 import { uiStore } from '../app/uiStore'
-import { scorecardHistory } from '../lib/scorecard'
+import { formatNetLines, scorecardHistory } from '../lib/scorecard'
 import type { ScorecardPoint } from '../lib/scorecard'
 import { Card, Metric, Pill } from '../components/primitives'
 import { EmptyState } from '../components/EmptyState'
@@ -46,6 +46,8 @@ function ScorecardCard() {
   const { data: queue } = useQueue(id)
   const s = data
   const history = scorecardHistory(queue?.done ?? [])
+  const netLines = formatNetLines(s?.net_lines_total)
+  const warnings = s?.runs_with_warnings ?? 0
   return (
     <Card title="Scorecard" icon={Gauge}>
       {s && s.reports > 0 ? (
@@ -58,7 +60,19 @@ function ScorecardCard() {
             <Metric label="reports" value={s.reports} />
             <Metric label="ok" value={s.successes} tone="live" />
             <Metric label="failed" value={s.failures} tone={s.failures > 0 ? 'error' : undefined} />
+            <Metric
+              label="net lines"
+              value={netLines ?? '—'}
+              tone={s.net_lines_total != null && s.net_lines_total < 0 ? 'live' : undefined}
+            />
           </div>
+          {warnings > 0 && (
+            <div className="mt-2">
+              <Pill tone="warn">
+                {warnings} run{warnings === 1 ? '' : 's'} with warnings
+              </Pill>
+            </div>
+          )}
           {history.length > 0 && <ScorecardHistory points={history} />}
         </>
       ) : (

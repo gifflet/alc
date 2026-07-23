@@ -8,6 +8,7 @@ import {
   Settings,
   SlidersHorizontal,
   Wand2,
+  Zap,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { uiStore, useUiState } from '../app/uiStore'
@@ -68,7 +69,13 @@ function RailButton({
   )
 }
 
-export function ActivityBar({ onOpenProjects }: { onOpenProjects: () => void }) {
+export function ActivityBar({
+  onOpenProjects,
+  onOpenSpike,
+}: {
+  onOpenProjects: () => void
+  onOpenSpike: () => void
+}) {
   const { activeTabId } = useUiState()
   return (
     <nav className="flex w-10 shrink-0 flex-col items-center justify-between border-r border-border bg-panel py-1">
@@ -93,6 +100,7 @@ export function ActivityBar({ onOpenProjects }: { onOpenProjects: () => void }) 
             })
           }
         />
+        <RailButton icon={Zap} label="Spike" active={false} onClick={onOpenSpike} />
       </div>
       <RailButton icon={Boxes} label="Projects" active={false} onClick={onOpenProjects} />
     </nav>

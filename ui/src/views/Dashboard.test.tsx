@@ -46,6 +46,41 @@ describe('Dashboard', () => {
     expect(await screen.findByText('reports')).toBeInTheDocument()
   })
 
+  it('renders net lines and a warnings indicator when the scorecard reports them', async () => {
+    installFetch({
+      '/scorecard': {
+        reports: 2,
+        successes: 2,
+        failures: 0,
+        span_total: 3,
+        passes_total: 3,
+        streak_total: 2,
+        touch_total: 0,
+        net_lines_total: -142,
+        runs_with_warnings: 2,
+      },
+      '/queue': { pending: [], done: [] },
+      '/runs': { runs: [], total: 0 },
+      '/engines': [
+        { name: 'mock', type: 'mock', default: true, tiers: { standard: 'mock-small' }, healthy: true },
+      ],
+      '/loops': [],
+    })
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('net lines')).toBeInTheDocument()
+    expect(screen.getByText('−142')).toBeInTheDocument()
+    expect(screen.getByText('2 runs with warnings')).toBeInTheDocument()
+  })
+
+  it('renders net lines as neutral and hides the warnings indicator when the backend omits them', async () => {
+    // The default beforeEach stub predates net_lines_total/runs_with_warnings —
+    // an older backend must not break the card.
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('net lines')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.queryByText(/with warnings/)).not.toBeInTheDocument()
+  })
+
   it('renders per-report history bars when there are done reports', async () => {
     installFetch({
       '/scorecard': {

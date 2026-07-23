@@ -23,6 +23,7 @@ export function Conduct() {
   const [tier, setTier] = useState('')
   const [parallel, setParallel] = useState(false)
   const [enqueue, setEnqueue] = useState(false)
+  const [strictStage, setStrictStage] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,6 +33,7 @@ export function Conduct() {
     if (tier) args.tier = tier
     if (parallel) args.parallel = true
     if (enqueue) args.enqueue = true
+    if (strictStage) args['strict-stage'] = true
     setSaving(true)
     setError(null)
     try {
@@ -81,6 +83,11 @@ export function Conduct() {
         <div className="flex flex-col gap-2 rounded-panel border border-border bg-base p-3">
           <Checkbox checked={parallel} onChange={setParallel} label="Run independent units in parallel (isolated worktrees)" />
           <Checkbox checked={enqueue} onChange={setEnqueue} label="Enqueue tasks instead of running now" />
+          <Checkbox
+            checked={strictStage}
+            onChange={setStrictStage}
+            label="Enforce the declared stage's mix (--strict-stage)"
+          />
         </div>
 
         <div className="flex items-center gap-3">

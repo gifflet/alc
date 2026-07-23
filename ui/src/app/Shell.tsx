@@ -8,6 +8,7 @@ import { ShortcutsDialog } from '../components/ShortcutsDialog'
 import { StatusBar } from '../components/StatusBar'
 import { TabBar } from '../components/TabBar'
 import { ToolWindow } from '../components/ToolWindow'
+import { SpikeDialog } from '../views/SpikeDialog'
 import { uiStore, useUiState } from './uiStore'
 import { useShortcuts } from './useShortcuts'
 import { ExecBridge } from './ExecBridge'
@@ -22,13 +23,14 @@ export function Shell({
 }) {
   const ui = useUiState()
   const [helpOpen, setHelpOpen] = useState(false)
+  const [spikeOpen, setSpikeOpen] = useState(false)
   useShortcuts(() => setHelpOpen(true))
 
   return (
     <div className="flex h-full flex-col">
       <ExecBridge />
       <div className="flex min-h-0 flex-1">
-        <ActivityBar onOpenProjects={onOpenProjects} />
+        <ActivityBar onOpenProjects={onOpenProjects} onOpenSpike={() => setSpikeOpen(true)} />
 
         {ui.leftCollapsed ? (
           <button
@@ -90,6 +92,7 @@ export function Shell({
 
       <StatusBar projectName={projectName} onOpenShortcuts={() => setHelpOpen(true)} />
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
+      {spikeOpen && <SpikeDialog onClose={() => setSpikeOpen(false)} />}
     </div>
   )
 }

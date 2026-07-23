@@ -18,3 +18,15 @@ export function scorecardHistory(done: DoneTask[], limit = 12): ScorecardPoint[]
     .slice(-limit)
     .map((d) => ({ stem: d.stem, span: d.report.scorecard.span, success: d.report.success }))
 }
+
+/**
+ * Format the scorecard's net-lines total (adds minus dels) with an explicit
+ * sign, or `null` when there is no diffstat data to report (an older backend
+ * omitting the field, or every archived report lacking a diffstat).
+ */
+export function formatNetLines(total: number | null | undefined): string | null {
+  if (total === null || total === undefined) return null
+  if (total > 0) return `+${total}`
+  if (total < 0) return `−${Math.abs(total)}`
+  return '0'
+}
