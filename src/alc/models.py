@@ -288,6 +288,13 @@ class Manifest(BaseModel):
     # T2) — one MetricRecord per line, appended by the Verifier. `alc metrics`
     # reads it back into a time series.
     metrics_dir: str = ".alc/metrics"
+    # Per-project directory of typed signal files (roadmap-phase-5.md T1) — the
+    # Source for the `signals` replenish kind (loop.py): an error tracker, user
+    # feedback, an issue tracker, or a code review drops a JSON file here via
+    # `alc signal ingest` / `alc.signals.ingest`; a consumed signal moves to
+    # `signals/done/`, mirroring `queue_dir`'s archive. An absent/empty
+    # directory is a no-op — opt-in, byte-identical to today.
+    signals_dir: str = ".alc/signals"
     # Declarative quarantine (roadmap-phase-3.md T11): a check named here still RUNS
     # every attempt, but a failure of it can never fail the run — the AssuranceLoop
     # excludes it from the checks that block success/trigger repair. It stays fully
@@ -602,6 +609,39 @@ class TickResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Signal intake (roadmap-phase-5.md T1) — real-usage input that seeds a demand
+# ---------------------------------------------------------------------------
+
+
+class Signal(BaseModel):
+    """One typed, external signal ingested into ``manifest.signals_dir``.
+
+    Stored as a JSON file (see ``alc.signals``) — the Source the ``signals``
+    replenish kind (``loop.py``) drains, turning each pending signal into a
+    demand via ``conduct.dispatch_enqueue``. A signal is DATA, not a command:
+    the demand synthesized from it goes through the same Policy Gate,
+    isolation, and retry as any hand-written queue task — nothing here ever
+    bypasses the control plane.
+
+    ``kind`` is closed to the four sources real usage surfaces today
+    (extensible later, not speculative now): an error tracker (``error``), a
+    user/human note (``feedback``), an issue tracker (``issue``), or a code
+    review comment (``review``).
+    """
+
+    kind: Literal["error", "feedback", "issue", "review"]
+    source: str            # free-text origin, e.g. "sentry", "github", "operator"
+    title: str
+    body: str = ""
+    ts: float               # epoch seconds
+    # Optional operator-defined weight (e.g. error frequency, review severity).
+    # ZERO runtime effect today — the same reporting-only contract as
+    # Impact.score; a later replenish policy MAY read it to prioritize among
+    # pending signals.
+    weight: float | None = None
+
+
+# ---------------------------------------------------------------------------
 # Concurrent fan-out (run isolated units in parallel)
 # ---------------------------------------------------------------------------
 
@@ -779,16 +819,22 @@ class Replenish(BaseModel):
     - ``plan``: run a planner Specialist (keeps ROADMAP + Knowledge File), then
       reuse the Conductor's parse + enqueue on the structured plan it returns;
       ``ref`` is the specialist name and is required.
+    - ``signals``: read every pending signal from ``manifest.signals_dir`` and
+      turn each into a demand via ``conduct.dispatch_enqueue`` — no planning
+      turn, the same direct write ``alc enqueue`` uses (roadmap-phase-5.md T3).
+      ``ref`` is the Flow name every signal-derived demand dispatches to, and
+      is required; ``task`` is a shared preamble prepended to each signal's
+      title/body.
     """
 
-    kind: Literal["specialist", "conduct", "flow", "plan"]
+    kind: Literal["specialist", "conduct", "flow", "plan", "signals"]
     ref: str | None = None   # specialist/flow name; None allowed for a conduct replenish
     task: str
 
     @model_validator(mode="after")
     def _ref_required_for_specialist_and_flow(self) -> "Replenish":
-        """Enforce that ``ref`` is set when kind is 'specialist', 'flow', or 'plan'."""
-        if self.kind in ("specialist", "flow", "plan") and not self.ref:
+        """Enforce that ``ref`` is set when kind is 'specialist', 'flow', 'plan', or 'signals'."""
+        if self.kind in ("specialist", "flow", "plan", "signals") and not self.ref:
             raise ValueError(
                 f"Replenish with kind='{self.kind}' requires a non-empty 'ref'."
             )

@@ -476,7 +476,8 @@ def validate_loop(
     The numeric constraints (max_cycles > 0, budget.max > 0, max_consecutive >= 1,
     valid budget unit) are already enforced by the pydantic validators at load
     time, so the only reference this checks is the replenish target: a
-    specialist-kind replenish must name a Specialist file that exists.
+    specialist/plan-kind replenish must name a Specialist file that exists, and
+    a flow/signals-kind replenish must name a Flow file that exists.
 
     Args:
         manifest: The loaded Manifest (provides specialists_dir).
@@ -504,7 +505,7 @@ def validate_loop(
                 )
             )
 
-    if replenish is not None and replenish.kind == "flow":
+    if replenish is not None and replenish.kind in ("flow", "signals"):
         flows_dir = operator_layer.parent / manifest.flows_dir
         ref = replenish.ref
         if not ref or not (flows_dir / f"{ref}.yaml").exists():

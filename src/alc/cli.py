@@ -1568,6 +1568,126 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_signal(args: argparse.Namespace) -> int:
+    """Run `alc signal <action>`: dispatch to `ingest` or `list`."""
+    if args.signal_action == "list":
+        return _signal_list(args)
+    return _signal_ingest(args)
+
+
+def _signal_ingest(args: argparse.Namespace) -> int:
+    """`alc signal ingest --kind K --source S --title T [--body B] [--from-file PATH] [--json]`.
+
+    Writes one typed signal JSON file into ``manifest.signals_dir`` via
+    ``alc.signals.ingest``. This only records the signal — it never enqueues
+    anything itself; a signal becomes a demand once the ``signals`` replenish
+    kind consumes it (roadmap-phase-5.md T3).
+
+    ``--from-file`` reads an already-formed JSON object instead of the
+    ``--kind``/``--source``/``--title``/``--body`` flags — the path the
+    webhook and integration scripts use (later waves). A ``ts`` missing from
+    either source defaults to now.
+    """
+    import json
+    import time
+
+    from pydantic import ValidationError
+
+    from alc.intake import load_manifest
+    from alc.models import Signal
+    from alc.output import emit_json
+    from alc.signals import ingest
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    signals_dir = operator_layer.parent / manifest.signals_dir
+
+    if args.from_file:
+        from_file = Path(args.from_file)
+        if not from_file.is_file():
+            print(f"[ERROR] no such file: {from_file}", file=sys.stderr)
+            return 1
+        try:
+            raw = json.loads(from_file.read_text())
+        except json.JSONDecodeError as exc:
+            print(f"[ERROR] invalid JSON in {from_file}: {exc}", file=sys.stderr)
+            return 1
+        if not isinstance(raw, dict):
+            print("[ERROR] --from-file must contain a single JSON object", file=sys.stderr)
+            return 1
+        data = dict(raw)
+        data.setdefault("ts", time.time())
+    else:
+        if not args.kind or not args.source or not args.title:
+            print(
+                "[ERROR] --kind, --source and --title are required unless "
+                "--from-file is given",
+                file=sys.stderr,
+            )
+            return 1
+        data = {
+            "kind": args.kind,
+            "source": args.source,
+            "title": args.title,
+            "body": args.body or "",
+            "ts": time.time(),
+        }
+
+    try:
+        signal = Signal.model_validate(data)
+    except ValidationError as exc:
+        print(f"[ERROR] invalid signal: {exc}", file=sys.stderr)
+        return 1
+
+    path = ingest(signals_dir, signal)
+
+    if getattr(args, "json", False):
+        emit_json({"path": str(path)})
+        return 0
+
+    print(f"Signal ingested: {path.name}")
+    return 0
+
+
+def _signal_list(args: argparse.Namespace) -> int:
+    """`alc signal list [--json]`: show the pending (not yet archived) signals.
+
+    Never writes — sibling read-only action to `ingest`, same convention as
+    `alc checks audit`/`alc checks history`.
+    """
+    from datetime import datetime, timezone
+
+    from alc.intake import load_manifest
+    from alc.output import emit_json
+    from alc.signals import read_signals
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    signals_dir = operator_layer.parent / manifest.signals_dir
+
+    pending = read_signals(signals_dir)
+
+    if getattr(args, "json", False):
+        emit_json(
+            [{"path": str(p.path), **p.signal.model_dump()} for p in pending]
+        )
+        return 0
+
+    if not pending:
+        print("No pending signals — `alc signal ingest` writes one.")
+        return 0
+
+    for p in pending:
+        ts = (
+            datetime.fromtimestamp(p.signal.ts, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        print(f"[{p.signal.kind}] {p.signal.source} — {p.signal.title}  ({ts})")
+
+    return 0
+
+
 def _resolve_delivery(args: argparse.Namespace):
     """Resolve the effective DeliverySpec for `alc land`: CLI flags override the
     manifest's declared default (same override relationship as `--tier` over
@@ -3324,6 +3444,73 @@ def main() -> None:
         help="Output the aggregate as JSON (machine-readable).",
     )
 
+    # alc signal ingest --kind K --source S --title T [--body B] [--from-file PATH] [--json]
+    # alc signal list [--json]
+    signal_parser = subparsers.add_parser(
+        "signal",
+        help=(
+            "Ingest a typed real-usage signal (error/feedback/issue/review) or "
+            "list the ones pending consumption by a `signals` replenish loop."
+        ),
+    )
+    signal_subparsers = signal_parser.add_subparsers(
+        dest="signal_action", required=True
+    )
+
+    signal_ingest_parser = signal_subparsers.add_parser(
+        "ingest",
+        help="Write one typed signal into `manifest.signals_dir`.",
+    )
+    signal_ingest_parser.add_argument(
+        "--kind",
+        choices=["error", "feedback", "issue", "review"],
+        default=None,
+        help="Signal kind. Required unless --from-file is given.",
+    )
+    signal_ingest_parser.add_argument(
+        "--source",
+        default=None,
+        metavar="NAME",
+        help="Free-text origin (e.g. 'sentry', 'github'). Required unless --from-file is given.",
+    )
+    signal_ingest_parser.add_argument(
+        "--title",
+        default=None,
+        help="Short signal title. Required unless --from-file is given.",
+    )
+    signal_ingest_parser.add_argument(
+        "--body",
+        default=None,
+        help="Optional signal body (default: empty).",
+    )
+    signal_ingest_parser.add_argument(
+        "--from-file",
+        dest="from_file",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Read an already-formed JSON object as the signal (the path the "
+            "webhook and integration scripts use) instead of --kind/--source/"
+            "--title/--body."
+        ),
+    )
+    signal_ingest_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the written path as JSON (machine-readable).",
+    )
+
+    signal_list_parser = signal_subparsers.add_parser(
+        "list", help="List the pending (not yet consumed) signals."
+    )
+    signal_list_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the pending signals as JSON (machine-readable).",
+    )
+
     # alc checks audit [--json]
     checks_parser = subparsers.add_parser(
         "checks",
@@ -3519,6 +3706,8 @@ def main() -> None:
         sys.exit(cmd_runs(args))
     elif args.command == "audit":
         sys.exit(cmd_audit(args))
+    elif args.command == "signal":
+        sys.exit(cmd_signal(args))
     elif args.command == "checks":
         sys.exit(cmd_checks(args))
     elif args.command == "metrics":

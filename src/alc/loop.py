@@ -225,6 +225,9 @@ def run_replenish(
     - conduct: plan the goal and enqueue the resulting units.
     - plan: run a planner Specialist, commit its roadmap change, then reuse the
       Conductor's parse + enqueue on the structured plan it returns.
+    - signals: read every pending signal (``alc.signals``) and dispatch-enqueue
+      one demand per signal — no planning turn, the same direct write
+      ``alc enqueue`` uses — then archive each consumed signal.
 
     The budget_delta carries the engine calls + Usage of the replenish itself so
     the cycle can charge them against the budget.
@@ -255,6 +258,12 @@ def run_replenish(
     elif replenish.kind == "plan":
         print(
             f"▶ replenish — plan:{replenish.ref}",
+            file=sys.stderr,
+            flush=True,
+        )
+    elif replenish.kind == "signals":
+        print(
+            f"▶ replenish — signals:{replenish.ref}",
             file=sys.stderr,
             flush=True,
         )
@@ -394,6 +403,45 @@ def run_replenish(
                     file=sys.stderr,
                     flush=True,
                 )
+    elif replenish.kind == "signals":
+        from alc.conduct import dispatch_enqueue
+        from alc.models import ConductorPlan, PlannedUnit
+        from alc.signals import archive_signal, read_signals
+
+        signals_dir = operator_layer.parent / manifest.signals_dir
+        # Parallel drain -> isolated worktrees per demand (Part D); serial ->
+        # shared workdir. Same rule the `plan` kind above uses.
+        isolate = loop_def.drain.concurrency > 1
+        for pending in read_signals(signals_dir):
+            signal = pending.signal
+            # The signal's title/body IS the demand; replenish.task is a
+            # shared preamble/instruction an operator can use to frame every
+            # signal-derived demand the same way (e.g. "Investigate and fix:").
+            task_text = (
+                f"{replenish.task}\n\n"
+                f"## Signal ({signal.kind} via {signal.source}): {signal.title}\n\n"
+                f"{signal.body}"
+            ).strip()
+            plan = ConductorPlan(
+                items=[PlannedUnit(kind="flow", name=replenish.ref, task=task_text)]
+            )
+            # One signal -> one demand, dispatched through the SAME direct
+            # write `alc enqueue` uses (no second enqueue path) — the
+            # synthesized demand goes through the Policy Gate, isolation, and
+            # retry exactly like any other queue task.
+            dispatch_enqueue(
+                plan,
+                manifest,
+                operator_layer,
+                engine_override=engine_override,
+                isolate=isolate,
+                prefix="signal",
+            )
+            # Enqueue THEN archive: the worst case of a crash between the two
+            # steps is a signal re-processed on the next cycle (one duplicate
+            # demand) — never a lost signal, never a traceback (see
+            # alc.signals.archive_signal).
+            archive_signal(signals_dir, pending.path)
     else:  # conduct
         from alc.conduct import conduct
 
