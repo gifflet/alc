@@ -6,6 +6,7 @@
 # (e) archive_signal — moves a consumed signal into signals_dir/done/.
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -75,9 +76,21 @@ class TestSignalModel:
         with pytest.raises(ValidationError):
             Signal(kind="rumor", source="x", title="y", ts=1.0)
 
-    def test_missing_ts_is_rejected(self) -> None:
-        with pytest.raises(ValidationError):
-            Signal.model_validate({"kind": "error", "source": "x", "title": "y"})
+    def test_missing_ts_defaults_to_now(self) -> None:
+        """A real external payload (a Sentry alert, a GitHub issue hook, ...)
+        knows nothing about ALC's internal `ts` field — both `alc signal
+        ingest` and `alc serve --webhook`'s `/signal` route validate straight
+        through this model, so the default lives here, once, for both."""
+        before = time.time()
+        signal = Signal.model_validate({"kind": "error", "source": "x", "title": "y"})
+        after = time.time()
+        assert before <= signal.ts <= after
+
+    def test_a_ts_the_caller_sends_is_kept_exactly(self) -> None:
+        signal = Signal.model_validate(
+            {"kind": "error", "source": "x", "title": "y", "ts": 12345.0}
+        )
+        assert signal.ts == 12345.0
 
     def test_json_round_trip(self) -> None:
         signal = _signal(body="stack trace here", ts=42.0)

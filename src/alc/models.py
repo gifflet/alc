@@ -2,6 +2,7 @@
 # Covers the Operator Layer (Manifest, Blueprint) and run-time records (RunReport, Scorecard).
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -627,13 +628,20 @@ class Signal(BaseModel):
     (extensible later, not speculative now): an error tracker (``error``), a
     user/human note (``feedback``), an issue tracker (``issue``), or a code
     review comment (``review``).
+
+    ``ts`` defaults to "now" when absent — the single place that fills it in
+    (both `alc signal ingest` and the `alc serve --webhook` `/signal` route
+    validate straight through this model, so a real external payload, e.g.
+    a Sentry alert or a GitHub issue hook, never needs to know ALC's
+    internal timestamp field). A value the caller DOES send is kept exactly
+    — the default only ever fills an absence, it never overrides.
     """
 
     kind: Literal["error", "feedback", "issue", "review"]
     source: str            # free-text origin, e.g. "sentry", "github", "operator"
     title: str
     body: str = ""
-    ts: float               # epoch seconds
+    ts: float = Field(default_factory=time.time)  # epoch seconds; "now" if absent
     # Optional operator-defined weight (e.g. error frequency, review severity).
     # ZERO runtime effect today — the same reporting-only contract as
     # Impact.score; a later replenish policy MAY read it to prioritize among

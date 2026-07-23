@@ -1586,10 +1586,11 @@ def _signal_ingest(args: argparse.Namespace) -> int:
     ``--from-file`` reads an already-formed JSON object instead of the
     ``--kind``/``--source``/``--title``/``--body`` flags — the path the
     webhook and integration scripts use (later waves). A ``ts`` missing from
-    either source defaults to now.
+    either source defaults to now — ``Signal.ts``'s own default, not
+    duplicated here (``alc serve --webhook``'s ``/signal`` route relies on
+    the same default).
     """
     import json
-    import time
 
     from pydantic import ValidationError
 
@@ -1616,7 +1617,6 @@ def _signal_ingest(args: argparse.Namespace) -> int:
             print("[ERROR] --from-file must contain a single JSON object", file=sys.stderr)
             return 1
         data = dict(raw)
-        data.setdefault("ts", time.time())
     else:
         if not args.kind or not args.source or not args.title:
             print(
@@ -1630,7 +1630,6 @@ def _signal_ingest(args: argparse.Namespace) -> int:
             "source": args.source,
             "title": args.title,
             "body": args.body or "",
-            "ts": time.time(),
         }
 
     try:
@@ -2633,6 +2632,31 @@ def cmd_ui(args: argparse.Namespace) -> int:
     app = create_app(default_registry_path(), ui_dist=frontend)
     print(f"Serving alc ui on http://{args.host}:{args.port} ({location})")
     uvicorn.run(app, host=args.host, port=args.port)
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run `alc serve --webhook [--host H] [--port P] [--token T]`: a minimal HTTP
+    door in front of signal intake and the enqueue path (roadmap-phase-5.md T4).
+
+    `--webhook` is required — the only mode `alc serve` offers today — so the
+    command reads as an explicit choice rather than an accidental default. It
+    never executes anything: `POST /signal` and `POST /enqueue` only validate a
+    payload and write a file; `alc tick` / `alc cycle` drains the queue later,
+    on its own turn.
+    """
+    from alc.intake import load_manifest
+    from alc.webhook import serve
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    server = serve(args.host, args.port, operator_layer, manifest, args.token)
+    print(f"Serving alc webhook on http://{args.host}:{server.server_port}")
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
     return 0
 
 
@@ -3652,6 +3676,39 @@ def main() -> None:
         help="Serve only the API and WebSocket (do not serve any frontend).",
     )
 
+    # alc serve --webhook [--host H] [--port P] [--token T]
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help=(
+            "Run a minimal HTTP door onto signal intake and the enqueue path "
+            "(the webhook Trigger). Never executes anything — only writes."
+        ),
+    )
+    serve_parser.add_argument(
+        "--webhook",
+        action="store_true",
+        required=True,
+        help=(
+            "Serve the webhook (the only mode today): POST /signal, "
+            "POST /enqueue, GET /health."
+        ),
+    )
+    serve_parser.add_argument(
+        "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)."
+    )
+    serve_parser.add_argument(
+        "--port", type=int, default=8787, help="Port to bind (default: 8787)."
+    )
+    serve_parser.add_argument(
+        "--token",
+        default=None,
+        help=(
+            "Bearer token required in the Authorization header. Omit at your "
+            "own risk: the port then answers unauthenticated requests, with a "
+            "warning printed to stderr."
+        ),
+    )
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -3716,6 +3773,8 @@ def main() -> None:
         sys.exit(cmd_schedule(args))
     elif args.command == "ui":
         sys.exit(cmd_ui(args))
+    elif args.command == "serve":
+        sys.exit(cmd_serve(args))
     else:
         parser.print_help()
         sys.exit(1)
