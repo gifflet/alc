@@ -3,6 +3,8 @@
 # string constants — no package-data configuration required.
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -34,6 +36,14 @@ engines:
 # plan_retries: 2           # corrective retries when a plan's JSON is malformed
 # fanout_concurrency: 4     # parallel workers for `alc conduct --parallel`
 # plan_tier: standard       # compute tier for Conductor planning turns
+
+# Reusable named check sets a Blueprint may opt into via `check_set: <name>`.
+# `alc init` pre-filled one set per detected stack plus `security`. A command
+# left commented out means its binary was not found on PATH at init time —
+# install it and uncomment the check rather than shipping a check that fails
+# on a clean checkout.
+check_sets:
+{check_sets_block}
 
 blueprints_dir: .alc/blueprints
 flows_dir: .alc/flows
@@ -221,6 +231,131 @@ def detect_stack(project_root: Path) -> tuple[str | None, str]:
     return (None, _DEFAULT_CHECKS_BLOCK)
 
 
+# Marker file(s) -> (stack label, check_set name, full check battery) in
+# precedence order. detect_stacks() below returns EVERY stack that matches
+# (unlike detect_stack(), which stops at the first) — a project with both
+# pyproject.toml and package.json gets checks for both instead of losing half.
+_STACK_DEFS: list[tuple[tuple[str, ...], str, str, list[tuple[str, list[str]]]]] = [
+    (
+        ("go.mod",),
+        "Go",
+        "go",
+        [
+            ("build", ["go", "build", "./..."]),
+            ("vet", ["go", "vet", "./..."]),
+            ("test", ["go", "test", "./..."]),
+        ],
+    ),
+    (
+        ("pyproject.toml", "setup.py"),
+        "Python",
+        "python",
+        [
+            ("test", ["pytest", "-q"]),
+            ("lint", ["ruff", "check", "."]),
+        ],
+    ),
+    (
+        ("package.json",),
+        "Node",
+        "node",
+        [
+            ("test", ["npm", "test"]),
+            ("lint", ["npm", "run", "lint"]),
+            ("typecheck", ["npm", "run", "typecheck"]),
+        ],
+    ),
+    (
+        ("Cargo.toml",),
+        "Rust",
+        "rust",
+        [
+            ("check", ["cargo", "check"]),
+            ("test", ["cargo", "test"]),
+            ("clippy", ["cargo", "clippy"]),
+        ],
+    ),
+]
+
+# Stack-specific security scanner, keyed by the stack's check_set name.
+_SECURITY_SCANNERS: dict[str, tuple[str, list[str]]] = {
+    "go": ("govulncheck", ["govulncheck", "./..."]),
+    "python": ("pip-audit", ["pip-audit"]),
+    "node": ("npm-audit", ["npm", "audit"]),
+    "rust": ("cargo-audit", ["cargo", "audit"]),
+}
+# Secret scanning is not stack-specific, so it is always part of `security`.
+_GITLEAKS_CHECK: tuple[str, list[str]] = ("gitleaks", ["gitleaks", "detect"])
+
+
+def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, list[str]]]]]:
+    """Detect every technology stack present, each with its full check battery.
+
+    Unlike detect_stack() (first-match-wins, a single 2-tuple), this returns ONE
+    entry per stack whose marker file(s) exist, so a polyglot project (e.g.
+    pyproject.toml + package.json) is not silently reduced to a single stack.
+
+    Args:
+        project_root: Directory to inspect for marker files.
+
+    Returns:
+        A list of (stack_label, check_set_name, checks) tuples, one per detected
+        stack, in marker precedence order (Go, Python, Node, Rust). `checks` is
+        the full [(check_name, command), ...] battery for that stack.
+    """
+    return [
+        (label, set_name, checks)
+        for markers, label, set_name, checks in _STACK_DEFS
+        if any((project_root / marker).exists() for marker in markers)
+    ]
+
+
+def _build_check_sets(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+) -> dict[str, list[tuple[str, list[str]]]]:
+    """Build the {check_set_name: checks} mapping for the detected stacks + security.
+
+    One set per detected stack (its full battery), plus a `security` set with
+    that stack's scanner (when known) and gitleaks (always, stack-agnostic).
+    """
+    sets: dict[str, list[tuple[str, list[str]]]] = {}
+    security: list[tuple[str, list[str]]] = []
+    for _label, set_name, checks in stacks:
+        sets[set_name] = checks
+        if set_name in _SECURITY_SCANNERS:
+            security.append(_SECURITY_SCANNERS[set_name])
+    security.append(_GITLEAKS_CHECK)
+    sets["security"] = security
+    return sets
+
+
+def _render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
+    """Render one named check_sets entry as a manifest.yaml YAML block.
+
+    A check whose binary is not found on PATH is written commented out — a
+    live check that fails on a clean checkout would break every run. A set
+    left with zero live checks still renders as an explicit empty list so the
+    Manifest still parses.
+    """
+    lines = [f"  {name}:"]
+    any_live = False
+    for check_name, command in checks:
+        commented = shutil.which(command[0]) is None
+        prefix = "# " if commented else ""
+        lines.append(f"    {prefix}- name: {check_name}")
+        lines.append(f"    {prefix}  command: {json.dumps(command)}")
+        any_live = any_live or not commented
+    if not any_live:
+        lines.insert(1, "    []")
+    return "\n".join(lines)
+
+
+def _render_check_sets_block(stacks: list[tuple[str, str, list[tuple[str, list[str]]]]]) -> str:
+    """Render the full `check_sets:` mapping body for detected stacks + security."""
+    check_sets = _build_check_sets(stacks)
+    return "\n\n".join(_render_check_set(name, checks) for name, checks in check_sets.items())
+
+
 # ---------------------------------------------------------------------------
 # Scaffolder
 # ---------------------------------------------------------------------------
@@ -236,6 +371,11 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     when detect_stack() identifies the project stack; otherwise they keep the
     placeholder comment + smoke check.  plan.md always keeps the ["true"] smoke
     check because the planning stage produces no executable code.
+
+    manifest.yaml's `check_sets` gets one named set per stack detect_stacks()
+    finds (fuller batteries than the single-stack path above) plus a `security`
+    set; neither is referenced by the default blueprints — they exist for
+    Blueprints that opt in via `check_set: <name>`.
 
     Args:
         project_root: The project directory to initialise. .alc/ is created
@@ -257,8 +397,12 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
             "`.alc/` already exists; pass --force to overwrite"
         )
 
-    # Detect the project stack to provide real checks.
+    # Detect the project stack to provide real checks. The single-stack path
+    # (detect_stack) stays first-match-wins so the default blueprints keep
+    # their current inline checks byte-identical; detect_stacks() separately
+    # feeds the multi-stack check_sets below.
     _stack_label, checks_block = detect_stack(project_root)
+    check_sets_block = _render_check_sets_block(detect_stacks(project_root))
 
     # Create directory structure.
     (alc_dir / "blueprints").mkdir(parents=True, exist_ok=True)
@@ -269,7 +413,7 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
 
     # Map each relative path to its content.
     files: dict[str, str] = {
-        ".alc/manifest.yaml": _MANIFEST,
+        ".alc/manifest.yaml": _MANIFEST.format(check_sets_block=check_sets_block),
         ".alc/blueprints/chore.md": _CHORE.format(checks_block=checks_block),
         ".alc/blueprints/bug.md": _BUG.format(checks_block=checks_block),
         ".alc/blueprints/feature.md": _FEATURE.format(checks_block=checks_block),

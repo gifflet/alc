@@ -25,6 +25,10 @@ _VALID_PERMISSION_MODES: frozenset[str] = frozenset(
     {"acceptEdits", "auto", "bypassPermissions", "default"}
 )
 
+_VALID_ARCHETYPES: frozenset[str] = frozenset(
+    {"prototyper", "builder", "sweeper", "grower", "maintainer"}
+)
+
 
 def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     """Run all Policy Gate rules and return every Violation found.
@@ -39,6 +43,11 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     7. Blueprint check_set names a declared set  (error) — resolvable check set.
     8. Blueprint permission_mode, when set, is a recognised claude-code value
                                                  (error) — prevents silent misconfiguration.
+    9. Blueprint timeout_s, when set, is > 0     (warn)  — a non-positive value kills
+                                                            the engine turn immediately.
+    10. Blueprint archetype, when set, is a recognised value
+                                                 (warn)  — catches a typo'd label; the
+                                                            field has zero runtime effect.
 
     Resolved checks = the named check_set's checks (if any) plus the Blueprint's own,
     so a Blueprint that only references a check_set still satisfies rule 1.
@@ -150,6 +159,33 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                         f"Blueprint '{bp.name}' declares permission_mode='{bp.permission_mode}' "
                         f"which is not a recognised value "
                         f"(allowed: {sorted(_VALID_PERMISSION_MODES)})."
+                    ),
+                )
+            )
+
+        # Rule 9: timeout_s, when declared, should be positive (advisory).
+        if bp.timeout_s is not None and bp.timeout_s <= 0:
+            violations.append(
+                Violation(
+                    rule="blueprint-timeout-positive",
+                    severity="warn",
+                    message=(
+                        f"Blueprint '{bp.name}' declares timeout_s={bp.timeout_s} — "
+                        "a non-positive timeout kills the engine turn immediately."
+                    ),
+                )
+            )
+
+        # Rule 10: archetype, when declared, should be a recognised value (advisory).
+        if bp.archetype is not None and bp.archetype not in _VALID_ARCHETYPES:
+            violations.append(
+                Violation(
+                    rule="blueprint-archetype-known",
+                    severity="warn",
+                    message=(
+                        f"Blueprint '{bp.name}' declares archetype='{bp.archetype}' "
+                        f"which is not a recognised value "
+                        f"(known: {sorted(_VALID_ARCHETYPES)})."
                     ),
                 )
             )

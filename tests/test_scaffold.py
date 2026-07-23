@@ -231,3 +231,181 @@ class TestDetectStackPrecedence:
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
         label, _checks = detect_stack(tmp_path)
         assert label == "Go"
+
+
+# ---------------------------------------------------------------------------
+# check_sets — alc init writes one named set per detected stack + `security`
+# ---------------------------------------------------------------------------
+
+
+# Byte-exact blueprint/flow content for a single-stack (Python) project, captured
+# from scaffold() BEFORE check_sets existed. `alc init` on a single-stack project
+# must still produce these files byte-identical — check_sets is new content in
+# manifest.yaml only, never a change to the blueprints/flow the older behavior
+# already produced.
+_PYTHON_STACK_EXPECTED = {
+    ".alc/blueprints/chore.md": (
+        '---\nname: chore\npurpose: Apply a low-risk, well-scoped maintenance change.\n'
+        'compute_tier: standard\nchecks:\n  - name: test\n    command: ["pytest", "-q"]\n'
+        'report:\n  format: json\n  schema:\n    status: string\n    summary: string\n---\n\n'
+        '## Chore Workflow\n\n1. Read the task description and locate the relevant files.\n'
+        '2. Make the smallest change that satisfies the task; keep it single-purpose.\n'
+        '3. Do not touch files outside the stated scope.\n'
+        '4. Run the checks to verify correctness.\n'
+        '5. Output a JSON report matching the schema:\n   ```json\n'
+        '   {"status": "ok", "summary": "<one sentence describing what was done>"}\n'
+        '   ```\n'
+    ),
+    ".alc/blueprints/bug.md": (
+        '---\nname: bug\npurpose: Diagnose and fix a bug.\ncompute_tier: standard\n'
+        'checks:\n  - name: test\n    command: ["pytest", "-q"]\nreport:\n  format: json\n'
+        '  schema:\n    status: string\n    root_cause: string\n    fix: string\n'
+        '    summary: string\n---\n\n## Bug Workflow\n\n'
+        '1. Reproduce the bug using the information in the task description.\n'
+        '2. Find the root cause — trace it to the smallest possible location.\n'
+        '3. Apply the smallest fix that resolves the root cause without side effects.\n'
+        '4. Validate the fix by running the checks.\n'
+        '5. Output a JSON report matching the schema:\n   ```json\n   {\n'
+        '     "status": "ok",\n     "root_cause": "<what caused the bug>",\n'
+        '     "fix": "<what was changed>",\n     "summary": "<one sentence summary>"\n'
+        '   }\n   ```\n'
+    ),
+    ".alc/blueprints/feature.md": (
+        '---\nname: feature\npurpose: Implement a new feature.\ncompute_tier: deep\n'
+        'checks:\n  - name: test\n    command: ["pytest", "-q"]\nreport:\n  format: json\n'
+        '  schema:\n    status: string\n    summary: string\n---\n\n## Feature Workflow\n\n'
+        '1. Understand the requirement stated in the task description.\n'
+        '2. Design the smallest viable approach that satisfies the requirement.\n'
+        '3. Implement the feature following the existing code style and conventions.\n'
+        '4. Verify the implementation by running the checks.\n'
+        '5. Output a JSON report matching the schema:\n   ```json\n'
+        '   {"status": "ok", "summary": "<one sentence describing what was implemented>"}\n'
+        '   ```\n'
+    ),
+    ".alc/blueprints/plan.md": (
+        '---\nname: plan\npurpose: Produce a focused implementation plan.\n'
+        'compute_tier: deep\nchecks:\n'
+        '  # Replace this with your real checks, e.g. ["ruff", "check", "."] and '
+        '["pytest", "-q"]\n  - name: smoke\n    command: ["true"]\nreport:\n  format: json\n'
+        '  schema:\n    plan: string\n---\n\n## Plan Workflow\n\n'
+        '1. Read the task description and any relevant files to understand the scope.\n'
+        '2. Produce a concise, numbered step-by-step implementation plan.\n'
+        '3. Each step should be actionable and independently verifiable.\n'
+        '4. Do NOT write application code in this stage — planning only.\n'
+        '5. Output a JSON report matching the schema:\n   ```json\n'
+        '   {"plan": "<the full step-by-step plan as text>"}\n   ```\n'
+    ),
+    ".alc/flows/ship.yaml": (
+        'name: ship\ndescription: Plan a change, then implement it — each stage its '
+        'own mandate.\nstages:\n  - name: plan\n    blueprint: plan\n  - name: build\n'
+        '    blueprint: feature\n'
+    ),
+}
+
+
+class TestScaffoldBlueprintsStayByteIdenticalWithCheckSets:
+    def test_python_project_blueprints_and_flow_unchanged(self, tmp_path: Path) -> None:
+        """check_sets is new manifest.yaml content only — blueprints/flow don't move."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        for rel, expected in _PYTHON_STACK_EXPECTED.items():
+            assert (tmp_path / rel).read_text() == expected, f"{rel} changed by T5"
+
+
+class TestScaffoldWritesCheckSets:
+    def test_python_project_gets_python_and_security_sets(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Every command resolves on PATH -> both sets are written live."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert set(manifest.check_sets) == {"python", "security"}
+        assert [c.name for c in manifest.check_sets["python"]] == ["test", "lint"]
+        assert [c.command for c in manifest.check_sets["python"]] == [
+            ["pytest", "-q"], ["ruff", "check", "."],
+        ]
+        security_names = [c.name for c in manifest.check_sets["security"]]
+        assert security_names == ["pip-audit", "gitleaks"]
+
+    def test_no_stack_still_gets_security_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """gitleaks is stack-agnostic: an empty project still gets a `security` set."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert set(manifest.check_sets) == {"security"}
+        assert [c.name for c in manifest.check_sets["security"]] == ["gitleaks"]
+
+    def test_polyglot_project_gets_a_set_per_stack(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A python + node project gets BOTH check_sets, not just the first match."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert set(manifest.check_sets) == {"python", "node", "security"}
+        assert [c.name for c in manifest.check_sets["node"]] == ["test", "lint", "typecheck"]
+        security_names = {c.name for c in manifest.check_sets["security"]}
+        assert security_names == {"pip-audit", "npm-audit", "gitleaks"}
+
+
+class TestScaffoldChecksSetsCommentOutMissingBinaries:
+    def test_missing_binary_is_written_commented_not_live(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """No binary at all is on PATH -> the security set ends up empty (all commented)."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        manifest_text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert '# - name: pip-audit' in manifest_text
+        assert '#   command: ["pip-audit"]' in manifest_text
+        assert '# - name: gitleaks' in manifest_text
+
+        # A commented-out set still parses as a Manifest with a valid (empty) list.
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.check_sets["security"] == []
+
+    def test_only_missing_binaries_are_commented_others_stay_live(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """pytest present, ruff absent -> test stays live, lint is commented."""
+        available = {"pytest"}
+        monkeypatch.setattr(
+            "alc.scaffold.shutil.which",
+            lambda cmd: "/usr/bin/pytest" if cmd in available else None,
+        )
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert [c.name for c in manifest.check_sets["python"]] == ["test"]
+
+        manifest_text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert '    - name: test\n      command: ["pytest", "-q"]' in manifest_text
+        assert '# - name: lint' in manifest_text
+
+    def test_scaffolded_layer_with_check_sets_still_lints_clean(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """check_sets are dormant (no default blueprint references them) — lint stays green."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "go.mod").write_text("module example\n")
+        scaffold(tmp_path)
+
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = load_all_blueprints(manifest, operator_layer)
+        violations = lint(manifest, blueprints)
+        errors = [v for v in violations if v.severity == "error"]
+        assert not errors, f"Policy Gate errors with check_sets present: {errors}"

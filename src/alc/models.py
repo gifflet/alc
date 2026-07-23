@@ -72,6 +72,11 @@ class Blueprint(BaseModel):
     # the app lifecycle for this run (starts it on the allocated port, waits for health,
     # exposes $ALC_BASE_URL, tears it down). Default False -> byte-identical to today.
     needs_service: bool = False
+    # Descriptive team-metaphor label (prototyper/builder/sweeper/grower/maintainer).
+    # ZERO runtime effect — reporting only (copied to RunReport.archetype) and input
+    # to the Mix Health work of a later phase. Behavior always lives in a named field,
+    # never behind this string (see roadmap-phase-2.md's scope decisions).
+    archetype: str | None = None
 
 
 class ProvisionSpec(BaseModel):
@@ -197,6 +202,20 @@ class Scorecard(BaseModel):
     touch: int   # human interventions (always 0 in unattended MVP runs)
 
 
+class Diffstat(BaseModel):
+    """Line-level summary of a run's git diff — the number that rewards deletion.
+
+    Derived from ``git diff --numstat HEAD`` plus the porcelain status the runner
+    already snapshots for ``changed_files``. Absent (None on RunReport) whenever
+    it cannot be computed (no git repo, git missing, no commits yet) or there is
+    nothing to report — never a reason to fail a run.
+    """
+
+    adds: int
+    dels: int
+    files_deleted: int
+
+
 class RunReport(BaseModel):
     """Full record of one alc run invocation."""
 
@@ -207,11 +226,15 @@ class RunReport(BaseModel):
     scorecard: Scorecard
     output_text: str
     changed_files: list[str] = []  # paths that changed or appeared during this run
+    diffstat: Diffstat | None = None  # None -> not computable or nothing changed
     # Cumulative engine Usage across every attempt in this run (None when the
     # engine reported nothing at all). The Autonomous Loop reads this to enforce
     # usd/tokens budgets. Usage is a frozen dataclass; Pydantic serialises it via
     # arbitrary_types_allowed.
     usage: Usage | None = None
+    # Copied from Blueprint.archetype — reporting only, same zero-runtime-effect
+    # contract as the field it mirrors.
+    archetype: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

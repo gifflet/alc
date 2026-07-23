@@ -12,7 +12,7 @@ from alc.engine import Engine, EngineRequest
 from alc.engines.registry import resolve_engine
 from alc.events import emit
 from alc.intake import resolve_checks
-from alc.models import Blueprint, Manifest, RunReport
+from alc.models import Blueprint, Diffstat, Manifest, RunReport
 from alc.policy import has_errors, lint
 from alc.runtime import RuntimeService
 from alc.verifier import Verifier
@@ -64,6 +64,45 @@ def _changed_between(
         if path not in before or before[path] != status:
             changed.append(path)
     return sorted(changed)
+
+
+def _diffstat(
+    workdir: Path, changed_files: list[str], state_after: dict[str, str]
+) -> Diffstat | None:
+    """Return a Diffstat summarising the run's changes, or None when there is nothing to report.
+
+    Line counts come from ``git diff --numstat HEAD`` (covers both staged and
+    unstaged changes to tracked files against the commit the run started from);
+    files_deleted comes from the porcelain status already captured in
+    *state_after*. Degrades to None — never raises — when there are no changed
+    files or the numstat diff cannot be read (e.g. a repo with no commits yet).
+    """
+    if not changed_files:
+        return None
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workdir), "diff", "--numstat", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return None
+
+    adds = 0
+    dels = 0
+    for line in result.stdout.splitlines():
+        added, _, rest = line.partition("\t")
+        deleted, _, _path = rest.partition("\t")
+        if added.isdigit():
+            adds += int(added)
+        if deleted.isdigit():
+            dels += int(deleted)
+
+    files_deleted = sum(1 for path in changed_files if "D" in state_after.get(path, ""))
+    return Diffstat(adds=adds, dels=dels, files_deleted=files_deleted)
 
 
 # Brief context header prepended to the directive to satisfy the Context Budget.
@@ -286,8 +325,10 @@ def execute_mandate(
     state_after = _git_state(effective_workdir)
     if state_before is None or state_after is None:
         changed_files: list[str] = []
+        diffstat: Diffstat | None = None
     else:
         changed_files = _changed_between(state_before, state_after)
+        diffstat = _diffstat(effective_workdir, changed_files, state_after)
 
     # Patch the report's blueprint field to the real name (not the truncated directive).
     final_report = RunReport(
@@ -298,7 +339,9 @@ def execute_mandate(
         scorecard=report.scorecard,
         output_text=report.output_text,
         changed_files=changed_files,
+        diffstat=diffstat,
         usage=report.usage,
+        archetype=blueprint.archetype,
     )
 
     # Observe: close the mandate with its outcome and scorecard.
