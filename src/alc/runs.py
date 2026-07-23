@@ -51,6 +51,13 @@ def _run_finished(path: Path) -> bool:
     return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
 
 
+# Grace beyond a turn's max lifetime before a still-unfinished run is deemed dead.
+# A running turn is killed at manifest.default_timeout_s, so a run whose log has
+# gone quiet for longer than that (plus this margin) has no live process behind
+# it — it was interrupted, not running.
+STALE_MARGIN_S = 300
+
+
 def _run_stale(mtime: float, finished: bool, stale_after: float, now: float) -> bool:
     """True when an UNFINISHED run's log has been idle past the interrupted threshold."""
     return not finished and (now - mtime) > stale_after

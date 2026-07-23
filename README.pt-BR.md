@@ -74,7 +74,14 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc conduct "<objetivo>" [--parallel]` | Deixa o ALC escolher quais Flows rodar; `--parallel` despacha unidades independentes em paralelo em worktrees isoladas; `--enqueue` para enfileirar |
 | `alc specialist <nome> "<tarefa>"` | Roda um Specialist de área (Recall → Act → Learn) |
 | `alc tick [--concurrency N]` | Drena a fila de tarefas — chame isto via cron; `--concurrency N` processa até N tarefas isoladas em paralelo |
+| `alc enqueue <nome> "<tarefa>"` | Escreve uma tarefa direto na fila, sem turno de planner; `--kind flow\|specialist`, `--touches` serializa automaticamente edições que se sobrepõem, `--from-file` enfileira várias de uma vez |
+| `alc land [branch...] [--all]` | Integra branches de demanda `alc/*` na branch atual (cherry-pick linear); sem argumentos, lista as não mergeadas |
+| `alc discard [branch...] [--all-unmerged]` | Apaga branches `alc/*` à força, poda worktrees obsoletas (`--worktrees`) ou remove bundles antigos (`--bundles --older-than N`) — sempre pede confirmação |
 | `alc primer new <nome>` | Cria um novo arquivo Primer em `.alc/primers/<nome>.md` |
+| `alc new <kind> <nome>` | Cria um novo blueprint/flow/specialist/loop/primer a partir de um template do core; `--from NOME` clona uma unidade existente |
+| `alc status [--json]` | Retrato de saúde num único comando, para monitoração: tarefas pendentes, falhas em aberto, estado dos loops, branches não mergeadas — sempre sai com código 0 |
+| `alc runs list\|show\|tail` | Inspeciona os run logs (`.alc/runs/*.jsonl`): lista os runs recentes, mostra um por inteiro, ou exibe os últimos N eventos |
+| `alc audit --since 7d` | Agrega os reports arquivados da fila numa janela de tempo: contagem de tarefas, totais/médias do Scorecard, arquivos alterados e uso/custo de engine |
 | `alc setup [--engine]` | Instala/atualiza a skill user-level do editor (Claude Code ou Gemini) |
 | `alc ui [--port 8642]` | Sobe a IDE web (dashboard, fila, runs ao vivo, loops, config) — requer o extra opcional `ui` |
 

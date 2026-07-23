@@ -76,7 +76,14 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc conduct "<goal>" [--parallel]` | Let ALC pick which Flow(s) to run; `--parallel` dispatches independent units concurrently in isolated worktrees; `--enqueue` to queue instead |
 | `alc specialist <name> "<task>"` | Run an area Specialist (Recall → Act → Learn) |
 | `alc tick [--concurrency N]` | Drain the task queue — call this from cron; `--concurrency N` processes up to N isolated tasks in parallel |
+| `alc enqueue <name> "<task>"` | Write a queue task directly, no planner turn; `--kind flow\|specialist`, `--touches` auto-serializes overlapping edits, `--from-file` batches many at once |
+| `alc land [branch...] [--all]` | Integrate `alc/*` demand branches into the current branch (linear cherry-pick); no arguments lists the unmerged ones |
+| `alc discard [branch...] [--all-unmerged]` | Force-delete `alc/*` branches, prune stale worktrees (`--worktrees`), or remove old bundles (`--bundles --older-than N`) — always asks for confirmation |
 | `alc primer new <name>` | Scaffold a new Primer file at `.alc/primers/<name>.md` |
+| `alc new <kind> <name>` | Scaffold a new blueprint/flow/specialist/loop/primer from a core template; `--from NAME` clones an existing unit |
+| `alc status [--json]` | One-shot health snapshot for monitoring: pending tasks, outstanding failures, loop states, unmerged branches — always exits 0 |
+| `alc runs list\|show\|tail` | Inspect run logs (`.alc/runs/*.jsonl`): list recent runs, show one in full, or tail its last N events |
+| `alc audit --since 7d` | Aggregate the archived queue reports over a trailing window: task counts, Scorecard totals/averages, changed files, and engine usage/cost |
 | `alc setup [--engine]` | Install/update the user-level editor skill (Claude Code or Gemini) |
 | `alc ui [--port 8642]` | Serve the web IDE (dashboard, queue, live runs, loops, config) — needs the optional `ui` extra |
 

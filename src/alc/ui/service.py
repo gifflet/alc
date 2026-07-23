@@ -333,19 +333,12 @@ def _runs_dir(root: Path) -> Path:
     return root / manifest.runs_dir
 
 
-# Grace beyond a turn's max lifetime before a still-unfinished run is deemed dead.
-# A running turn is killed at manifest.default_timeout_s, so a run whose log has
-# gone quiet for longer than that (plus this margin) has no live process behind
-# it — it was interrupted, not running.
-_STALE_MARGIN_S = 300
-
-
 def _stale_after_seconds(root: Path) -> float:
     """Idle seconds after which an unfinished run is presumed dead (interrupted)."""
     try:
-        return load_manifest(operator_layer(root)).default_timeout_s + _STALE_MARGIN_S
+        return load_manifest(operator_layer(root)).default_timeout_s + runs_core.STALE_MARGIN_S
     except (OSError, ValidationError, ValueError):
-        return 1800 + _STALE_MARGIN_S
+        return 1800 + runs_core.STALE_MARGIN_S
 
 
 def list_runs(root: Path, limit: int = 50, offset: int = 0) -> dict:

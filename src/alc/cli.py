@@ -1,7 +1,8 @@
 # cli.py — argparse entrypoint for ALC.
 # Provides subcommands: `alc init` (supports --setup), `alc lint`, `alc run`,
 # `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`, `alc conduct`,
-# `alc enqueue`, `alc new`, `alc cycle`, `alc loop`, `alc specialist`, `alc setup`.
+# `alc enqueue`, `alc new`, `alc cycle`, `alc loop`, `alc specialist`, `alc setup`,
+# `alc status`, `alc runs`, `alc audit`.
 from __future__ import annotations
 
 import argparse
@@ -1370,6 +1371,188 @@ def cmd_discard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    """Run `alc status [--json]`: aggregate health signals for external monitoring.
+
+    Reports pending queue tasks, outstanding (retryable) failures, every
+    Autonomous Loop's persisted state — flagging any 'stopped' one with its
+    ``stopped_reason`` — and the count of unmerged ``alc/*`` branches (0 outside
+    a git repository).
+
+    This command NEVER fails on what it finds: it always exits 0. It is meant
+    as the target of external monitoring — the CONSUMER (a monitoring script, a
+    dashboard poll) decides what in the payload counts as unhealthy.
+    """
+    from alc.branches import list_alc_branches
+    from alc.intake import load_manifest
+    from alc.loop import load_loop_state, loops_dir, state_path
+    from alc.queue import outstanding_failures
+    from alc.worktree import git_toplevel, is_git_repo
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    project_root = operator_layer.parent
+
+    queue_dir = project_root / manifest.queue_dir
+    pending = len(list(queue_dir.glob("*.yaml"))) if queue_dir.is_dir() else 0
+
+    failures = outstanding_failures(queue_dir / "done")
+
+    loops_directory = loops_dir(manifest, operator_layer)
+    loops: list[dict] = []
+    if loops_directory.is_dir():
+        for path in sorted(loops_directory.glob("*.yaml")):
+            state = load_loop_state(state_path(loops_directory, path.stem), path.stem)
+            loops.append(
+                {
+                    "name": state.name,
+                    "status": state.status,
+                    "cycle": state.cycle,
+                    "stopped_reason": state.stopped_reason,
+                }
+            )
+
+    branches = 0
+    if is_git_repo(project_root):
+        branches = len(
+            [b for b in list_alc_branches(git_toplevel(project_root)) if not b.merged]
+        )
+
+    payload = {
+        "pending": pending,
+        "outstanding_failures": len(failures),
+        "loops": loops,
+        "unmerged_branches": branches,
+    }
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(payload)
+        return 0
+
+    print(f"Pending queue tasks:     {pending}")
+    print(f"Outstanding failures:    {len(failures)}")
+    print(f"Unmerged alc/ branches:  {branches}")
+    if loops:
+        print("Loops:")
+        for loop in loops:
+            line = f"  {loop['name']}: {loop['status']} (cycle {loop['cycle']})"
+            if loop["status"] == "stopped":
+                line += f", stopped_reason={loop['stopped_reason']}"
+            print(line)
+    else:
+        print("Loops:                   (none)")
+    return 0
+
+
+def cmd_runs(args: argparse.Namespace) -> int:
+    """Run `alc runs list|show|tail`: inspect run logs (``.alc/runs/*.jsonl``).
+
+    - ``list [--limit N] [--offset N] [--json]``: newest-first page of run summaries.
+    - ``show <stem> [--json]``: every parsed event for one run.
+    - ``tail <stem> [-n N]``: the last N events of one run (default 20).
+
+    No ``--follow``: the web IDE already streams a live run over WebSocket, so a
+    polling loop here would only duplicate it.
+    """
+    import json
+
+    from alc.intake import load_manifest
+    from alc.runs import STALE_MARGIN_S, list_runs, read_run
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    runs_dir = operator_layer.parent / manifest.runs_dir
+    stale_after = manifest.default_timeout_s + STALE_MARGIN_S
+
+    if args.runs_action == "list":
+        result = list_runs(runs_dir, stale_after, limit=args.limit, offset=args.offset)
+        if getattr(args, "json", False):
+            from alc.output import emit_json
+
+            emit_json(result)
+            return 0
+        if not result["runs"]:
+            print("No runs.")
+            return 0
+        for run in result["runs"]:
+            status = "finished" if run["finished"] else ("stale" if run["stale"] else "running")
+            print(f"{run['stem']}   ({run['kind']}, {status})")
+        print(f"Showing {len(result['runs'])} of {result['total']} run(s).")
+        return 0
+
+    # show / tail both resolve one run by stem.
+    try:
+        result = read_run(runs_dir, args.stem, stale_after)
+    except FileNotFoundError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    if args.runs_action == "show":
+        if getattr(args, "json", False):
+            from alc.output import emit_json
+
+            emit_json(result)
+            return 0
+        events = result["events"]
+    else:  # tail
+        events = result["events"][-args.lines :] if args.lines > 0 else result["events"]
+
+    for event in events:
+        print(json.dumps(event, default=str))
+    return 0
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Run `alc audit --since 7d|24h|30m [--json]`: aggregate archived queue reports.
+
+    Rolls up every ``done/*.report.json`` archived at/after the trailing window
+    into task counts, Scorecard totals/averages, changed files, and accumulated
+    engine Usage (input/output tokens, cost). An unparseable ``--since`` is a
+    clear error, not a traceback.
+    """
+    import time
+    from dataclasses import asdict
+
+    from alc.audit import audit_window, parse_since
+    from alc.intake import load_manifest
+
+    try:
+        seconds = parse_since(args.since)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    done_dir = operator_layer.parent / manifest.queue_dir / "done"
+
+    window = audit_window(done_dir, time.time() - seconds)
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(asdict(window))
+        return 0
+
+    print(f"Since:            {args.since} ago")
+    print(
+        f"Tasks:            {window.tasks_total} total, "
+        f"{window.tasks_ok} ok, {window.tasks_failed} failed"
+    )
+    print(
+        f"Scorecard (avg):  span={window.span_avg:.2f} passes={window.passes_avg:.2f} "
+        f"streak={window.streak_avg:.2f} touch={window.touch_avg:.2f}"
+    )
+    print(f"Changed files:    {window.changed_files_total}")
+    print(
+        f"Usage:            input={window.input_tokens_total} "
+        f"output={window.output_tokens_total} cost_usd={window.cost_usd_total:.4f}"
+    )
+    return 0
+
+
 def cmd_ui(args: argparse.Namespace) -> int:
     """Run `alc ui [--host H] [--port P] [--ui-dist PATH] [--no-ui]`: serve the web IDE.
 
@@ -1964,6 +2147,93 @@ def main() -> None:
         help="Override the Compute Tier for this invocation (flow: applies to every stage).",
     )
 
+    # alc status [--json]
+    status_parser = subparsers.add_parser(
+        "status",
+        help=(
+            "Aggregate health signals (pending tasks, outstanding failures, loop "
+            "states, unmerged branches) for external monitoring. Always exits 0."
+        ),
+    )
+    status_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the status payload as JSON (machine-readable).",
+    )
+
+    # alc runs list|show|tail
+    runs_parser = subparsers.add_parser(
+        "runs", help="Inspect run logs (.alc/runs/*.jsonl): list, show, or tail one."
+    )
+    runs_subparsers = runs_parser.add_subparsers(dest="runs_action", required=True)
+
+    runs_list_parser = runs_subparsers.add_parser(
+        "list", help="List run logs, newest first."
+    )
+    runs_list_parser.add_argument(
+        "--limit", type=int, default=50, help="Max runs to list (default: 50)."
+    )
+    runs_list_parser.add_argument(
+        "--offset", type=int, default=0, help="Runs to skip from the newest (default: 0)."
+    )
+    runs_list_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the run list as JSON (machine-readable).",
+    )
+
+    runs_show_parser = runs_subparsers.add_parser(
+        "show", help="Show every parsed event for one run."
+    )
+    runs_show_parser.add_argument(
+        "stem", help="Run-log filename stem (e.g. from `alc runs list`)."
+    )
+    runs_show_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the run's events as JSON (machine-readable).",
+    )
+
+    runs_tail_parser = runs_subparsers.add_parser(
+        "tail", help="Print the last N events of one run."
+    )
+    runs_tail_parser.add_argument(
+        "stem", help="Run-log filename stem (e.g. from `alc runs list`)."
+    )
+    runs_tail_parser.add_argument(
+        "-n",
+        type=int,
+        default=20,
+        dest="lines",
+        metavar="N",
+        help="Number of trailing events to print (default: 20).",
+    )
+
+    # alc audit --since 7d|24h|30m [--json]
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help=(
+            "Aggregate the archived queue reports (done/*.report.json) over a "
+            "trailing time window: task counts, Scorecard totals/averages, "
+            "changed files, and accumulated engine Usage."
+        ),
+    )
+    audit_parser.add_argument(
+        "--since",
+        required=True,
+        metavar="WINDOW",
+        help="Trailing window to aggregate, e.g. '7d', '24h', '30m'.",
+    )
+    audit_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the aggregate as JSON (machine-readable).",
+    )
+
     # alc ui [--host H] [--port P] [--ui-dist PATH]
     ui_parser = subparsers.add_parser(
         "ui",
@@ -2033,6 +2303,12 @@ def main() -> None:
         if args.action == "eject" and not args.name:
             parser.error("prompts eject requires a prompt NAME")
         sys.exit(cmd_prompts(args))
+    elif args.command == "status":
+        sys.exit(cmd_status(args))
+    elif args.command == "runs":
+        sys.exit(cmd_runs(args))
+    elif args.command == "audit":
+        sys.exit(cmd_audit(args))
     elif args.command == "ui":
         sys.exit(cmd_ui(args))
     else:
