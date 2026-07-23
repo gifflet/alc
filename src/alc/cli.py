@@ -1,7 +1,7 @@
 # cli.py — argparse entrypoint for ALC.
 # Provides subcommands: `alc init` (supports --setup), `alc lint`, `alc run`,
-# `alc flow`, `alc tick`, `alc conduct`, `alc cycle`, `alc loop`, `alc specialist`,
-# `alc setup`.
+# `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`, `alc conduct`,
+# `alc cycle`, `alc loop`, `alc specialist`, `alc setup`.
 from __future__ import annotations
 
 import argparse
@@ -779,27 +779,36 @@ def cmd_flow(args: argparse.Namespace) -> int:
         print("--isolate ignored: not inside a git repository", file=sys.stderr)
         use_isolate = False
 
-    # Safety guard: a committing flow + worktree isolation would double-commit.
-    # Refuse early with a clear error so the operator can choose one or the other.
-    if use_isolate and flow.commit is not None and flow.commit.enabled:
-        print(
-            "[ERROR] committing flows are not yet supported with worktree isolation "
-            "(isolate:true); see ROADMAP: worktree with linked dependencies",
-            file=sys.stderr,
-        )
-        return 1
+    # A committing flow (flow.commit.enabled) run under worktree isolation is
+    # committed ONCE by the worktree exit-commit — using the demand's own
+    # rendered message, excluding `.alc/` — instead of also firing the
+    # FlowRunner's terminal commit (skip_commit=True below reconciles the two).
+    # This mirrors the committing-demand path `queue.py` already runs in
+    # production (queue.py:345-424). A flow with no commit block takes the
+    # `else` branch below, byte-identical to before.
+    is_committing_demand = use_isolate and flow.commit is not None and flow.commit.enabled
+    demand_message = manifest.worktree_commit_message
+    if is_committing_demand:
+        try:
+            demand_message = flow.commit.message.format(
+                name=flow.name,
+                task=(args.task.splitlines()[0] if args.task else ""),
+            )
+        except (KeyError, IndexError, ValueError):
+            demand_message = f"chore(cycle): {flow.name}"
 
     if use_isolate:
         repo_root = git_toplevel(Path.cwd())
         wt = IsolatedWorktree(
             repo_root,
             label="flow",
-            commit_message=manifest.worktree_commit_message,
+            commit_message=demand_message,
+            exclude_paths=((".alc/",) if is_committing_demand else ()),
             message_provider=make_commit_message_provider(
                 manifest=manifest,
                 operator_layer=operator_layer,
                 workdir=repo_root,
-                fallback=manifest.worktree_commit_message,
+                fallback=demand_message,
                 engine_override=args.engine,
             ),
         )
@@ -815,6 +824,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
                     workdir=wt_path,
                     extra_context=extra_context,
                     tier_override=args.tier,
+                    skip_commit=is_committing_demand,
                 )
         except PolicyViolationError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
@@ -822,6 +832,13 @@ def cmd_flow(args: argparse.Namespace) -> int:
         except BaseException as exc:
             exc_info = (type(exc), exc, exc.__traceback__)
         finally:
+            # For a committing demand the worktree owns the single commit: keep
+            # it only on flow SUCCESS, otherwise discard the branch (a failed or
+            # exception-raising run leaves report None/unsuccessful -> discard).
+            # A non-committing isolate flow leaves commit_on_exit at its True
+            # default -> today's behavior (commit iff changes).
+            if is_committing_demand:
+                wt.commit_on_exit = report is not None and report.success
             wt.__exit__(*exc_info)
 
         if exc_info[1] is not None and not isinstance(exc_info[1], PolicyViolationError):
@@ -954,6 +971,197 @@ def cmd_retry(args: argparse.Namespace) -> int:
         print(f"  {failure.reason}")
         print()
     print("Run: alc retry <stem>   (or: alc retry --all)")
+    return 0
+
+
+def cmd_land(args: argparse.Namespace) -> int:
+    """Run `alc land [branch...] [--all] [--json]`: thin shell over auto_merge_branches.
+
+    - No branch names and no ``--all``: LIST the unmerged ``alc/*`` branches,
+      same listing convention as ``alc retry`` with no stem.
+    - ``--all``: integrate every unmerged ``alc/*`` branch.
+    - Explicit branch names: each must carry the ``alc/`` prefix — validated
+      before anything is touched.
+
+    Prints ``MergeReport.summary()`` and exits 1 when anything conflicted (0
+    otherwise). Outside a git repository this is a clear error, exit 1.
+    """
+    from alc.branches import list_alc_branches
+    from alc.merge import auto_merge_branches
+    from alc.worktree import git_toplevel, is_git_repo
+
+    if args.branch:
+        invalid = [b for b in args.branch if not b.startswith("alc/")]
+        if invalid:
+            print(f"[ERROR] not an alc/ branch: {', '.join(invalid)}", file=sys.stderr)
+            return 1
+
+    if not is_git_repo(Path.cwd()):
+        print("[ERROR] not inside a git repository", file=sys.stderr)
+        return 1
+    repo_root = git_toplevel(Path.cwd())
+
+    if args.branch:
+        branches = args.branch
+    elif args.all:
+        branches = [b.name for b in list_alc_branches(repo_root) if not b.merged]
+    else:
+        # List path — machine-readable (--json) or human-readable (default).
+        unmerged = [b for b in list_alc_branches(repo_root) if not b.merged]
+        if getattr(args, "json", False):
+            from dataclasses import asdict
+
+            from alc.output import emit_json
+
+            emit_json([asdict(b) for b in unmerged])
+            return 0
+        if not unmerged:
+            print("No unmerged alc/ branches.")
+            return 0
+        for b in unmerged:
+            print(f"{b.name}   ({b.label})")
+        print("Run: alc land --all")
+        return 0
+
+    report = auto_merge_branches(repo_root, branches)
+    print(report.summary())
+    return 1 if report.conflicted else 0
+
+
+def _confirm_delete(assume_yes: bool) -> bool:
+    """Return True when a destructive `alc discard` action is confirmed.
+
+    ``--yes`` always confirms. Otherwise prompt interactively when stdin is a
+    TTY; a non-TTY invocation without ``--yes`` is never confirmed — never
+    delete silently (e.g. from cron or a script).
+    """
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        return False
+    reply = input("Proceed? [y/N] ").strip().lower()
+    return reply in ("y", "yes")
+
+
+def _discard_list(args: argparse.Namespace) -> int:
+    """The no-argument path of `alc discard`: list the unmerged `alc/*` branches."""
+    import time
+
+    from alc.branches import list_alc_branches
+    from alc.worktree import git_toplevel, is_git_repo
+
+    if not is_git_repo(Path.cwd()):
+        print("[ERROR] not inside a git repository", file=sys.stderr)
+        return 1
+    repo_root = git_toplevel(Path.cwd())
+    unmerged = [b for b in list_alc_branches(repo_root) if not b.merged]
+
+    if getattr(args, "json", False):
+        from dataclasses import asdict
+
+        from alc.output import emit_json
+
+        emit_json([asdict(b) for b in unmerged])
+        return 0
+
+    if not unmerged:
+        print("No unmerged alc/ branches.")
+        return 0
+    now = time.time()
+    for b in unmerged:
+        age_days = (now - b.committed_at) / 86400
+        print(f"{b.name}   ({b.label}, {age_days:.1f}d old)")
+    print("Run: alc discard --all-unmerged   (or pass branch names)")
+    return 0
+
+
+def cmd_discard(args: argparse.Namespace) -> int:
+    """Run `alc discard [branch...] [--all-unmerged] [--worktrees] \
+[--bundles --older-than N] [--yes] [--json]`.
+
+    - No branch names and no flag: LIST the unmerged ``alc/*`` branches with
+      their age and provenance (``AlcBranch.label``).
+    - Branch names or ``--all-unmerged``: force-delete those ``alc/*`` branches
+      via `delete_branches` (already refuses a non-``alc/`` ref and the
+      current branch).
+    - ``--worktrees``: prune stale worktree admin entries.
+    - ``--bundles --older-than N``: delete bundle files older than N days from
+      the manifest's ``bundles_dir``.
+
+    Any actual deletion (branches, bundles) requires confirmation: ``--yes``,
+    or an interactive "y" at a TTY prompt — refuses otherwise, never deleting
+    silently.
+    """
+    import time
+
+    from alc.branches import delete_branches, list_alc_branches, prune_worktrees
+    from alc.worktree import git_toplevel, is_git_repo
+
+    wants_branches = bool(args.branch) or args.all_unmerged
+    if not (wants_branches or args.worktrees or args.bundles):
+        return _discard_list(args)
+
+    if args.branch:
+        invalid = [b for b in args.branch if not b.startswith("alc/")]
+        if invalid:
+            print(f"[ERROR] not an alc/ branch: {', '.join(invalid)}", file=sys.stderr)
+            return 1
+
+    if args.bundles and args.older_than is None:
+        print("[ERROR] --bundles requires --older-than N", file=sys.stderr)
+        return 1
+
+    repo_root = None
+    if wants_branches or args.worktrees:
+        if not is_git_repo(Path.cwd()):
+            print("[ERROR] not inside a git repository", file=sys.stderr)
+            return 1
+        repo_root = git_toplevel(Path.cwd())
+
+    branch_targets: list[str] = []
+    if wants_branches:
+        if args.branch:
+            branch_targets = args.branch
+        else:
+            branch_targets = [b.name for b in list_alc_branches(repo_root) if not b.merged]
+
+    bundle_targets: list[Path] = []
+    if args.bundles:
+        from alc.intake import load_manifest
+
+        operator_layer = _find_operator_layer()
+        manifest = load_manifest(operator_layer)
+        bundles_dir = operator_layer.parent / manifest.bundles_dir
+        if bundles_dir.is_dir():
+            cutoff = time.time() - args.older_than * 86400
+            bundle_targets = [
+                p for p in bundles_dir.glob("*.jsonl") if p.stat().st_mtime < cutoff
+            ]
+
+    if (branch_targets or bundle_targets) and not _confirm_delete(args.yes):
+        print(
+            "[ERROR] refusing to delete without confirmation; pass --yes or "
+            "confirm interactively",
+            file=sys.stderr,
+        )
+        return 1
+
+    if wants_branches:
+        deleted = delete_branches(repo_root, branch_targets) if branch_targets else []
+        if deleted:
+            print(f"Deleted {len(deleted)} branch(es): {', '.join(deleted)}")
+        else:
+            print("Deleted 0 branches.")
+
+    if args.worktrees:
+        pruned = prune_worktrees(repo_root)
+        print(f"Pruned {pruned} stale worktree(s).")
+
+    if args.bundles:
+        for p in bundle_targets:
+            p.unlink()
+        print(f"Deleted {len(bundle_targets)} bundle file(s) older than {args.older_than}d.")
+
     return 0
 
 
@@ -1165,6 +1373,83 @@ def main() -> None:
         action="store_true",
         default=False,
         help="List the outstanding failures as JSON (machine-readable).",
+    )
+
+    # alc land [branch...] [--all] [--json]
+    land_parser = subparsers.add_parser(
+        "land",
+        help=(
+            "Integrate alc/* demand branches into the current branch (linear "
+            "cherry-pick). With no branch names, lists the unmerged ones."
+        ),
+    )
+    land_parser.add_argument(
+        "branch",
+        nargs="*",
+        help="Explicit alc/* branch name(s) to integrate. Omit to list the unmerged ones.",
+    )
+    land_parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Integrate every unmerged alc/* branch.",
+    )
+    land_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="List the unmerged branches as JSON (machine-readable); only with no branch/--all.",
+    )
+
+    # alc discard [branch...] [--all-unmerged] [--worktrees] [--bundles --older-than N] [--yes] [--json]
+    discard_parser = subparsers.add_parser(
+        "discard",
+        help=(
+            "Force-delete alc/* branches, prune stale worktrees, and/or remove "
+            "old bundle files. With no arguments, lists the unmerged branches."
+        ),
+    )
+    discard_parser.add_argument(
+        "branch",
+        nargs="*",
+        help="Explicit alc/* branch name(s) to delete.",
+    )
+    discard_parser.add_argument(
+        "--all-unmerged",
+        action="store_true",
+        default=False,
+        help="Delete every unmerged alc/* branch (ignored when branch names are given).",
+    )
+    discard_parser.add_argument(
+        "--worktrees",
+        action="store_true",
+        default=False,
+        help="Prune stale worktree admin entries (git worktree prune).",
+    )
+    discard_parser.add_argument(
+        "--bundles",
+        action="store_true",
+        default=False,
+        help="Delete bundle files older than --older-than N days.",
+    )
+    discard_parser.add_argument(
+        "--older-than",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Age threshold in days for --bundles.",
+    )
+    discard_parser.add_argument(
+        "--yes",
+        action="store_true",
+        default=False,
+        help="Confirm the deletion non-interactively (required when stdin is not a TTY).",
+    )
+    discard_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="List the unmerged branches as JSON (machine-readable); only with no other arguments.",
     )
 
     # alc conduct "<goal>" [--engine NAME] [--enqueue]
@@ -1418,6 +1703,10 @@ def main() -> None:
         sys.exit(cmd_tick(args))
     elif args.command == "retry":
         sys.exit(cmd_retry(args))
+    elif args.command == "land":
+        sys.exit(cmd_land(args))
+    elif args.command == "discard":
+        sys.exit(cmd_discard(args))
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
     elif args.command == "cycle":
