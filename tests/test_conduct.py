@@ -138,6 +138,52 @@ class TestParsePlanTouches:
             )
 
 
+class TestParsePlanImpact:
+    """Optional evidence-based `impact` field (roadmap-phase-2.md T12) — ZERO
+    runtime effect, same reporting-only contract as Blueprint.archetype."""
+
+    def test_reads_impact_score_and_rationale(self) -> None:
+        raw = (
+            '[{"kind":"flow","name":"ship","task":"a",'
+            '"impact":{"score":0.8,"rationale":"12 issue reports this week"}}]'
+        )
+        plan = parse_plan(raw, {"ship"})
+        assert plan.items[0].impact is not None
+        assert plan.items[0].impact.score == 0.8
+        assert plan.items[0].impact.rationale == "12 issue reports this week"
+
+    def test_absent_impact_defaults_none(self) -> None:
+        plan = parse_plan('[{"kind":"flow","name":"ship","task":"a"}]', {"ship"})
+        assert plan.items[0].impact is None
+
+    def test_rejects_impact_missing_rationale(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="impact"):
+            parse_plan(
+                '[{"kind":"flow","name":"ship","task":"a","impact":{"score":1}}]',
+                {"ship"},
+            )
+
+    def test_rejects_impact_with_non_numeric_score(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="impact"):
+            parse_plan(
+                '[{"kind":"flow","name":"ship","task":"a",'
+                '"impact":{"score":"high","rationale":"x"}}]',
+                {"ship"},
+            )
+
+    def test_rejects_impact_not_an_object(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="impact"):
+            parse_plan(
+                '[{"kind":"flow","name":"ship","task":"a","impact":"high"}]', {"ship"}
+            )
+
+
 class TestDeriveDependencies:
     """The CORE derives depends_on from `touches` overlap — the mechanical guarantee."""
 
@@ -778,6 +824,20 @@ class TestPlannedUnitConstructorCompat:
         })
         assert plan.items[0].kind == "specialist"
         assert plan.items[0].name == "db"
+
+    def test_impact_defaults_none_and_accepts_a_valid_object(self) -> None:
+        from alc.models import Impact
+
+        bare = PlannedUnit(kind="flow", name="ship", task="x")
+        assert bare.impact is None
+
+        scored = PlannedUnit(
+            kind="flow",
+            name="ship",
+            task="x",
+            impact=Impact(score=0.5, rationale="some evidence"),
+        )
+        assert scored.impact == Impact(score=0.5, rationale="some evidence")
 
 
 # ---------------------------------------------------------------------------

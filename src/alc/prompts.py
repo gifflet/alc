@@ -95,6 +95,17 @@ LOGICAL dependency (B builds on A even when their files are disjoint). Every id 
 depends_on MUST match some item's id in THIS plan. Example:
 [{{"id":"ingest","kind":"flow","name":"demand","task":"...","touches":["src/services/ingest.js"]}}, {{"kind":"flow","name":"demand","task":"...","touches":["src/services/ingest.js","src/routes/audios.js"],"depends_on":["ingest"]}}]
 
+## Impact (optional)
+
+When you have real evidence behind a plan item — e.g. issue reports, error volume, a
+Knowledge File accumulating what users keep hitting — you MAY add
+``"impact":{{"score":<number>,"rationale":"<why>"}}`` to that item. ``score`` is any
+numeric scale you choose (ALC does not interpret it); ``rationale`` is a short,
+evidence-based justification (e.g. "6 issue reports this week reference this flow").
+Omit ``impact`` entirely when you have no such evidence — it is never required, and ALC
+does not yet act on it (no automated signal intake, metric checks, or prioritization
+from this field — that lands in a later phase).
+
 ## Catalog
 
 {catalog}

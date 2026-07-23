@@ -82,6 +82,8 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc status [--json]` | Retrato de saúde num único comando, para monitoração: tarefas pendentes, falhas em aberto, estado dos loops, branches não mergeadas — sempre sai com código 0 |
 | `alc runs list\|show\|tail` | Inspeciona os run logs (`.alc/runs/*.jsonl`): lista os runs recentes, mostra um por inteiro, ou exibe os últimos N eventos |
 | `alc audit --since 7d` | Agrega os reports arquivados da fila numa janela de tempo: contagem de tarefas, totais/médias do Scorecard, arquivos alterados e uso/custo de engine |
+| `alc team hire\|list\|retire\|status` | Cria, lista ou aposenta um Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — parcial); `alc init --stage pre-pmf\|growth\|strong-pmf` instala o combo de um estágio |
+| `alc checks audit [--json]` | Redetecta o(s) stack(s) e PROPÕE upgrades de check_set contra o Manifest — nunca escreve; aponta checks ainda comentados por falta de binário |
 | `alc setup [--engine]` | Instala/atualiza a skill user-level do editor (Claude Code ou Gemini) |
 | `alc ui [--port 8642]` | Sobe a IDE web (dashboard, fila, runs ao vivo, loops, config) — requer o extra opcional `ui` |
 

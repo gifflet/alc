@@ -84,6 +84,8 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc status [--json]` | One-shot health snapshot for monitoring: pending tasks, outstanding failures, loop states, unmerged branches — always exits 0 |
 | `alc runs list\|show\|tail` | Inspect run logs (`.alc/runs/*.jsonl`): list recent runs, show one in full, or tail its last N events |
 | `alc audit --since 7d` | Aggregate the archived queue reports over a trailing window: task counts, Scorecard totals/averages, changed files, and engine usage/cost |
+| `alc team hire\|list\|retire\|status` | Scaffold, roster, or retire an Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — partial); `alc init --stage pre-pmf\|growth\|strong-pmf` installs a stage's combo |
+| `alc checks audit [--json]` | Re-detect your stack(s) and PROPOSE check_set upgrades against the Manifest — never writes; flags checks still commented out for a missing binary |
 | `alc setup [--engine]` | Install/update the user-level editor skill (Claude Code or Gemini) |
 | `alc ui [--port 8642]` | Serve the web IDE (dashboard, queue, live runs, loops, config) — needs the optional `ui` extra |
 

@@ -2,7 +2,8 @@
 # Provides subcommands: `alc init` (supports --setup and --stage), `alc lint`,
 # `alc run`, `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`,
 # `alc conduct`, `alc enqueue`, `alc new`, `alc team`, `alc cycle`, `alc loop`,
-# `alc specialist`, `alc setup`, `alc status`, `alc runs`, `alc audit`.
+# `alc specialist`, `alc setup`, `alc status`, `alc runs`, `alc audit`,
+# `alc checks`.
 from __future__ import annotations
 
 import argparse
@@ -1741,6 +1742,58 @@ def cmd_runs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_checks(args: argparse.Namespace) -> int:
+    """Run `alc checks <action>`: dispatch to the one action, `audit`, today."""
+    return _checks_audit(args)
+
+
+def _checks_audit(args: argparse.Namespace) -> int:
+    """`alc checks audit [--json]`: re-detect stacks and PROPOSE check upgrades.
+
+    Never writes — compares the Manifest's current check_sets (and each
+    Blueprint's resolved checks) against what `detect_stacks()` finds today,
+    including live binary availability, and prints the diff for the operator
+    to apply by hand (or reconcile via `alc team hire --force`).
+    """
+    from alc.checks import audit_checks
+    from alc.intake import load_all_blueprints, load_manifest
+
+    operator_layer = _find_operator_layer()
+    project_root = operator_layer.parent
+    manifest = load_manifest(operator_layer)
+    blueprints = load_all_blueprints(manifest, operator_layer)
+
+    report = audit_checks(manifest, project_root, blueprints)
+
+    if getattr(args, "json", False):
+        from dataclasses import asdict
+
+        from alc.output import emit_json
+
+        emit_json(asdict(report))
+        return 0
+
+    if not report.has_proposals:
+        print("No upgrades proposed — check_sets are current with the detected stack(s).")
+
+    for cs in report.check_sets:
+        status = "NEW" if cs.is_new else "existing"
+        print(f"check_set '{cs.set_name}' ({status}):")
+        for name, command in cs.add:
+            print(f"  + {name}: {' '.join(command)}  (binary available — propose adding)")
+        for name, command in cs.unavailable:
+            print(f"  - {name}: {' '.join(command)}  (binary not on PATH — stays commented out)")
+
+    for bp in report.smoke_only_blueprints:
+        stacks_desc = ", ".join(bp.stacks)
+        print(
+            f"Blueprint '{bp.blueprint}' resolves to only the smoke placeholder while "
+            f"{stacks_desc} is detected — consider wiring real checks."
+        )
+
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Run `alc audit --since 7d|24h|30m [--json]`: aggregate archived queue reports.
 
@@ -2522,6 +2575,28 @@ def main() -> None:
         help="Output the aggregate as JSON (machine-readable).",
     )
 
+    # alc checks audit [--json]
+    checks_parser = subparsers.add_parser(
+        "checks",
+        help="Re-detect stacks and PROPOSE check_set upgrades against the Manifest.",
+    )
+    checks_subparsers = checks_parser.add_subparsers(dest="checks_action", required=True)
+
+    checks_audit_parser = checks_subparsers.add_parser(
+        "audit",
+        help=(
+            "Compare the Manifest's check_sets and each Blueprint's resolved checks "
+            "against a fresh stack detection; never writes. Also flags checks "
+            "commented out for a missing binary."
+        ),
+    )
+    checks_audit_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the proposal as JSON (machine-readable).",
+    )
+
     # alc ui [--host H] [--port P] [--ui-dist PATH]
     ui_parser = subparsers.add_parser(
         "ui",
@@ -2599,6 +2674,8 @@ def main() -> None:
         sys.exit(cmd_runs(args))
     elif args.command == "audit":
         sys.exit(cmd_audit(args))
+    elif args.command == "checks":
+        sys.exit(cmd_checks(args))
     elif args.command == "ui":
         sys.exit(cmd_ui(args))
     else:

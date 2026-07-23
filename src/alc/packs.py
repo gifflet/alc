@@ -289,6 +289,41 @@ stop:
 """
 
 
+# ---------------------------------------------------------------------------
+# Grower pack — DELIBERATELY PARTIAL (roadmap-phase-2.md T12). The Grower's
+# loop is hypothesis -> change -> measurement; this wave ships only a DIY
+# signal-gathering Specialist. Real signal intake (issue trackers, APM, crash
+# reports), metric checks, and the `regression` replenish kind are Phases 4-5.
+# ---------------------------------------------------------------------------
+
+_GROWER_LISTEN = """\
+# listen — a DIY sweep of user-reported issues and error reports. ALC does
+# NOT ingest signal automatically yet: the operator feeds this Specialist raw
+# reports as the task text on each invocation (e.g. `alc specialist listen
+# "<pasted issue reports>"`), and its Knowledge File accumulates what users
+# keep hitting over time. This pack is DELIBERATELY PARTIAL — automated
+# signal intake, metric checks, and the `regression` replenish kind land in
+# Phases 4-5 (see docs/roadmap-phase-2.md).
+name: listen
+area: user-reported issues and error reports — a durable map of what users keep hitting
+blueprint: plan
+knowledge_path: .alc/specialists/listen.knowledge.md
+"""
+
+
+def _grower_files(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+) -> dict[str, str]:
+    """Build the Grower pack: a DIY issue/error-sweep Specialist only.
+
+    `stacks` is unused — the sweep is DIY (operator-fed), not stack-specific;
+    kept for signature parity with the other packs in PACKS. `listen` reuses
+    the default `plan` Blueprint (read/synthesize, no code changes) rather
+    than shipping its own — this wave adds no new Blueprint for Grower.
+    """
+    return {".alc/specialists/listen.yaml": _GROWER_LISTEN}
+
+
 def _maintainer_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
 ) -> dict[str, str]:
@@ -308,15 +343,17 @@ def _maintainer_files(
     }
 
 
-# Archetype name -> file-generator. Packs a later wave adds (grower, prototyper)
-# are simply absent from this table until their wave lands; `alc team hire`
-# reports that plainly (see pack_files' KeyError) instead of failing.
+# Archetype name -> file-generator. `grower` ships PARTIAL (see _grower_files);
+# `prototyper` is a later wave and simply absent from this table until it lands
+# — `alc team hire` reports that plainly (see pack_files' KeyError) instead of
+# failing.
 PACKS: dict[
     str, Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]]], dict[str, str]]
 ] = {
     "builder": _builder_files,
     "sweeper": _sweeper_files,
     "maintainer": _maintainer_files,
+    "grower": _grower_files,
 }
 
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from pathlib import Path
 
-from alc.intake import resolve_checks
+from alc.intake import is_smoke_only, resolve_checks
 from alc.models import Blueprint, FlowDefinition, LoopDefinition, Manifest
 
 
@@ -29,6 +29,10 @@ _VALID_ARCHETYPES: frozenset[str] = frozenset(
     {"prototyper", "builder", "sweeper", "grower", "maintainer"}
 )
 
+# The literal smoke fallback every pack Blueprint keeps (packs.py) so a check_set
+# alone can never resolve a Blueprint to zero checks. Rule 11 below detects when
+# that fallback is ALL that ran.
+
 
 def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     """Run all Policy Gate rules and return every Violation found.
@@ -48,9 +52,21 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     10. Blueprint archetype, when set, is a recognised value
                                                  (warn)  — catches a typo'd label; the
                                                             field has zero runtime effect.
+    11. Blueprint check_set is set, name != 'plan', and resolved checks are
+        nothing but the smoke placeholder     (warn)  — its check_set is
+                                                          currently empty (no
+                                                          matching tool binary
+                                                          on PATH); see `alc
+                                                          checks audit`.
 
     Resolved checks = the named check_set's checks (if any) plus the Blueprint's own,
     so a Blueprint that only references a check_set still satisfies rule 1.
+
+    Rule 11 is deliberately scoped to Blueprints that OPT INTO a check_set: the
+    default `alc init` layer never sets check_set (even on a stack-less project,
+    where chore/bug/feature also resolve to only the smoke placeholder), so it
+    stays exempt without a separate check — and `plan` is exempt outright, since a
+    planning stage legitimately produces no executable code.
     """
     violations: list[Violation] = []
 
@@ -186,6 +202,27 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                         f"Blueprint '{bp.name}' declares archetype='{bp.archetype}' "
                         f"which is not a recognised value "
                         f"(known: {sorted(_VALID_ARCHETYPES)})."
+                    ),
+                )
+            )
+
+        # Rule 11: an execution Blueprint (not `plan`) that opts into a check_set
+        # but resolves to nothing but the smoke placeholder — its check_set is
+        # currently empty (advisory; `alc checks audit` explains why).
+        if (
+            bp.check_set is not None
+            and is_smoke_only(manifest, bp)
+        ):
+            violations.append(
+                Violation(
+                    rule="blueprint-checks-smoke-only",
+                    severity="warn",
+                    message=(
+                        f"Blueprint '{bp.name}' declares check_set '{bp.check_set}' but "
+                        "resolves to nothing but the smoke placeholder — check_set "
+                        f"'{bp.check_set}' is currently empty (no matching tool binary "
+                        "on PATH). Run `alc checks audit` to see what would become "
+                        "available."
                     ),
                 )
             )

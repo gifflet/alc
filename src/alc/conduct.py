@@ -163,6 +163,22 @@ def parse_plan(
                 f"Item {i} 'touches' must be a list of strings; got {touches!r}."
             )
 
+        # Optional evidence-based justification (roadmap-phase-2.md T12) — the
+        # `plan-contract` prompt documents this to a planner with real signal to
+        # draw on. ZERO runtime effect; validated up front like touches/depends_on
+        # so a malformed entry fails with a clear "Item N" message, not a raw
+        # pydantic error.
+        impact = entry.get("impact")
+        if impact is not None and (
+            not isinstance(impact, dict)
+            or not isinstance(impact.get("score"), (int, float))
+            or not isinstance(impact.get("rationale"), str)
+        ):
+            raise ValueError(
+                f"Item {i} 'impact' must be an object with a numeric 'score' and a "
+                f"string 'rationale'; got {impact!r}."
+            )
+
         # Build via model_validate so the before-validator normalises any
         # legacy shape; the catalog check above has already run by this point.
         item_data: dict = {"kind": kind, "name": name, "task": str(entry["task"])}
@@ -172,6 +188,8 @@ def parse_plan(
             item_data["depends_on"] = depends_on
         if touches:
             item_data["touches"] = touches
+        if impact is not None:
+            item_data["impact"] = impact
         items.append(PlannedUnit.model_validate(item_data))
 
     # Every referenced dependency id must match some item's id in the SAME plan;

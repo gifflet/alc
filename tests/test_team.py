@@ -259,8 +259,7 @@ class TestInitStage:
         assert "builder: hired" in out
         assert "sweeper: hired" in out
         assert "maintainer: hired" in out
-        # `grower` is a later wave — still reported plainly, not installed.
-        assert "grower: not available yet" in out
+        assert "grower: hired" in out
 
     def test_pre_pmf_stage_hires_builder(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

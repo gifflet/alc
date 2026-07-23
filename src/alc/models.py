@@ -400,6 +400,22 @@ class FanoutReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class Impact(BaseModel):
+    """Optional evidence-based justification a planner may attach to a plan item.
+
+    ``score`` is an operator-defined numeric scale — ALC does not interpret or
+    act on it. ``rationale`` is the free-text evidence behind the score (e.g.
+    "12 issue reports this week reference this flow"). Populated by a planner
+    with real signal to draw on (e.g. the Grower pack's `listen` Specialist,
+    once wired to a `kind: plan` replenish — Phases 4-5); ZERO runtime effect
+    today, the same reporting-only contract as ``Blueprint.archetype``
+    (roadmap-phase-2.md T12).
+    """
+
+    score: float
+    rationale: str
+
+
 class PlannedUnit(BaseModel):
     """One (kind, name, task) triple produced by the Conductor's planning turn.
 
@@ -423,6 +439,9 @@ class PlannedUnit(BaseModel):
     # touches OVERLAP (serializing demands that share files) so interdependency safety
     # does NOT rely on the planner declaring depends_on. Empty = not declared.
     touches: list[str] = []
+    # Optional evidence-based justification (roadmap-phase-2.md T12) — see Impact.
+    # ZERO runtime effect; not persisted onto the QueueTask (see conduct.py).
+    impact: Impact | None = None
 
     @model_validator(mode="before")
     @classmethod

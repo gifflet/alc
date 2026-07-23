@@ -122,6 +122,21 @@ def resolve_checks(manifest: Manifest, blueprint: Blueprint) -> list[Check]:
     return list(set_checks) + list(blueprint.checks)
 
 
+# The placeholder `alc init` writes when it has no real check to offer.
+_SMOKE_PLACEHOLDER = Check(name="smoke", command=["true"])
+
+
+def is_smoke_only(manifest: Manifest, blueprint: Blueprint) -> bool:
+    """True when a Blueprint verifies nothing but the scaffold's smoke placeholder.
+
+    ``plan`` is exempt: a planning stage produces no executable code, so its
+    ``["true"]`` check is deliberate rather than a gap to report.
+    """
+    if blueprint.name == "plan":
+        return False
+    return resolve_checks(manifest, blueprint) == [_SMOKE_PLACEHOLDER]
+
+
 def load_all_blueprints(manifest: Manifest, operator_layer: Path) -> list[Blueprint]:
     """Load every .md file from the blueprints directory.
 
