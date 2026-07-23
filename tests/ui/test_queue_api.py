@@ -77,6 +77,36 @@ class TestOutstandingFlag:
         assert by["retry1"]["outstanding"] is False
 
 
+class TestPendingOrder:
+    """read_queue()'s `pending` list mirrors the drain's real dispatch order
+    (queue.py's `_topological_waves`): `(-priority, stem)`."""
+
+    def _write_pending(self, project: Path, stem: str, priority: int = 0) -> None:
+        queue = project / ".alc" / "queue"
+        queue.mkdir(parents=True, exist_ok=True)
+        (queue / f"{stem}.yaml").write_text(
+            f"flow: ship\ntask: 'x'\nengine: mock\nisolate: false\npriority: {priority}\n"
+        )
+
+    def test_higher_priority_written_later_sorts_first(
+        self, client, registered: str, project: Path
+    ) -> None:
+        self._write_pending(project, "alpha")  # written first, default priority
+        self._write_pending(project, "zzz-late", priority=5)  # written later, higher priority
+
+        pending = client.get(f"/api/projects/{registered}/queue").json()["pending"]
+        assert [p["stem"] for p in pending] == ["zzz-late", "alpha"]
+
+    def test_default_priority_preserves_name_order(
+        self, client, registered: str, project: Path
+    ) -> None:
+        self._write_pending(project, "b-task")
+        self._write_pending(project, "a-task")
+
+        pending = client.get(f"/api/projects/{registered}/queue").json()["pending"]
+        assert [p["stem"] for p in pending] == ["a-task", "b-task"]
+
+
 class TestEnqueue:
     def test_enqueue_creates_pending_task(self, client, registered: str, project: Path) -> None:
         resp = client.post(

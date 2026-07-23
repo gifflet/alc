@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alc.models import Diffstat, FlowReport, RunReport, Scorecard
+
 
 class TestManifest:
     def test_get_manifest_raw_and_parsed(self, client, registered: str) -> None:
@@ -79,6 +81,71 @@ class TestQueueRunsEmpty:
         body = client.get(f"/api/projects/{registered}/scorecard").json()
         assert body["reports"] == 0
         assert body["successes"] == 0
+        # New in Wave 1: additive keys, present even with no archived reports.
+        assert body["net_lines_total"] is None
+        assert body["runs_with_warnings"] == 0
+
+
+class TestScorecardAggregation:
+    """scorecard()'s additive `net_lines_total` / `runs_with_warnings` keys."""
+
+    def _write_archive(
+        self,
+        project: Path,
+        stem: str,
+        *,
+        diffstat: Diffstat | None = None,
+        warnings: list[str] | None = None,
+    ) -> None:
+        done = project / ".alc" / "queue" / "done"
+        done.mkdir(parents=True, exist_ok=True)
+        report = FlowReport(
+            flow="ship",
+            engine="mock",
+            success=True,
+            stages=[
+                RunReport(
+                    blueprint="chore",
+                    engine="mock",
+                    success=True,
+                    attempts=[],
+                    scorecard=Scorecard(span=1, passes=1, streak=1, touch=0),
+                    output_text="all checks passed",
+                    diffstat=diffstat,
+                    warnings=warnings or [],
+                )
+            ],
+            scorecard=Scorecard(span=1, passes=1, streak=1, touch=0),
+        )
+        (done / f"{stem}.report.json").write_text(report.model_dump_json(indent=2))
+
+    def test_no_diffstat_degrades_to_none(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # An archived report exists, but its stage never computed a diffstat
+        # (e.g. no git repo) -> net_lines_total stays None, not 0.
+        self._write_archive(project, "r1")
+        body = client.get(f"/api/projects/{registered}/scorecard").json()
+        assert body["reports"] == 1
+        assert body["net_lines_total"] is None
+        assert body["runs_with_warnings"] == 0
+
+    def test_diffstats_sum_and_warnings_are_counted(
+        self, client, registered: str, project: Path
+    ) -> None:
+        self._write_archive(
+            project, "r1", diffstat=Diffstat(adds=10, dels=4, files_deleted=0)
+        )
+        self._write_archive(
+            project,
+            "r2",
+            diffstat=Diffstat(adds=1, dels=20, files_deleted=1),
+            warnings=["Blueprint declares expect: shrink, but the diff nets +positive."],
+        )
+        body = client.get(f"/api/projects/{registered}/scorecard").json()
+        assert body["reports"] == 2
+        assert body["net_lines_total"] == (10 - 4) + (1 - 20)
+        assert body["runs_with_warnings"] == 1
 
 
 class TestRunsFinished:
@@ -170,6 +237,20 @@ class TestLintAndEngines:
         body = client.get(f"/api/projects/{registered}/lint").json()
         errors = [v for v in body["violations"] if v["severity"] == "error"]
         assert errors == []
+
+    def test_lint_surfaces_stage_mix_warning(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # A declared stage with no Blueprint hiring its core archetypes must
+        # surface stagepolicy.lint_stage's warn through the same endpoint
+        # `cmd_lint` runs it through -- the scaffolded blueprints declare no
+        # archetype at all, so every 'pre-pmf' core member is missing.
+        manifest_path = project / ".alc" / "manifest.yaml"
+        manifest_path.write_text(manifest_path.read_text() + "\nstage: pre-pmf\n")
+
+        body = client.get(f"/api/projects/{registered}/lint").json()
+        rules = {v["rule"] for v in body["violations"]}
+        assert "stage-core-archetype-missing" in rules
 
     def test_engines_reports_mock_default_and_health(self, client, registered: str) -> None:
         engines = client.get(f"/api/projects/{registered}/engines").json()

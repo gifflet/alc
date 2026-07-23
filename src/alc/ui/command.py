@@ -38,6 +38,10 @@ _COMMANDS: dict[str, _Spec] = {
         value_flags=("engine", "tier", "primer"),
         bool_flags=("isolate", "bundle"),
     ),
+    "spike": _Spec(
+        positionals=("task",),
+        value_flags=("engine",),
+    ),
     "flow": _Spec(
         positionals=("flow", "task"),
         value_flags=("engine", "tier", "primer"),
@@ -51,7 +55,7 @@ _COMMANDS: dict[str, _Spec] = {
     "conduct": _Spec(
         positionals=("goal",),
         value_flags=("engine", "tier", "concurrency"),
-        bool_flags=("enqueue", "parallel"),
+        bool_flags=("enqueue", "parallel", "strict-stage"),
     ),
     "cycle": _Spec(
         positionals=("name",),

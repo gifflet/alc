@@ -34,6 +34,7 @@ from alc.queue import (
     outstanding_failures,
     write_retry_task,
 )
+from alc.stagepolicy import lint_stage
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
 
@@ -138,6 +139,7 @@ def lint_project(root: Path) -> dict:
     violations = _lint(manifest, blueprints)
     violations += validate_prompts(manifest, ol, blueprints)
     violations += validate_provisions(manifest, root)
+    violations += lint_stage(manifest, blueprints)
     return {
         "violations": [
             {"rule": v.rule, "severity": v.severity, "message": v.message}
@@ -174,7 +176,19 @@ def engines_info(root: Path) -> list[dict]:
 
 
 def scorecard(root: Path) -> dict:
-    """Aggregate the scorecards of every archived queue report (done/)."""
+    """Aggregate the scorecards of every archived queue report (done/).
+
+    ``net_lines_total`` sums ``diffstat.adds - diffstat.dels`` over every stage
+    (of every archived FlowReport) that carries a diffstat — mirroring
+    ``stagepolicy.mix_health``'s ``ArchetypeSpend.net_lines`` accumulation.
+    ``None`` when NO stage anywhere carried a diffstat (nothing computable),
+    distinct from ``0`` (diffstats were computed and net out to zero) so the
+    frontend can tell "no data" from "zero net change".
+
+    ``runs_with_warnings`` counts archived reports where at least one stage
+    carries a non-empty ``warnings`` list (a FlowReport has no ``warnings``
+    field of its own — only its stages, each a RunReport, do).
+    """
     done_dir = _queue_dir(root) / "done"
     totals = {
         "reports": 0,
@@ -184,6 +198,8 @@ def scorecard(root: Path) -> dict:
         "passes_total": 0,
         "streak_total": 0,
         "touch_total": 0,
+        "net_lines_total": None,
+        "runs_with_warnings": 0,
     }
     if not done_dir.is_dir():
         return totals
@@ -199,6 +215,12 @@ def scorecard(root: Path) -> dict:
         totals["passes_total"] += report.scorecard.passes
         totals["streak_total"] += report.scorecard.streak
         totals["touch_total"] += report.scorecard.touch
+        for stage in report.stages:
+            if stage.diffstat is not None:
+                net = stage.diffstat.adds - stage.diffstat.dels
+                totals["net_lines_total"] = (totals["net_lines_total"] or 0) + net
+        if any(stage.warnings for stage in report.stages):
+            totals["runs_with_warnings"] += 1
     return totals
 
 
@@ -228,6 +250,11 @@ def read_queue(root: Path) -> dict:
         pending.append(
             {"stem": path.stem, "mtime": path.stat().st_mtime, "task": qt.model_dump(mode="json")}
         )
+    # Mirror the drain's real dispatch order within a wave (queue.py's
+    # `_topological_waves`): (-priority, filename), higher priority first.
+    # Every task at the default priority 0 sorts by stem alone -> byte-identical
+    # to the glob order above.
+    pending.sort(key=lambda p: (-p["task"]["priority"], p["stem"]))
 
     done_dir = queue_dir / "done"
     if done_dir.is_dir():
