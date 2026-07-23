@@ -565,11 +565,12 @@ def cmd_tick(args: argparse.Namespace) -> int:
 
 
 def cmd_conduct(args: argparse.Namespace) -> int:
-    """Run `alc conduct "<goal>" [--engine NAME] [--enqueue]`."""
+    """Run `alc conduct "<goal>" [--engine NAME] [--enqueue] [--strict-stage]`."""
     import sys
 
     from alc.conduct import conduct
     from alc.intake import load_manifest
+    from alc.runner import PolicyViolationError
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
@@ -584,9 +585,13 @@ def cmd_conduct(args: argparse.Namespace) -> int:
             parallel=args.parallel,
             concurrency=args.concurrency,
             tier=args.tier,
+            strict_stage=getattr(args, "strict_stage", False),
         )
     except ValueError as exc:
         print(f"[ERROR] Conductor could not produce a valid plan: {exc}", file=sys.stderr)
+        return 1
+    except PolicyViolationError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
     # Summary header.
@@ -596,6 +601,8 @@ def cmd_conduct(args: argparse.Namespace) -> int:
     for item in report.plan.items:
         print(f"  -> {item.name} ({item.kind}): {item.task}")
     print()
+    for warning in report.warnings:
+        print(f"[WARN] {warning}", file=sys.stderr)
 
     if report.mode == "run":
         # Parallel dispatch reports per-unit outcomes; serial reports flow outcomes.
@@ -1560,14 +1567,70 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_delivery(args: argparse.Namespace):
+    """Resolve the effective DeliverySpec for `alc land`: CLI flags override the
+    manifest's declared default (same override relationship as `--tier` over
+    `manifest.plan_tier`).
+
+    Never raises: `alc land` works with no Operator Layer at all (test_land.py) —
+    an unreadable/missing manifest just falls back to `DeliverySpec()`'s own
+    default (mode: local), so `--push`/`--pr` still work standalone off git alone.
+    """
+    from alc.intake import load_manifest
+    from alc.models import DeliverySpec
+
+    try:
+        manifest = load_manifest(_find_operator_layer())
+        delivery = manifest.delivery or DeliverySpec()
+    except Exception:
+        delivery = DeliverySpec()
+
+    if getattr(args, "pr", False):
+        delivery = delivery.model_copy(update={"mode": "pr"})
+    elif getattr(args, "push", False):
+        delivery = delivery.model_copy(update={"mode": "push"})
+    return delivery
+
+
+def _deliver(repo_root: Path, delivery, report) -> None:
+    """The last mile (roadmap-phase-4.md T8): push the landed branch, optionally
+    open a PR. No-op for ``mode: "local"``. NEVER raises and NEVER changes
+    `alc land`'s exit code — a push/PR failure is warned about, not fatal,
+    because the local land this runs after already succeeded.
+    """
+    from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
+
+    branch = current_branch(repo_root)
+    if branch is None:
+        print("[land] could not resolve the current branch; skipping delivery.", file=sys.stderr)
+        return
+
+    ok, message = push_branch(repo_root, delivery.remote, branch)
+    print(f"[land] {message}", file=sys.stdout if ok else sys.stderr)
+    if not ok or delivery.mode != "pr":
+        return
+
+    files = changed_files(repo_root, delivery.base, branch)
+    body = build_pr_body(report, files)
+    ok, message = open_pr(repo_root, delivery.base, branch, f"alc land: {branch}", body)
+    print(f"[land] {message}", file=sys.stdout if ok else sys.stderr)
+
+
 def cmd_land(args: argparse.Namespace) -> int:
-    """Run `alc land [branch...] [--all] [--json]`: thin shell over auto_merge_branches.
+    """Run `alc land [branch...] [--all] [--json] [--push|--pr]`: thin shell over
+    auto_merge_branches, plus the optional remote last mile (DeliverySpec, T8).
 
     - No branch names and no ``--all``: LIST the unmerged ``alc/*`` branches,
       same listing convention as ``alc retry`` with no stem.
     - ``--all``: integrate every unmerged ``alc/*`` branch.
     - Explicit branch names: each must carry the ``alc/`` prefix — validated
       before anything is touched.
+    - ``--push``/``--pr`` (or a manifest ``delivery: {mode: push|pr}``): after a
+      successful local merge, push the current branch to the delivery remote,
+      and for ``--pr`` also open a PR via `gh`. Additive only — with neither
+      flag AND no non-default `delivery` declared, behavior is byte-identical
+      to before this existed. A push failure or a missing `gh` never changes
+      the exit code below (see `_deliver`).
 
     Prints ``MergeReport.summary()`` and exits 1 when anything conflicted (0
     otherwise). Outside a git repository this is a clear error, exit 1.
@@ -1611,6 +1674,11 @@ def cmd_land(args: argparse.Namespace) -> int:
 
     report = auto_merge_branches(repo_root, branches)
     print(report.summary())
+
+    delivery = _resolve_delivery(args)
+    if delivery.mode != "local":
+        _deliver(repo_root, delivery, report)
+
     return 1 if report.conflicted else 0
 
 
@@ -2712,7 +2780,7 @@ def main() -> None:
         help="Print the written filenames as JSON (machine-readable).",
     )
 
-    # alc land [branch...] [--all] [--json]
+    # alc land [branch...] [--all] [--json] [--push|--pr]
     land_parser = subparsers.add_parser(
         "land",
         help=(
@@ -2736,6 +2804,24 @@ def main() -> None:
         action="store_true",
         default=False,
         help="List the unmerged branches as JSON (machine-readable); only with no branch/--all.",
+    )
+    land_parser.add_argument(
+        "--push",
+        action="store_true",
+        default=False,
+        help=(
+            "After a successful local land, push the current branch to the "
+            "delivery remote (manifest `delivery.remote`, default origin)."
+        ),
+    )
+    land_parser.add_argument(
+        "--pr",
+        action="store_true",
+        default=False,
+        help=(
+            "Push (see --push) and open a pull request via `gh` against the "
+            "delivery base branch (manifest `delivery.base`, default main)."
+        ),
     )
 
     # alc discard [branch...] [--all-unmerged] [--worktrees] [--bundles --older-than N] [--yes] [--json]
@@ -2899,6 +2985,15 @@ def main() -> None:
         "--tier",
         default=None,
         help="Compute tier for the planning turn (default: manifest.plan_tier).",
+    )
+    conduct_parser.add_argument(
+        "--strict-stage",
+        action="store_true",
+        default=False,
+        help=(
+            "Refuse the plan instead of warning when a unit's archetype falls "
+            "outside manifest.stage's target mix (no-op with no stage declared)."
+        ),
     )
 
     # alc cycle <name> [--engine NAME] [--concurrency N] [--status] [--reset]

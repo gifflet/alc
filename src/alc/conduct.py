@@ -18,6 +18,7 @@ from alc.engine import Engine, EngineRequest
 from alc.events import bind_run_log, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import (
+    load_all_blueprints,
     load_all_flows,
     load_all_specialists,
     load_flow,
@@ -35,6 +36,7 @@ from alc.prompts import (
     _CORRECTIVE_SUFFIX,
     resolve_prompt,
 )
+from alc.runner import PolicyViolationError
 from alc.textutil import slugify as _slugify
 
 
@@ -255,6 +257,7 @@ def plan_flows(
     max_retries: int = 2,
     directive_template: str = _CONDUCTOR_DIRECTIVE_TEMPLATE,
     corrective_template: str = _CORRECTIVE_SUFFIX,
+    stage_briefing: str | None = None,
 ) -> ConductorPlan:
     """Ask the engine to produce a ConductorPlan for the given goal.
 
@@ -276,6 +279,14 @@ def plan_flows(
         corrective_template: The corrective-retry suffix template. Defaults to the
             embedded ``corrective`` prompt; ``conduct()`` passes the resolved
             override when present.
+        stage_briefing: Optional stage/mix prose (``stagepolicy.stage_briefing``)
+            appended to the directive AFTER templating, so it needs no template
+            placeholder and never disturbs an operator's directive override. This
+            is PURELY a nudge (roadmap-phase-4.md T7a) — the model may ignore it;
+            the ONLY guarantee the product makes about the plan's mix is the
+            deterministic check ``conduct()`` runs on the plan this returns.
+            None (default, when no stage is declared) leaves the directive
+            byte-identical to before this parameter existed.
 
     Returns:
         Validated ConductorPlan.
@@ -288,6 +299,8 @@ def plan_flows(
         goal=goal,
         catalog_text=catalog_text,
     )
+    if stage_briefing:
+        directive += stage_briefing
 
     last_err: ValueError | None = None
     for attempt in range(1 + max_retries):
@@ -596,6 +609,7 @@ def conduct(
     parallel: bool = False,
     concurrency: int | None = None,
     tier: str | None = None,
+    strict_stage: bool = False,
 ) -> ConductReport:
     """Plan and dispatch a goal via the Conductor.
 
@@ -608,6 +622,16 @@ def conduct(
     worktree); the outcomes land in ``ConductReport.units``. Outside a git repo,
     ``parallel`` prints a note to stderr and falls back to serial dispatch.
 
+    Stage-awareness (roadmap-phase-4.md T7) is TWO parts with different
+    guarantees. (a) A stage briefing is folded into the planning directive —
+    PROBABILISTIC, the planning model may ignore it. (b) Once the plan comes
+    back, ``stagepolicy.validate_stage_mix`` checks it against
+    ``manifest.stage``'s mix in plain code — this is the actual guarantee.
+    Both are no-ops when ``manifest.stage`` is None. (b)'s findings become
+    ``ConductReport.warnings`` when ``strict_stage`` is False; with
+    ``strict_stage`` True, ANY such finding refuses the plan outright (raises
+    ``PolicyViolationError``, BEFORE any run or enqueue is attempted).
+
     Args:
         manifest: Loaded Manifest.
         operator_layer: Path to the ``.alc/`` directory.
@@ -618,11 +642,19 @@ def conduct(
         parallel: When True, dispatch independent units concurrently (requires git).
         concurrency: Parallel fan-out width; None -> manifest.fanout_concurrency.
         tier: Compute tier for the planning turn; None -> manifest.plan_tier.
+        strict_stage: When True, a plan with any off-mix unit (see
+            ``stagepolicy.validate_stage_mix``) is refused instead of merely
+            warned about. False (default) -> today's behavior: warn and proceed.
 
     Returns:
         ConductReport capturing goal, mode, plan, and outcomes.
+
+    Raises:
+        PolicyViolationError: If ``strict_stage`` is True and the plan has at
+            least one unit whose archetype falls outside the declared stage's mix.
     """
     from alc.engines.registry import resolve_engine
+    from alc.stagepolicy import stage_briefing, validate_stage_mix
 
     # Resolve engine and model for the planning turn (a configurable tier).
     engine_name = engine_override or manifest.default_engine
@@ -641,6 +673,7 @@ def conduct(
     directive_template = resolve_prompt("conductor", operator_layer, manifest)
     corrective_template = resolve_prompt("corrective", operator_layer, manifest)
 
+    briefing = stage_briefing(manifest)
     plan = plan_flows(
         engine,
         model,
@@ -651,11 +684,36 @@ def conduct(
         max_retries=manifest.plan_retries,
         directive_template=directive_template,
         corrective_template=corrective_template,
+        stage_briefing=briefing,
     )
+
+    # T7b — the deterministic guarantee. Only loads Flow/Specialist/Blueprint
+    # definitions when a stage is actually declared (validate_stage_mix is a
+    # no-op otherwise) so an undeclared-stage project pays no extra I/O.
+    stage_warnings: list[str] = []
+    if manifest.stage is not None:
+        flows_by_name = {f.name: f for f in load_all_flows(manifest, operator_layer)}
+        specialists_by_name = {
+            s.name: s for s in load_all_specialists(manifest, operator_layer)
+        }
+        blueprints_by_name = {
+            b.name: b for b in load_all_blueprints(manifest, operator_layer)
+        }
+        violations = validate_stage_mix(
+            manifest, plan, flows_by_name, specialists_by_name, blueprints_by_name
+        )
+        stage_warnings = [v.message for v in violations]
+        if strict_stage and violations:
+            raise PolicyViolationError(
+                "Conductor plan refused (--strict-stage):\n"
+                + "\n".join(f"  - {m}" for m in stage_warnings)
+            )
 
     if enqueue:
         files = dispatch_enqueue(plan, manifest, operator_layer, engine_override=engine_override)
-        return ConductReport(goal=goal, mode="enqueue", plan=plan, enqueued_files=files)
+        return ConductReport(
+            goal=goal, mode="enqueue", plan=plan, enqueued_files=files, warnings=stage_warnings
+        )
 
     if parallel:
         from alc.worktree import is_git_repo
@@ -700,6 +758,7 @@ def conduct(
                 success=fanout.success,
                 merged=merged,
                 left=left,
+                warnings=stage_warnings,
             )
         print(
             "--parallel ignored: not inside a git repository; running serially.",
@@ -709,5 +768,10 @@ def conduct(
     reports = dispatch_now(plan, manifest, operator_layer, engine_override=engine_override)
     success = all(r.success for r in reports)
     return ConductReport(
-        goal=goal, mode="run", plan=plan, flow_reports=reports, success=success
+        goal=goal,
+        mode="run",
+        plan=plan,
+        flow_reports=reports,
+        success=success,
+        warnings=stage_warnings,
     )

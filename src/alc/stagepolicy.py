@@ -1,4 +1,4 @@
-# stagepolicy.py — the product stage as control-plane data (roadmap-phase-4.md T5/T6).
+# stagepolicy.py — the product stage as control-plane data (roadmap-phase-4.md T5/T6/T7).
 #
 # `Manifest.stage` declares which growth stage the product is in (the essay this
 # roadmap comes from: pre-pmf / growth / strong-pmf). STAGE_MIX below is the
@@ -9,8 +9,10 @@
 # Every rule `lint_stage` reports is ADVISORY (warn, or error only for a
 # malformed `stage_mix` override itself) — the stage never changes how a
 # mandate executes; its authority is limited to warns, reports (`mix_health`,
-# T6) and scaffolding. A Blueprint with no `archetype` is NEVER penalised by
-# any rule here — that is what keeps the taxonomy from turning into paperwork.
+# T6; `validate_stage_mix`, T7) and scaffolding. A Blueprint with no
+# `archetype` — and a Conductor `PlannedUnit` with no determinable one — is
+# NEVER penalised by any rule here; that is what keeps the taxonomy from
+# turning into paperwork.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,7 +20,15 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from alc.models import Blueprint, FlowReport, Manifest
+from alc.models import (
+    Blueprint,
+    ConductorPlan,
+    FlowDefinition,
+    FlowReport,
+    Manifest,
+    PlannedUnit,
+    Specialist,
+)
 from alc.policy import VALID_ARCHETYPES, Violation
 
 # `core`: the archetypes the stage's autonomous work should center on (the
@@ -224,3 +234,154 @@ def mix_health(done_dir: Path, manifest: Manifest) -> MixHealthReport:
         by_archetype=by_archetype,
         total_runs=total_runs,
     )
+
+
+# ---------------------------------------------------------------------------
+# Conductor stage-awareness (roadmap-phase-4.md T7) — TWO parts with DIFFERENT
+# guarantees:
+#   (a) `stage_briefing` — a PROSE nudge folded into the Conductor's planning
+#       directive. Probabilistic: the planning model may weigh it, may ignore
+#       it entirely. Nothing here enforces anything.
+#   (b) `validate_stage_mix` — plain code that runs AFTER the plan already
+#       came back, comparing it against the stage's mix. This is the actual
+#       guarantee: deterministic, never dependent on the model having
+#       cooperated with (a).
+# `--strict-stage` (conduct.py) turns (b)'s warnings into a refusal; (a) has no
+# equivalent knob because a prompt cannot be "enforced" — only its downstream
+# effect (the plan) can be checked, which is exactly what (b) does.
+# ---------------------------------------------------------------------------
+
+
+def stage_briefing(manifest: Manifest) -> str | None:
+    """Return prose describing `manifest.stage`'s target mix, or None (T7a).
+
+    Appended to the Conductor's planning directive (see ``conduct.plan_flows``)
+    so a planning model WITH the stage in view can weigh it — but this is a
+    NUDGE, not a guarantee: the model may still return a plan that ignores it
+    entirely. `validate_stage_mix` below is what actually enforces anything.
+
+    None when `manifest.stage` is unset — the opt-in invariant: a project with
+    no declared stage gets a byte-identical directive, exactly as before this
+    existed.
+    """
+    mix = effective_mix(manifest)
+    if mix is None:
+        return None
+    core = ", ".join(mix.get("core", [])) or "(none)"
+    secondary = ", ".join(mix.get("secondary", [])) or "(none)"
+    return (
+        "\n\n## Stage\n\n"
+        f"This product is at stage '{manifest.stage}'. Its target archetype mix is "
+        f"core: {core}; secondary: {secondary}. When it fits the goal, PREFER "
+        "targets whose archetype belongs to this mix — a preference, not a hard "
+        "rule; ALC checks the plan you return against this mix afterward and may "
+        "warn (or, under --strict-stage, refuse) when it drifts, but which targets "
+        "best serve the goal is still your call."
+    )
+
+
+def _flow_archetype(
+    flow: FlowDefinition,
+    blueprints: dict[str, Blueprint],
+    specialists: dict[str, Specialist],
+) -> str | None:
+    """A Flow's archetype, when every blueprint-backed stage AGREES on one.
+
+    A Flow has no archetype of its own — it is a per-STAGE concept (mix_health
+    buckets `RunReport.archetype` per ``report.stages[i]``, not per flow). This
+    reconstructs a flow-level signal ONLY when it is unambiguous: every stage
+    resolves (directly, or via a specialist stage's own Blueprint) to a
+    Blueprint that declares the SAME archetype. A stage with no resolvable
+    Blueprint, a Blueprint with no archetype, or stages that disagree, all
+    fall back to None (unclassified) — a guessed signal would be worse than
+    none, and an unclassified unit is never penalised.
+    """
+    seen: set[str] = set()
+    for stage in flow.stages:
+        bp_name = stage.blueprint
+        if bp_name is None and stage.specialist is not None:
+            specialist = specialists.get(stage.specialist)
+            bp_name = specialist.blueprint if specialist is not None else None
+        bp = blueprints.get(bp_name) if bp_name is not None else None
+        if bp is None or bp.archetype is None:
+            return None
+        seen.add(bp.archetype)
+    return seen.pop() if len(seen) == 1 else None
+
+
+def unit_archetype(
+    item: PlannedUnit,
+    flows: dict[str, FlowDefinition],
+    specialists: dict[str, Specialist],
+    blueprints: dict[str, Blueprint],
+) -> str | None:
+    """Best-effort archetype for one Conductor `PlannedUnit`; None = unclassified.
+
+    A `PlannedUnit` names a Flow or a Specialist, NEVER a Blueprint directly, so
+    its archetype takes one extra hop to resolve:
+      - ``specialist``: the archetype of the Blueprint its Act step runs.
+      - ``flow``: the archetype every blueprint-backed stage agrees on — see
+        `_flow_archetype`; ambiguous or unresolvable -> None.
+
+    None is also returned when *item* names something absent from the supplied
+    catalog dicts (should not happen — a plan is validated against the same
+    catalog it was parsed against — but a stale catalog must degrade to
+    "unclassified", never a crash or a false accusation).
+    """
+    if item.kind == "specialist":
+        specialist = specialists.get(item.name)
+        if specialist is None:
+            return None
+        bp = blueprints.get(specialist.blueprint)
+        return bp.archetype if bp is not None else None
+
+    flow = flows.get(item.name)
+    if flow is None:
+        return None
+    return _flow_archetype(flow, blueprints, specialists)
+
+
+def validate_stage_mix(
+    manifest: Manifest,
+    plan: ConductorPlan,
+    flows: dict[str, FlowDefinition],
+    specialists: dict[str, Specialist],
+    blueprints: dict[str, Blueprint],
+) -> list[Violation]:
+    """The DETERMINISTIC guarantee behind Conductor stage-awareness (T7b).
+
+    Unlike `stage_briefing` (a prose nudge the planner may ignore), this runs
+    in plain code AFTER the plan has already come back — and it is what the
+    product actually promises: every `PlannedUnit` whose archetype CAN be
+    determined (`unit_archetype`) is checked against `manifest.stage`'s
+    effective mix (core + secondary); one that falls outside it gets a
+    ``stage-plan-off-mix`` warn. A unit with no determinable archetype is
+    NEVER penalised — the same invariant `lint_stage` holds for a Blueprint
+    with no `archetype`.
+
+    [] immediately when `manifest.stage` is None — the opt-in invariant: a
+    Conductor plan is validated exactly as before this existed.
+    """
+    if manifest.stage is None:
+        return []
+    mix = effective_mix(manifest)
+    assert mix is not None  # manifest.stage is set, so effective_mix never returns None here
+    in_mix = set(mix.get("core", [])) | set(mix.get("secondary", []))
+
+    violations: list[Violation] = []
+    for item in plan.items:
+        archetype = unit_archetype(item, flows, specialists, blueprints)
+        if archetype is None or archetype in in_mix:
+            continue
+        violations.append(
+            Violation(
+                rule="stage-plan-off-mix",
+                severity="warn",
+                message=(
+                    f"Planned unit '{item.name}' ({item.kind}) has archetype "
+                    f"'{archetype}', which falls outside stage '{manifest.stage}''s "
+                    f"mix ({sorted(in_mix)})."
+                ),
+            )
+        )
+    return violations

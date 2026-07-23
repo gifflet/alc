@@ -204,6 +204,32 @@ class NotifyConfig(BaseModel):
     on_merge_conflict: list[str] | str | None = None
 
 
+class DeliverySpec(BaseModel):
+    """How `alc land` hands an already-landed branch to the remote (roadmap-phase-4.md T8).
+
+    The local cherry-pick merge (``merge.py``) is the actual work landing —
+    entirely local, and already the whole guarantee `alc land` gave before this
+    existed. This is the LAST MILE on top of it, never the work itself:
+      - ``mode: "local"`` (default): unchanged — `alc land` never pushes or
+        opens a PR.
+      - ``mode: "push"``: after a clean local land, push the current branch to
+        ``remote``.
+      - ``mode: "pr"``: push, then open a pull request (via the ``gh`` CLI)
+        from the current branch against ``base``, for a human to review before
+        it counts as delivered — the review gate the product deliberately keeps.
+
+    ``mode`` is the manifest-declared DEFAULT; `alc land`'s ``--push``/``--pr``
+    flags override it for one invocation (same override relationship as
+    ``manifest.plan_tier`` and ``--tier``). A push failure or a missing ``gh``
+    binary NEVER fails `alc land` — see ``alc.delivery`` (mirrors ``commit.py``'s
+    never-raise contract): the local landing already succeeded.
+    """
+
+    mode: Literal["local", "push", "pr"] = "local"
+    remote: str = "origin"
+    base: str = "main"
+
+
 class Manifest(BaseModel):
     """Root of the Operator Layer — loaded from .alc/manifest.yaml."""
 
@@ -288,6 +314,11 @@ class Manifest(BaseModel):
     # `stagepolicy.lint_stage`, advisory/error only — never crashes at parse
     # time. None (default) -> the built-in default mix for `stage`.
     stage_mix: dict[str, list[str]] | None = None
+    # How `alc land` hands an already-landed branch to the remote
+    # (roadmap-phase-4.md T8) — see DeliverySpec. None (default) -> DeliverySpec's
+    # own default (mode: local), so `alc land` with no `--push`/`--pr` flag stays
+    # byte-identical to before this field existed.
+    delivery: DeliverySpec | None = None
 
 
 class MetricRecord(BaseModel):
@@ -656,6 +687,12 @@ class ConductReport(BaseModel):
     success: bool | None = None          # overall run outcome (None in enqueue mode)
     merged: list[str] = []               # parallel run: branches integrated into HEAD
     left: list[str] = []                 # parallel run: branches left for manual resolution
+    # Advisory stage-mix findings (roadmap-phase-4.md T7b) — populated only when
+    # manifest.stage is declared; NEVER a reason to fail this report on its own
+    # (--strict-stage instead refuses before dispatch — see conduct.py). Empty
+    # (default) -> byte-identical to before this field existed, same contract as
+    # RunReport.warnings.
+    warnings: list[str] = []
 
 
 # ---------------------------------------------------------------------------
