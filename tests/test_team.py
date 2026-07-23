@@ -257,9 +257,10 @@ class TestInitStage:
 
         assert (tmp_path / ".alc" / "blueprints" / "test.md").is_file()
         assert "builder: hired" in out
-        assert "sweeper: not available yet" in out
+        assert "sweeper: hired" in out
+        assert "maintainer: hired" in out
+        # `grower` is a later wave — still reported plainly, not installed.
         assert "grower: not available yet" in out
-        assert "maintainer: not available yet" in out
 
     def test_pre_pmf_stage_hires_builder(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

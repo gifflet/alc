@@ -121,13 +121,202 @@ def _builder_files(
     }
 
 
-# Archetype name -> file-generator. Packs a later wave adds (sweeper, maintainer,
-# grower, prototyper) are simply absent from this table until their wave lands;
-# `alc team hire` reports that plainly (see pack_files' KeyError) instead of failing.
+# ---------------------------------------------------------------------------
+# Sweeper pack — a dead-code detector, a behavior-preserving refactor
+# Blueprint, and the unship flow that removes what the janitor finds.
+# ---------------------------------------------------------------------------
+
+_SWEEPER_REFACTOR = """\
+---
+name: refactor
+purpose: Simplify the code behavior-preservingly — remove dead or unused surface.
+compute_tier: standard
+{check_set_line}checks:
+  # A pack Blueprint must never depend on check_set alone — an empty check_set
+  # (no stack tooling on PATH at hire time) would otherwise resolve to zero
+  # checks and fail Policy Gate rule 1. This inline check keeps it lint-clean.
+  - name: smoke
+    command: ["true"]
+report:
+  format: json
+  schema:
+    status: string
+    summary: string
+archetype: sweeper
+---
+
+## Refactor Workflow
+
+1. Find dead or unused code with the stack's real detector: `vulture .`
+   (Python), `knip` or `ts-prune` (Node), `staticcheck -unused ./...` (Go), or
+   `cargo-udeps` (Rust) — whichever matches this project.
+2. Simplify or remove ONE finding (the one named in the task, when given)
+   without changing observable behavior — no new features, no API changes.
+3. Run the checks — including the stack's full check_set, when declared — to
+   confirm nothing broke.
+4. Output a JSON report matching the schema:
+   ```json
+   {{"status": "ok", "summary": "<one sentence describing what was simplified or removed>"}}
+   ```
+"""
+
+_SWEEPER_JANITOR = """\
+name: janitor
+area: dead and unused code across the codebase — the accumulated cruft map
+blueprint: refactor
+knowledge_path: .alc/specialists/janitor.knowledge.md
+"""
+
+_SWEEPER_SWEEP_LOOP = """\
+name: sweep
+replenish:
+  kind: plan
+  ref: janitor
+  task: >
+    Find dead or unused code across the repository. For every finding, emit
+    one plan item targeting the `unship` flow, with "touches" set to the
+    file(s) it will edit so overlapping findings serialize instead of racing.
+stop:
+  max_cycles: 10
+"""
+
+_SWEEPER_UNSHIP_FLOW = """\
+name: unship
+description: Map what a finding touches, remove it behavior-preservingly, then a pure gate.
+stages:
+  - name: map
+    blueprint: plan
+  - name: remove
+    blueprint: refactor
+  - name: gate
+    blueprint: refactor
+    verify_only: true
+"""
+
+
+def _sweeper_files(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+) -> dict[str, str]:
+    """Build the Sweeper pack: the janitor Specialist, a refactor Blueprint, its
+    sweep Loop, and the unship Flow it enqueues one demand per finding into."""
+    return {
+        ".alc/blueprints/refactor.md": _SWEEPER_REFACTOR.format(
+            check_set_line=_check_set_line(stacks)
+        ),
+        ".alc/specialists/janitor.yaml": _SWEEPER_JANITOR,
+        ".alc/loops/sweep.yaml": _SWEEPER_SWEEP_LOOP,
+        ".alc/flows/unship.yaml": _SWEEPER_UNSHIP_FLOW,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Maintainer pack — a security patrol, a chore-per-package dependency
+# refresh Loop, and the plumbing (a scan gate, a bare chore Flow) they need.
+# ---------------------------------------------------------------------------
+
+_MAINTAINER_SCAN = """\
+---
+name: scan
+purpose: Verify the codebase against the security check_set as a pure gate.
+compute_tier: standard
+check_set: security
+checks:
+  # `security` (T5) can render empty when no scanner binary was on PATH at
+  # `alc init` time — a pack Blueprint must never depend on a check_set alone.
+  # This inline check keeps the gate lint-clean and non-empty regardless.
+  - name: smoke
+    command: ["true"]
+report:
+  format: json
+  schema:
+    status: string
+    summary: string
+archetype: maintainer
+---
+
+## Scan Workflow
+
+This Blueprint only ever runs `verify_only` (see `flows/patrol.yaml`): its
+checks — the `security` check_set plus the smoke check above — run as a pure
+gate, with no engine turn.
+"""
+
+_MAINTAINER_PATROL_FLOW = """\
+name: patrol
+description: Scan for security issues as a pure gate, then apply a routine maintenance fix.
+stages:
+  - name: scan
+    blueprint: scan
+    verify_only: true
+  - name: fix
+    blueprint: chore
+"""
+
+# A bare one-stage wrapper around the default `chore` Blueprint, so a single
+# outdated package can be dispatched as its own isolated queue unit (`alc
+# enqueue` writes a "flow" or "specialist" task — never a bare Blueprint).
+_MAINTAINER_CHORE_FLOW = """\
+name: chore
+description: One isolated chore, dispatched as its own queue unit (e.g. via `alc enqueue`).
+stages:
+  - name: apply
+    blueprint: chore
+"""
+
+_MAINTAINER_DEPS = """\
+name: deps
+area: dependency versions across the project's package manifest(s) — what has already been tried per package
+blueprint: chore
+knowledge_path: .alc/specialists/deps.knowledge.md
+"""
+
+_MAINTAINER_DEPS_REFRESH_LOOP = """\
+name: deps-refresh
+replenish:
+  kind: specialist
+  ref: deps
+  task: >
+    Check for outdated dependencies with the stack's real command (`pip list
+    --outdated` for Python, `npm outdated` for Node, `go list -m -u all` for
+    Go, `cargo outdated` for Rust). For every outdated package, enqueue ONE
+    isolated chore via `alc enqueue chore "<task>" --touches <manifest
+    file>` — never batch several packages into one demand. Give a demand
+    `--id <slug>` when a later one bumps a related major (e.g. a framework
+    and its official plugin) so the dependent one can `--depends-on <slug>`
+    and land in the right order instead of racing.
+stop:
+  max_cycles: 10
+"""
+
+
+def _maintainer_files(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+) -> dict[str, str]:
+    """Build the Maintainer pack: a security patrol Flow, a bare chore Flow, the
+    deps Specialist, and the Loop that refreshes one package at a time.
+
+    `stacks` is unused — every file this pack writes is stack-agnostic (the
+    `security` check_set and the `chore` Blueprint are both named, not stack-
+    specific); kept for signature parity with the other packs in PACKS.
+    """
+    return {
+        ".alc/blueprints/scan.md": _MAINTAINER_SCAN,
+        ".alc/flows/patrol.yaml": _MAINTAINER_PATROL_FLOW,
+        ".alc/flows/chore.yaml": _MAINTAINER_CHORE_FLOW,
+        ".alc/specialists/deps.yaml": _MAINTAINER_DEPS,
+        ".alc/loops/deps-refresh.yaml": _MAINTAINER_DEPS_REFRESH_LOOP,
+    }
+
+
+# Archetype name -> file-generator. Packs a later wave adds (grower, prototyper)
+# are simply absent from this table until their wave lands; `alc team hire`
+# reports that plainly (see pack_files' KeyError) instead of failing.
 PACKS: dict[
     str, Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]]], dict[str, str]]
 ] = {
     "builder": _builder_files,
+    "sweeper": _sweeper_files,
+    "maintainer": _maintainer_files,
 }
 
 
