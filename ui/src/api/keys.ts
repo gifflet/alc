@@ -7,6 +7,10 @@ export const keys = {
   commands: () => ['commands'] as const,
   runConfigs: (id: string) => ['project', id, 'run-configs'] as const,
   manifest: (id: string) => ['project', id, 'manifest'] as const,
+  // The shared prefix over every per-collection key — invalidating it (partial
+  // match) refreshes every collection at once, e.g. after a Team hire writes
+  // across blueprints/flows/specialists/loops in one go.
+  collections: (id: string) => ['project', id, 'collection'] as const,
   collection: (id: string, c: CollectionName) => ['project', id, 'collection', c] as const,
   collectionItem: (id: string, c: CollectionName, name: string) =>
     ['project', id, 'collection', c, name] as const,
@@ -20,4 +24,5 @@ export const keys = {
   lint: (id: string) => ['project', id, 'lint'] as const,
   engines: (id: string) => ['project', id, 'engines'] as const,
   scorecard: (id: string) => ['project', id, 'scorecard'] as const,
+  team: (id: string) => ['project', id, 'team'] as const,
 }

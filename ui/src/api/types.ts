@@ -232,6 +232,58 @@ export interface LoopLedger {
 }
 
 // ---------------------------------------------------------------------------
+// Team (Archetype Packs + Mix Health) — mirrors service.team_roster /
+// service.team_hire, and stagepolicy.MixHealthReport / ArchetypeSpend
+// (dataclasses.asdict-serialised as-is; field names match exactly).
+// ---------------------------------------------------------------------------
+
+export interface TeamMemberLoop {
+  name: string
+  status: LoopStatus
+  cycle: number
+  stopped_reason: string | null
+}
+
+/** A hired archetype: its pack files present on disk, and any loops it brought. */
+export interface TeamMember {
+  archetype: string
+  files: string[]
+  loops: TeamMemberLoop[]
+}
+
+/** One archetype's aggregate spend across archived reports. `archetype` is
+ * null for reports whose Blueprint set none — never singled out as off-mix. */
+export interface ArchetypeSpend {
+  archetype: string | null
+  runs: number
+  span: number
+  cost_usd: number
+  net_lines: number
+}
+
+/** `stage`/`core`/`secondary` are null/[] when no stage is declared: the
+ * breakdown is still built, just never judged against a target mix.
+ * `total_runs === 0` means no archived report exists yet — "no data yet". */
+export interface MixHealth {
+  stage: string | null
+  core: string[]
+  secondary: string[]
+  by_archetype: ArchetypeSpend[]
+  total_runs: number
+}
+
+export interface TeamRoster {
+  members: TeamMember[]
+  mix_health: MixHealth
+}
+
+/** POST /team/hire's response: the pack files written, and the post-hire lint. */
+export interface HireResult {
+  written: string[]
+  lint: LintResult
+}
+
+// ---------------------------------------------------------------------------
 // Run configurations (command schema + saved presets)
 // ---------------------------------------------------------------------------
 

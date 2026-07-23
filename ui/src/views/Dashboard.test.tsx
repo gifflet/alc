@@ -1,8 +1,27 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Dashboard } from './Dashboard'
 import { installFetch, renderWithProviders } from '../test/utils'
 import { uiStore } from '../app/uiStore'
+
+const dashboardStubs = {
+  '/scorecard': {
+    reports: 0,
+    successes: 0,
+    failures: 0,
+    span_total: 0,
+    passes_total: 0,
+    streak_total: 0,
+    touch_total: 0,
+  },
+  '/queue': { pending: [], done: [] },
+  '/runs': { runs: [], total: 0 },
+  '/engines': [
+    { name: 'mock', type: 'mock', default: true, tiers: { standard: 'mock-small' }, healthy: true },
+  ],
+  '/loops': [],
+}
 
 beforeEach(() => {
   localStorage.clear()
@@ -116,5 +135,73 @@ describe('Dashboard', () => {
     })
     renderWithProviders(<Dashboard />)
     expect(await screen.findByTitle(/ship-1: span=4/)).toBeInTheDocument()
+  })
+})
+
+describe('Mix Health card', () => {
+  it('shows "no data" when total_runs is 0', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0 } },
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText('Mix Health')).toBeInTheDocument()
+    expect(screen.getByText(/no data yet/i)).toBeInTheDocument()
+  })
+
+  it('shows "no stage" when the project declares none, even with archived runs', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': {
+        members: [],
+        mix_health: {
+          stage: null,
+          core: [],
+          secondary: [],
+          by_archetype: [{ archetype: 'builder', runs: 2, span: 4, cost_usd: 1.5, net_lines: 12 }],
+          total_runs: 2,
+        },
+      },
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText(/no stage declared/i)).toBeInTheDocument()
+  })
+
+  it('summarises core/secondary/off-mix runs against the declared stage', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': {
+        members: [],
+        mix_health: {
+          stage: 'growth',
+          core: ['builder'],
+          secondary: ['maintainer'],
+          by_archetype: [
+            { archetype: 'builder', runs: 3, span: 6, cost_usd: 0.9, net_lines: 20 },
+            { archetype: 'prototyper', runs: 1, span: 1, cost_usd: 0.1, net_lines: -5 },
+          ],
+          total_runs: 4,
+        },
+      },
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText(/growth/)).toBeInTheDocument()
+    expect(screen.getByText('core')).toBeInTheDocument()
+    expect(screen.getByText('off-mix')).toBeInTheDocument()
+  })
+
+  it('opens the Team view from the card action', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0 } },
+    })
+    renderWithProviders(<Dashboard />)
+
+    const card = (await screen.findByText('Mix Health')).closest('section') as HTMLElement
+    await userEvent.click(within(card).getByText('open'))
+    expect(uiStore.getState().activeTabId).toBe('view:team')
   })
 })

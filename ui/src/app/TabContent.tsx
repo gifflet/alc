@@ -10,6 +10,7 @@ import { LoopDetail } from '../views/LoopDetail'
 import { Conduct } from '../views/Conduct'
 import { RunConfigs } from '../views/RunConfigs'
 import { SourceEditor } from '../views/SourceEditor'
+import { Team } from '../views/Team'
 import { useUiState } from './uiStore'
 import type { PrimaryView, Tab } from './uiStore'
 
@@ -20,6 +21,7 @@ const VIEWS: Record<PrimaryView, () => React.ReactElement> = {
   loops: Loops,
   conduct: Conduct,
   'run-configs': RunConfigs,
+  team: Team,
 }
 
 function renderTab(tab: Tab): React.ReactElement {

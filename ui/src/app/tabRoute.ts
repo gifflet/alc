@@ -19,6 +19,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   loops: 'Loops',
   conduct: 'Conduct',
   'run-configs': 'Run Configurations',
+  team: 'Team',
 }
 
 const PRIMARY_VIEWS = new Set<PrimaryView>([
@@ -28,6 +29,7 @@ const PRIMARY_VIEWS = new Set<PrimaryView>([
   'loops',
   'conduct',
   'run-configs',
+  'team',
 ])
 
 /** File-extension suffixes per config resource (mirrors the tool window). */

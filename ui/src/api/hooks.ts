@@ -101,6 +101,10 @@ export function useScorecard(id: string) {
   })
 }
 
+export function useTeam(id: string) {
+  return useQuery({ queryKey: keys.team(id), queryFn: () => api.getTeam(id), enabled: enabled(id) })
+}
+
 export function useExecs() {
   return useQuery({ queryKey: keys.execs(), queryFn: api.listExecs })
 }
@@ -257,5 +261,20 @@ export function useDeleteRunConfig(id: string) {
   return useMutation({
     mutationFn: (name: string) => api.deleteRunConfig(id, name),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.runConfigs(id) }),
+  })
+}
+
+/** Hire writes pack files across one or more collections (blueprints, flows,
+ * specialists, loops) — invalidate the roster and every collection so the
+ * roster and the project tree both refresh without waiting on the WS event. */
+export function useHireArchetype(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ archetype, force }: { archetype: string; force?: boolean }) =>
+      api.hireArchetype(id, archetype, force),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.team(id) })
+      qc.invalidateQueries({ queryKey: keys.collections(id) })
+    },
   })
 }

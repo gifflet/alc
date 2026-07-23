@@ -29,6 +29,11 @@ export function formatBytes(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
+/** Currency-ish USD display for a cost float (e.g. 1.5 -> "$1.50"). */
+export function formatCost(usd: number): string {
+  return `$${usd.toFixed(2)}`
+}
+
 /** Thousands-grouped integer for tabular cells. */
 export function formatCount(n: number): string {
   return n.toLocaleString('en-US')

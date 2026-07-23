@@ -1,6 +1,6 @@
 // Dashboard.tsx — Project overview: scorecard, queue, recent runs, loops, engines.
 // Every card is backed by a live query invalidated over WS — no manual refresh.
-import { Activity, Cpu, Gauge, ListTodo, RefreshCw } from 'lucide-react'
+import { Activity, Cpu, Gauge, ListTodo, PieChart, RefreshCw } from 'lucide-react'
 import {
   useCollection,
   useEngines,
@@ -8,6 +8,7 @@ import {
   useQueue,
   useRuns,
   useScorecard,
+  useTeam,
 } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { openView } from '../components/ActivityBar'
@@ -18,6 +19,7 @@ import { Card, Metric, Pill } from '../components/primitives'
 import { EmptyState } from '../components/EmptyState'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusDot } from '../components/StatusDot'
+import type { MixHealth } from '../api/types'
 
 /** Per-report span bars, coloured by success — a compact trend under the totals. */
 function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
@@ -195,6 +197,56 @@ function EnginesCard() {
   )
 }
 
+/** Sum each archived run's archetype into core/secondary/off-mix run counts
+ * against the stage's target mix. A null archetype is never singled out as
+ * off-mix (matches stagepolicy.validate_stage_mix's "never penalised" rule). */
+function mixAlignment(health: MixHealth): { core: number; secondary: number; offMix: number } {
+  let core = 0
+  let secondary = 0
+  let offMix = 0
+  for (const s of health.by_archetype) {
+    if (s.archetype === null) continue
+    if (health.core.includes(s.archetype)) core += s.runs
+    else if (health.secondary.includes(s.archetype)) secondary += s.runs
+    else offMix += s.runs
+  }
+  return { core, secondary, offMix }
+}
+
+function MixHealthCard() {
+  const id = useProjectId()
+  const { data } = useTeam(id)
+  const health = data?.mix_health
+
+  return (
+    <Card title="Mix Health" icon={PieChart} action={<LinkButton onClick={() => openView('team')} />}>
+      {!health || health.total_runs === 0 ? (
+        <p className="text-[12px] text-faint">No data yet — no archived runs.</p>
+      ) : !health.stage ? (
+        <p className="text-[12px] text-faint">
+          No stage declared — {health.total_runs} run{health.total_runs === 1 ? '' : 's'} unjudged.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] text-muted">
+            Stage: <span className="text-primary">{health.stage}</span>
+          </p>
+          {(() => {
+            const { core, secondary, offMix } = mixAlignment(health)
+            return (
+              <div className="grid grid-cols-3 gap-3">
+                <Metric label="core" value={core} tone="live" />
+                <Metric label="secondary" value={secondary} />
+                <Metric label="off-mix" value={offMix} tone={offMix > 0 ? 'error' : undefined} />
+              </div>
+            )
+          })()}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export function Dashboard() {
   const id = useProjectId()
   const { data: engines } = useEngines(id)
@@ -209,6 +261,7 @@ export function Dashboard() {
       <EnginesCard />
       <RunsCard />
       <LoopsCard />
+      <MixHealthCard />
     </div>
   )
 }

@@ -11,6 +11,7 @@ const cases: TabTarget[] = [
   { type: 'view', view: 'runs' },
   { type: 'view', view: 'loops' },
   { type: 'view', view: 'conduct' },
+  { type: 'view', view: 'team' },
   { type: 'run', stem: '20260712T0359-run-chore-x' },
   { type: 'loop', name: 'nightly' },
   { type: 'source', resource: 'manifest', name: 'manifest' },

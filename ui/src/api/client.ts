@@ -10,6 +10,7 @@ import type {
   CommandSchema,
   EngineInfo,
   ExecView,
+  HireResult,
   LintResult,
   LoopLedger,
   LoopState,
@@ -23,6 +24,7 @@ import type {
   RunDetail,
   RunsPage,
   ScorecardTotals,
+  TeamRoster,
   Violation,
 } from './types'
 
@@ -136,6 +138,14 @@ export const api = {
     request<LoopState>(`${proj(id)}/loops/${encodeURIComponent(name)}/state`),
   getLoopLedger: (id: string, name: string) =>
     request<LoopLedger>(`${proj(id)}/loops/${encodeURIComponent(name)}/ledger`),
+
+  // Team (Archetype Packs + Mix Health)
+  getTeam: (id: string) => request<TeamRoster>(`${proj(id)}/team`),
+  hireArchetype: (id: string, archetype: string, force = false) =>
+    request<HireResult>(`${proj(id)}/team/hire`, {
+      method: 'POST',
+      body: JSON.stringify({ archetype, force }),
+    }),
 
   // Health / metrics
   getLint: (id: string) => request<LintResult>(`${proj(id)}/lint`),

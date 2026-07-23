@@ -39,12 +39,19 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
         keys.loopState(msg.project_id, msg.name),
         keys.loopLedger(msg.project_id, msg.name),
         keys.collection(msg.project_id, 'loops'),
+        // A loop can be a Team member's pack file — keep the roster live too.
+        keys.team(msg.project_id),
       ]
     case 'config_changed': {
       if (msg.resource === 'manifest') return [keys.manifest(msg.project_id), keys.lint(msg.project_id)]
       if (msg.resource === 'prompts') return [keys.prompts(msg.project_id)]
       if (COLLECTION_RESOURCES.has(msg.resource as CollectionName)) {
-        return [keys.collection(msg.project_id, msg.resource as CollectionName), keys.lint(msg.project_id)]
+        return [
+          keys.collection(msg.project_id, msg.resource as CollectionName),
+          keys.lint(msg.project_id),
+          // A hire writes into a collection — keep the Team roster live too.
+          keys.team(msg.project_id),
+        ]
       }
       return [keys.lint(msg.project_id)]
     }

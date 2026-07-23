@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { relativeTime, formatBytes, formatCount, titleCase } from './format'
+import { relativeTime, formatBytes, formatCost, formatCount, titleCase } from './format'
 
 describe('relativeTime', () => {
   // mtime values from the backend are epoch SECONDS (Path.stat().st_mtime).
@@ -39,6 +39,18 @@ describe('formatBytes', () => {
 describe('formatCount', () => {
   it('groups thousands', () => {
     expect(formatCount(12345)).toBe('12,345')
+  })
+})
+
+describe('formatCost', () => {
+  it('renders a USD cost with two decimals', () => {
+    expect(formatCost(1.5)).toBe('$1.50')
+  })
+  it('rounds to two decimals', () => {
+    expect(formatCost(0.999)).toBe('$1.00')
+  })
+  it('renders a zero cost plainly', () => {
+    expect(formatCost(0)).toBe('$0.00')
   })
 })
 

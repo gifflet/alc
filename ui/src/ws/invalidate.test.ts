@@ -19,11 +19,12 @@ describe('wsInvalidations', () => {
     expect(wsInvalidations({ type: 'queue_changed', project_id: 'p' })).toEqual([keys.queue('p')])
   })
 
-  it('invalidates a loop state, ledger and the loops collection', () => {
+  it('invalidates a loop state, ledger, the loops collection and the team roster', () => {
     const out = wsInvalidations({ type: 'loop_changed', project_id: 'p', name: 'nightly' })
     expect(out).toContainEqual(keys.loopState('p', 'nightly'))
     expect(out).toContainEqual(keys.loopLedger('p', 'nightly'))
     expect(out).toContainEqual(keys.collection('p', 'loops'))
+    expect(out).toContainEqual(keys.team('p'))
   })
 
   it('invalidates the manifest and lint when the manifest changes', () => {
@@ -32,7 +33,7 @@ describe('wsInvalidations', () => {
     expect(out).toContainEqual(keys.lint('p'))
   })
 
-  it('invalidates a collection and lint when a blueprint changes', () => {
+  it('invalidates a collection, lint and the team roster when a blueprint changes', () => {
     const out = wsInvalidations({
       type: 'config_changed',
       project_id: 'p',
@@ -40,6 +41,7 @@ describe('wsInvalidations', () => {
     })
     expect(out).toContainEqual(keys.collection('p', 'blueprints'))
     expect(out).toContainEqual(keys.lint('p'))
+    expect(out).toContainEqual(keys.team('p'))
   })
 
   it('invalidates the runs list only on lifecycle boundaries', () => {
