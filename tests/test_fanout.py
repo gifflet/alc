@@ -335,6 +335,274 @@ class TestRunFanoutForwardsEngineOverride:
 
 
 # ---------------------------------------------------------------------------
+# (b3) Per-unit engine/tier/label overrides (roadmap-phase-3.md T5).
+# ---------------------------------------------------------------------------
+
+
+class _WriteEngine:
+    """Writes a unique file per call so the enclosing worktree has something
+    to commit — the minimum needed for a branch to survive IsolatedWorktree.
+    """
+
+    def __init__(self, name: str = "mock") -> None:
+        self.name = name
+
+    def capabilities(self):
+        from alc.engine import Capabilities
+
+        return Capabilities()
+
+    def health_check(self) -> bool:
+        return True
+
+    def run(self, request):
+        from alc.engine import EngineResult
+
+        (request.workdir / f"{self.name}.txt").write_text("done\n")
+        return EngineResult(ok=True, output_text="[mock] applied")
+
+
+class TestRunFanoutPerUnitLabel:
+    def test_unit_label_overrides_the_default_fanout_prefix(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _WriteEngine()
+        )
+        repo = _make_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        units = [{"kind": "blueprint", "name": "chore", "task": "t", "label": "variant-1"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        branch = report.units[0].branch
+        assert branch is not None
+        assert branch.startswith("alc/variant-1-")
+        assert not branch.startswith("alc/fanout-")
+
+    def test_unit_without_label_keeps_the_default_fanout_prefix(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """No `label` key -> byte-identical to today's `fanout-<name>` prefix."""
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _WriteEngine()
+        )
+        repo = _make_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        units = [{"kind": "blueprint", "name": "chore", "task": "t"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        branch = report.units[0].branch
+        assert branch is not None
+        assert branch.startswith("alc/fanout-chore-")
+
+
+class TestRunFanoutPerUnitEngineOverride:
+    def test_unit_engine_key_wins_over_the_fanout_level_override(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A unit's own 'engine' takes priority over run_fanout's engine_override."""
+        from alc.engine import Capabilities, EngineResult
+
+        class _NamedMockEngine:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                return EngineResult(ok=True, output_text="[mock] applied")
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_MANIFEST_TWO_ENGINES)
+        (alc / "blueprints" / "chore.md").write_text(_CHORE)
+        _commit_all(repo, "seed operator layer")
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _NamedMockEngine(name)
+        )
+
+        units = [{"kind": "blueprint", "name": "chore", "task": "do it", "engine": "chosen"}]
+        report = run_fanout(
+            manifest, operator_layer, units, max_workers=1, engine_override="base"
+        )
+
+        assert report.success is True
+        assert report.units[0].run_report.engine == "chosen"
+
+
+class TestRunFanoutPerUnitTierOverride:
+    def test_unit_tier_key_overrides_the_blueprint_compute_tier(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A unit's own 'tier' resolves a DIFFERENT model than the Blueprint's default."""
+        from alc.engine import Capabilities, EngineResult
+
+        captured_models: list[str | None] = []
+
+        class _RecordingEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                captured_models.append(request.model)
+                return EngineResult(ok=True, output_text="[mock] applied")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _RecordingEngine()
+        )
+
+        manifest_two_tiers = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+  deep:
+    mock: mock-large
+engines:
+  mock:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(manifest_two_tiers)
+        (alc / "blueprints" / "chore.md").write_text(_CHORE)  # compute_tier: standard
+        _commit_all(repo, "seed operator layer")
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+
+        units = [{"kind": "blueprint", "name": "chore", "task": "task-0", "tier": "deep"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        assert captured_models == ["mock-large"]
+
+    def test_unit_without_tier_keeps_the_blueprint_default(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from alc.engine import Capabilities, EngineResult
+
+        captured_models: list[str | None] = []
+
+        class _RecordingEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                captured_models.append(request.model)
+                return EngineResult(ok=True, output_text="[mock] applied")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _RecordingEngine()
+        )
+
+        repo = _make_alc_repo(tmp_path)
+        operator_layer = repo / ".alc"
+        manifest = load_manifest(operator_layer)
+
+        units = [{"kind": "blueprint", "name": "chore", "task": "task-0"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        assert captured_models == ["mock-small"]  # 'standard' tier, unchanged
+
+    def test_unit_tier_key_threads_through_a_flow_unit_too(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A "flow" unit's own 'tier' reaches FlowRunner.run's tier_override."""
+        from alc.engine import Capabilities, EngineResult
+
+        captured_models: list[str | None] = []
+
+        class _RecordingEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                captured_models.append(request.model)
+                return EngineResult(ok=True, output_text="[mock] applied")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _RecordingEngine()
+        )
+
+        manifest_two_tiers = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+  deep:
+    mock: mock-large
+engines:
+  mock:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(manifest_two_tiers)
+        (alc / "blueprints" / "chore.md").write_text(_CHORE)
+        (alc / "flows" / "single.yaml").write_text(_SINGLE_FLOW)
+        _commit_all(repo, "seed operator layer")
+
+        operator_layer = alc
+        manifest = load_manifest(operator_layer)
+
+        units = [{"kind": "flow", "name": "single", "task": "task-0", "tier": "deep"}]
+        report = run_fanout(manifest, operator_layer, units, max_workers=1)
+
+        assert report.success is True, report.units[0].error
+        assert captured_models == ["mock-large"]
+
+
+# ---------------------------------------------------------------------------
 # (c) run_unit refuses a non-git directory.
 # ---------------------------------------------------------------------------
 

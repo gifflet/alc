@@ -124,6 +124,40 @@ def _print_skill_result(path: "Path", changed: bool, version: str, engine: str) 
         print(f"ALC skill for {engine} already up to date at {path} (alc {version})")
 
 
+def _print_variant_table(rows: list[dict]) -> None:
+    """Print one block per variant (`alc explore` / `alc compare`): branch, checks,
+    scorecard, cost/usage, and diffstat — the shape ``variant_row`` builds.
+    """
+    for i, row in enumerate(rows, start=1):
+        status = "SUCCESS" if row["success"] else "FAILED"
+        header = f"Variant {i}  branch={row['branch']}"
+        if row["engine"]:
+            header += f"  engine={row['engine']}"
+        if row["tier"]:
+            header += f"  tier={row['tier']}"
+        print(header)
+        print(f"  Status:    {status}")
+        print(f"  Checks:    {row['checks']}")
+        sc = row["scorecard"]
+        if sc:
+            print(
+                f"  Scorecard: span={sc['span']} passes={sc['passes']} "
+                f"streak={sc['streak']} touch={sc['touch']}"
+            )
+        usage = row["usage"]
+        if usage:
+            print(
+                f"  Usage:     input={usage['input_tokens']} output={usage['output_tokens']} "
+                f"cost_usd={usage['cost_usd']}"
+            )
+        ds = row["diffstat"]
+        if ds:
+            print(
+                f"  Diffstat:  +{ds['adds']}/-{ds['dels']} ({ds['files_deleted']} file(s) deleted)"
+            )
+        print()
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     """Run `alc setup [--engine NAME]`: install/update the user-level editor skill."""
     from alc.setup_skill import _resolve_version, install_skill
@@ -1637,6 +1671,186 @@ def cmd_discard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_explore(args: argparse.Namespace) -> int:
+    """Run `alc explore <blueprint> "<task>" --variants N [--engine ...] [--tier ...]`.
+
+    N copies of the SAME Blueprint+task, each dispatched via ``run_fanout`` into
+    its own isolated worktree, branched ``alc/variant-<n>-<hex8>``. Repeating
+    ``--engine`` and/or ``--tier`` produces their cartesian product (crossed with
+    ``--variants``); with neither, ``--variants N`` alone repeats the manifest's
+    default engine and the Blueprint's own tier N times.
+
+    NEVER auto-merges — that is the whole point of exploring variants side by
+    side, a property of this command itself (no flag turns it on). Run
+    `alc compare` then `alc adopt` to close the loop.
+    """
+    from alc.fanout import run_fanout
+    from alc.intake import load_manifest
+    from alc.variants import variant_row, write_variant
+
+    if args.variants < 1:
+        print("[ERROR] --variants must be >= 1", file=sys.stderr)
+        return 1
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    tiers = args.tier or [None]
+    for t in tiers:
+        tier_err = _validate_tier(manifest, t)
+        if tier_err:
+            print(f"[ERROR] {tier_err}", file=sys.stderr)
+            return 1
+    engines = args.engine or [None]
+
+    units: list[dict] = []
+    for _ in range(args.variants):
+        for engine in engines:
+            for tier in tiers:
+                n = len(units) + 1
+                units.append({
+                    "kind": "blueprint",
+                    "name": args.blueprint,
+                    "task": args.task,
+                    "engine": engine,
+                    "tier": tier,
+                    "label": f"variant-{n}",
+                })
+
+    try:
+        fanout = run_fanout(
+            manifest, operator_layer, units, max_workers=manifest.fanout_concurrency
+        )
+    except RuntimeError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+
+    # Archive every variant that actually committed, so a later (separate) `alc
+    # compare`/`alc adopt` invocation can read it back by branch name.
+    variants_dir = operator_layer.parent / manifest.variants_dir
+    rows = []
+    for unit_spec, unit_result in zip(units, fanout.units):
+        rows.append(variant_row(unit_result, unit_spec["engine"], unit_spec["tier"]))
+        if unit_result.branch:
+            write_variant(
+                variants_dir,
+                unit_result.branch,
+                unit_spec["engine"],
+                unit_spec["tier"],
+                unit_result,
+            )
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(rows)
+        return 0 if fanout.success else 1
+
+    _print_variant_table(rows)
+    return 0 if fanout.success else 1
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Run `alc compare <branch|stem>...`: variants side by side (T6's columns).
+
+    Reads each ref's archive from ``manifest.variants_dir`` (written by `alc
+    explore`) — either the full ``alc/variant-…`` branch name or its bare stem.
+    A ref with no archive is reported on stderr and the command exits 1.
+    """
+    from alc.intake import load_manifest
+    from alc.variants import read_variant, variant_row
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    variants_dir = operator_layer.parent / manifest.variants_dir
+
+    rows = []
+    missing = []
+    for ref in args.refs:
+        found = read_variant(variants_dir, ref)
+        if found is None:
+            missing.append(ref)
+            continue
+        unit, engine, tier = found
+        rows.append(variant_row(unit, engine, tier))
+
+    if missing:
+        print(f"[ERROR] no archived variant for: {', '.join(missing)}", file=sys.stderr)
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(rows)
+        return 1 if missing else 0
+
+    _print_variant_table(rows)
+    return 1 if missing else 0
+
+
+def cmd_adopt(args: argparse.Namespace) -> int:
+    """Run `alc adopt <branch> [--yes] [--json]`.
+
+    Integrates the chosen variant branch (reusing ``auto_merge_branches``) and
+    discards every OTHER unmerged ``alc/variant-*`` branch (via
+    ``delete_branches``) — closing the explore -> compare -> adopt loop.
+    `explore` never merges; this is the one place a variant becomes real.
+
+    Requires the same confirmation `alc discard` does: ``--yes``, or an
+    interactive "y" at a TTY prompt (see ``_confirm_delete``). Without it,
+    refuses outright — nothing is merged, nothing is deleted, never a partial
+    adopt.
+    """
+    import re
+
+    from alc.branches import delete_branches, list_alc_branches
+    from alc.merge import auto_merge_branches
+    from alc.worktree import git_toplevel, is_git_repo
+
+    if not args.branch.startswith("alc/"):
+        print(f"[ERROR] not an alc/ branch: {args.branch}", file=sys.stderr)
+        return 1
+
+    if not is_git_repo(Path.cwd()):
+        print("[ERROR] not inside a git repository", file=sys.stderr)
+        return 1
+    repo_root = git_toplevel(Path.cwd())
+
+    if not _confirm_delete(args.yes):
+        print(
+            "[ERROR] refusing to adopt without confirmation; pass --yes or "
+            "confirm interactively",
+            file=sys.stderr,
+        )
+        return 1
+
+    variant_re = re.compile(r"^alc/variant-\d+-[0-9a-f]{8}$")
+    losers = [
+        b.name
+        for b in list_alc_branches(repo_root)
+        if not b.merged and b.name != args.branch and variant_re.match(b.name)
+    ]
+
+    merge_report = auto_merge_branches(repo_root, [args.branch])
+    discarded = delete_branches(repo_root, losers) if losers else []
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json({
+            "merged": merge_report.merged,
+            "conflicted": merge_report.conflicted,
+            "discarded": discarded,
+        })
+        return 1 if merge_report.conflicted else 0
+
+    print(merge_report.summary())
+    if discarded:
+        print(f"Discarded {len(discarded)} losing variant(s): {', '.join(discarded)}")
+    else:
+        print("Discarded 0 losing variant(s).")
+    return 1 if merge_report.conflicted else 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Run `alc status [--json]`: aggregate health signals for external monitoring.
 
@@ -2256,6 +2470,81 @@ def main() -> None:
         help="List the unmerged branches as JSON (machine-readable); only with no other arguments.",
     )
 
+    # alc explore <blueprint> "<task>" --variants N [--engine A --engine B] [--tier X --tier Y]
+    explore_parser = subparsers.add_parser(
+        "explore",
+        help=(
+            "Run N variants of the same Blueprint+task, each in its own isolated "
+            "worktree — NEVER auto-merged. Compare them, then `alc adopt` one."
+        ),
+    )
+    explore_parser.add_argument("blueprint", help="Blueprint name (e.g. 'chore').")
+    explore_parser.add_argument("task", help="Free-text task description.")
+    explore_parser.add_argument(
+        "--variants",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Number of copies of the unit to run (default: 1).",
+    )
+    explore_parser.add_argument(
+        "--engine",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="Engine to explore (repeatable — crossed with --tier as a cartesian product).",
+    )
+    explore_parser.add_argument(
+        "--tier",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="Compute tier to explore (repeatable — crossed with --engine as a cartesian product).",
+    )
+    explore_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the variant table as JSON (machine-readable).",
+    )
+
+    # alc compare <branch|stem>...
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Put explored variants side by side (branch, checks, scorecard, usage, diffstat).",
+    )
+    compare_parser.add_argument(
+        "refs", nargs="+", help="Variant branch name(s) or bare stem(s) from `alc explore`."
+    )
+    compare_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the variant table as JSON (machine-readable).",
+    )
+
+    # alc adopt <branch> [--yes] [--json]
+    adopt_parser = subparsers.add_parser(
+        "adopt",
+        help=(
+            "Integrate the chosen variant branch and discard its unmerged "
+            "sibling variants — closes the explore -> compare -> adopt loop."
+        ),
+    )
+    adopt_parser.add_argument("branch", help="The winning alc/variant-* branch to integrate.")
+    adopt_parser.add_argument(
+        "--yes",
+        action="store_true",
+        default=False,
+        help="Confirm non-interactively (required when stdin is not a TTY).",
+    )
+    adopt_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the outcome as JSON (machine-readable).",
+    )
+
     # alc conduct "<goal>" [--engine NAME] [--enqueue]
     conduct_parser = subparsers.add_parser(
         "conduct",
@@ -2691,6 +2980,12 @@ def main() -> None:
         sys.exit(cmd_land(args))
     elif args.command == "discard":
         sys.exit(cmd_discard(args))
+    elif args.command == "explore":
+        sys.exit(cmd_explore(args))
+    elif args.command == "compare":
+        sys.exit(cmd_compare(args))
+    elif args.command == "adopt":
+        sys.exit(cmd_adopt(args))
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
     elif args.command == "cycle":

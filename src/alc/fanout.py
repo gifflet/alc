@@ -30,6 +30,8 @@ def run_unit(
     name: str,
     task: str,
     engine_override: str | None = None,
+    tier: str | None = None,
+    label: str | None = None,
 ) -> UnitResult:
     """Run one unit under a per-unit run log, then delegate to :func:`_run_unit`.
 
@@ -39,7 +41,7 @@ def run_unit(
     """
     runs_dir = operator_layer.parent / manifest.runs_dir
     with bind_run_log(new_run_log_path(runs_dir, "unit", f"{name} {task}")):
-        return _run_unit(manifest, operator_layer, kind, name, task, engine_override)
+        return _run_unit(manifest, operator_layer, kind, name, task, engine_override, tier, label)
 
 
 def _run_unit(
@@ -49,6 +51,8 @@ def _run_unit(
     name: str,
     task: str,
     engine_override: str | None = None,
+    tier: str | None = None,
+    label: str | None = None,
 ) -> UnitResult:
     """Run one Flow, Blueprint, or Specialist in a fresh IsolatedWorktree.
 
@@ -59,6 +63,13 @@ def _run_unit(
         name: The Flow / Blueprint / Specialist name (also the worktree label).
         task: The free-text task description for this unit.
         engine_override: If set, use this engine instead of manifest.default_engine.
+        tier: If set, override the Compute Tier for this unit only (a "blueprint"
+            unit's own compute_tier, or a "flow" unit's per-invocation tier_override).
+            None -> the unit's own default (byte-identical). Ignored for "specialist"
+            units (run_specialist has no tier override to thread it through).
+        label: If set, used VERBATIM as the worktree label (so the resulting branch
+            is ``alc/<label>-<hex8>``) instead of the default ``fanout-<name>``.
+            None -> today's ``fanout-<name>`` (byte-identical).
 
     Returns:
         UnitResult carrying the report and the committed branch (or an error).
@@ -108,7 +119,7 @@ def _run_unit(
         )
         wt = IsolatedWorktree(
             repo_root,
-            label=f"fanout-{name}",
+            label=label if label is not None else f"fanout-{name}",
             commit_message=commit_message,
             exclude_paths=((".alc/",) if is_committing_flow else ()),
             message_provider=message_provider,
@@ -135,6 +146,7 @@ def _run_unit(
                     engine_override=engine_override,
                     workdir=wt_path,
                     skip_commit=is_committing_flow,
+                    tier_override=tier,
                 )
             elif kind == "specialist":
                 # Resolve the Specialist (and its Knowledge File for the Learn write)
@@ -160,6 +172,8 @@ def _run_unit(
                 )
             else:
                 blueprint = load_blueprint(project_root / manifest.blueprints_dir, name)
+                if tier is not None:
+                    blueprint = blueprint.model_copy(update={"compute_tier": tier})
                 runner = MandateRunner(manifest=manifest, operator_layer=operator_layer)
                 run_report = runner.run(
                     blueprint=blueprint,
@@ -216,11 +230,16 @@ def run_fanout(
         manifest: The loaded Manifest.
         operator_layer: Path to the ``.alc/`` directory.
         units: Ordered list of ``{"kind", "name", "task"}`` dicts. ``kind`` is
-            "flow", "blueprint", or "specialist".
+            "flow", "blueprint", or "specialist". Each unit may also carry its own
+            ``"engine"``, ``"tier"``, and ``"label"`` — any of the three absent (or
+            not a key at all) falls back to this call's ``engine_override`` (for
+            ``"engine"``) or today's default (``None`` tier, ``fanout-<name>``
+            label) — so a units list built without these keys is byte-identical.
         max_workers: Bounded concurrency (default 4). The work is subprocess-bound,
             so threads are correct.
         engine_override: If set, run every unit on this engine instead of
-            manifest.default_engine (mirrors the serial dispatch path).
+            manifest.default_engine (mirrors the serial dispatch path) — unless a
+            unit's own ``"engine"`` key overrides it.
 
     Returns:
         FanoutReport whose ``units`` preserve the input order and whose ``success``
@@ -236,7 +255,9 @@ def run_fanout(
                 unit["kind"],
                 unit["name"],
                 unit["task"],
-                engine_override,
+                unit.get("engine", engine_override),
+                unit.get("tier"),
+                unit.get("label"),
             ): index
             for index, unit in enumerate(units)
         }

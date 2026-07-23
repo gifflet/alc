@@ -196,6 +196,7 @@ class Manifest(BaseModel):
     bundles_dir: str = ".alc/bundles"
     loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
     runs_dir: str = ".alc/runs"         # Structured per-run event logs (observability)
+    variants_dir: str = ".alc/variants"  # Archived `alc explore` variant reports (`compare`/`adopt`)
 
 
 class AttemptRecord(BaseModel):
