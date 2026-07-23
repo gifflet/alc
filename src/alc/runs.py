@@ -51,6 +51,42 @@ def _run_finished(path: Path) -> bool:
     return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
 
 
+def _net_lines(path: Path) -> int | None:
+    """Return net lines (adds - dels) summed across every `mandate_finished`
+    event's diffstat in *path*'s run log (roadmap-phase-4.md T4).
+
+    Sums across ALL such events, not just one — a flow/task run's log holds one
+    `mandate_finished` per stage, so this reflects the whole run, not just its
+    last stage. None when the log carries no diffstat at all (every event's
+    diffstat was null, or there is no `mandate_finished` event), matching
+    Diffstat's own "not computable or nothing changed" semantics — never a
+    misleading 0.
+    """
+    try:
+        lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
+    except OSError:
+        return None
+
+    total = 0
+    found = False
+    for ln in lines:
+        try:
+            event = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("event") != "mandate_finished":
+            continue
+        diffstat = event.get("diffstat")
+        if not isinstance(diffstat, dict):
+            continue
+        adds, dels = diffstat.get("adds"), diffstat.get("dels")
+        if not isinstance(adds, int) or not isinstance(dels, int):
+            continue
+        total += adds - dels
+        found = True
+    return total if found else None
+
+
 # Grace beyond a turn's max lifetime before a still-unfinished run is deemed dead.
 # A running turn is killed at manifest.default_timeout_s, so a run whose log has
 # gone quiet for longer than that (plus this margin) has no live process behind
@@ -86,6 +122,7 @@ def list_runs(runs_dir: Path, stale_after: float, limit: int = 50, offset: int =
                 "size": st.st_size,
                 "finished": finished,
                 "stale": _run_stale(st.st_mtime, finished, stale_after, now),
+                "net_lines": _net_lines(path),
             }
         )
     return {"runs": runs, "total": total}

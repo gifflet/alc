@@ -81,6 +81,10 @@ def _print_run_report(report) -> None:
         print("Changed files:")
         for path in report.changed_files:
             print(f"  {path}")
+    if report.warnings:
+        print("Warnings:")
+        for w in report.warnings:
+            print(f"  [WARN] {w}")
     print()
     print(report.model_dump_json(indent=2))
 
@@ -102,6 +106,8 @@ def _print_flow_report(report) -> None:
             f"  {stage_report.blueprint} -> {stage_status} "
             f"(passes={stage_report.scorecard.passes})"
         )
+        for w in stage_report.warnings:
+            print(f"    [WARN] {w}")
     print()
     print(report.model_dump_json(indent=2))
 
@@ -281,6 +287,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
     from alc.intake import load_all_blueprints, load_manifest
     from alc.policy import has_errors, lint, validate_provisions, validate_prompts
+    from alc.stagepolicy import lint_stage
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
@@ -288,6 +295,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     violations = lint(manifest, blueprints)
     violations += validate_prompts(manifest, operator_layer, blueprints)
     violations += validate_provisions(manifest, operator_layer.parent)
+    violations += lint_stage(manifest, blueprints)
 
     if getattr(args, "json", False):
         from alc.output import emit_json
@@ -867,6 +875,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     from alc.packs import PACKS, pack_files
     from alc.policy import has_errors, lint, validate_prompts, validate_provisions
     from alc.scaffold import detect_stacks
+    from alc.stagepolicy import lint_stage
 
     if args.archetype not in PACKS:
         available = ", ".join(sorted(PACKS)) or "none yet"
@@ -905,6 +914,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     violations = lint(manifest, blueprints)
     violations += validate_prompts(manifest, operator_layer, blueprints)
     violations += validate_provisions(manifest, project_root)
+    violations += lint_stage(manifest, blueprints)
 
     if not violations:
         print("No violations found. Operator Layer is conformant.")
@@ -916,8 +926,61 @@ def _team_hire(args: argparse.Namespace) -> int:
     return 1 if has_errors(violations) else 0
 
 
+def _print_mix_health(health) -> None:
+    """Print `alc team status`'s Mix Health section (roadmap-phase-4.md T6).
+
+    `total_runs == 0` renders as "no data yet" — never a division by zero or a
+    misleading all-zero table. With no `stage` declared, the breakdown is
+    printed but never judged (no core/secondary/off-mix labels).
+    """
+    print()
+    if health.total_runs == 0:
+        print(
+            "Mix Health: no data yet — drain the queue (`alc tick`) to populate "
+            "archived reports."
+        )
+        return
+
+    if health.stage is None:
+        print("Mix Health (no stage declared — breakdown only, not judged):")
+    else:
+        print(
+            f"Mix Health (stage: {health.stage}; "
+            f"core={health.core} secondary={health.secondary}):"
+        )
+
+    seen: set[str | None] = set()
+    for entry in health.by_archetype:
+        label = ""
+        if health.stage is not None:
+            if entry.archetype in health.core:
+                label = "  [core]"
+            elif entry.archetype in health.secondary:
+                label = "  [secondary]"
+            elif entry.archetype is not None:
+                label = "  [off-mix]"
+        name = entry.archetype or "(none)"
+        seen.add(entry.archetype)
+        print(
+            f"  {name:<12} runs={entry.runs} span={entry.span} "
+            f"cost_usd={entry.cost_usd:.4f} net_lines={entry.net_lines:+d}{label}"
+        )
+
+    if health.stage is not None:
+        for archetype in health.core:
+            if archetype not in seen:
+                print(
+                    f"  {archetype:<12} runs=0 — core archetype never exercised yet; "
+                    f"hint: alc team hire {archetype}"
+                )
+
+
 def _team_roster(args: argparse.Namespace) -> int:
-    """`alc team list|status`: the hired roster and the state of loops each member brought."""
+    """`alc team list|status`: the hired roster and the state of loops each member
+    brought. `status` additionally reports Mix Health (roadmap-phase-4.md T6):
+    archived reports' real archetype spend against the declared stage's target
+    mix — `list` stays roster-only.
+    """
     from alc.intake import load_manifest
     from alc.loop import load_loop_state, loops_dir, state_path
     from alc.packs import PACKS, pack_files
@@ -952,29 +1015,44 @@ def _team_roster(args: argparse.Namespace) -> int:
                 )
         roster.append({"archetype": archetype, "files": present, "loops": member_loops})
 
+    health = None
+    if args.team_action == "status":
+        from alc.stagepolicy import mix_health
+
+        done_dir = project_root / manifest.queue_dir / "done"
+        health = mix_health(done_dir, manifest)
+
     if getattr(args, "json", False):
+        from dataclasses import asdict
+
         from alc.output import emit_json
 
-        emit_json(roster)
+        if health is not None:
+            emit_json({"roster": roster, "mix_health": asdict(health)})
+        else:
+            emit_json(roster)
         return 0
 
     if not roster:
         print("No members hired yet. Run: alc team hire <archetype>")
-        return 0
+    else:
+        print("Hired members:")
+        for member in roster:
+            print(f"  {member['archetype']}")
+            for rel_path in member["files"]:
+                print(f"    {rel_path}")
+            if member["loops"]:
+                for loop in member["loops"]:
+                    line = f"    loop {loop['name']}: {loop['status']} (cycle {loop['cycle']})"
+                    if loop["status"] == "stopped":
+                        line += f", stopped_reason={loop['stopped_reason']}"
+                    print(line)
+            else:
+                print("    loops: (none)")
 
-    print("Hired members:")
-    for member in roster:
-        print(f"  {member['archetype']}")
-        for rel_path in member["files"]:
-            print(f"    {rel_path}")
-        if member["loops"]:
-            for loop in member["loops"]:
-                line = f"    loop {loop['name']}: {loop['status']} (cycle {loop['cycle']})"
-                if loop["status"] == "stopped":
-                    line += f", stopped_reason={loop['stopped_reason']}"
-                print(line)
-        else:
-            print("    loops: (none)")
+    if health is not None:
+        _print_mix_health(health)
+
     return 0
 
 
@@ -1960,7 +2038,9 @@ def cmd_runs(args: argparse.Namespace) -> int:
             return 0
         for run in result["runs"]:
             status = "finished" if run["finished"] else ("stale" if run["stale"] else "running")
-            print(f"{run['stem']}   ({run['kind']}, {status})")
+            net = run["net_lines"]
+            net_str = f"{net:+d}" if net is not None else "n/a"
+            print(f"{run['stem']}   ({run['kind']}, {status})   net-lines={net_str}")
         print(f"Showing {len(result['runs'])} of {result['total']} run(s).")
         return 0
 
@@ -2964,7 +3044,13 @@ def main() -> None:
         help="Output the roster as JSON (machine-readable).",
     )
 
-    team_status_parser = team_subparsers.add_parser("status", help="Alias for `alc team list`.")
+    team_status_parser = team_subparsers.add_parser(
+        "status",
+        help=(
+            "Like `alc team list`, plus Mix Health: archived reports' archetype "
+            "spend against the declared stage's target mix."
+        ),
+    )
     team_status_parser.add_argument(
         "--json",
         action="store_true",

@@ -126,6 +126,14 @@ class Blueprint(BaseModel):
     # feeds the same repair addendum as a real check failure (see assurance.py).
     # Empty (default) -> no-op, byte-identical.
     protect: list[str] = []
+    # Advisory-only signal that this mandate is expected to REDUCE the codebase
+    # (roadmap-phase-4.md T4) — the first consumer of `RunReport.diffstat`
+    # (Phase 2), alongside the net-lines column on `alc runs list`. When set and
+    # the run's diffstat nets positive (the codebase grew instead of shrank),
+    # the control plane records a warn on `RunReport.warnings` and the run log —
+    # it NEVER fails the run: simplifying sometimes means growing before
+    # shrinking. None (default) -> no-op, byte-identical.
+    expect: Literal["shrink"] | None = None
 
 
 class ProvisionSpec(BaseModel):
@@ -265,6 +273,21 @@ class Manifest(BaseModel):
     # or webhook fired where the control plane already detects the failure. None
     # (default) -> notify off, byte-identical to today.
     notify: NotifyConfig | None = None
+    # Declares which growth stage the product is in (roadmap-phase-4.md T5) — the
+    # essay's mix of archetypes made control-plane data. `alc.stagepolicy` compares
+    # the archetypes actually hired/run against the target mix for this stage.
+    # Every rule this enables is advisory (warn only — see
+    # `stagepolicy.lint_stage`); the stage NEVER changes how a mandate executes,
+    # only what gets warned/reported/scaffolded. None (default) -> no rule ever
+    # fires, byte-identical to today (`alc init` writes no `stage`).
+    stage: Literal["pre-pmf", "growth", "strong-pmf"] | None = None
+    # Overrides `stagepolicy.STAGE_MIX[stage]` wholesale: {"core": [...],
+    # "secondary": [...]} of archetype names. The default mix is a health
+    # heuristic, not a law of physics — this is the escape hatch so it never
+    # hardens into dogma. Validated (shape + archetype names) by
+    # `stagepolicy.lint_stage`, advisory/error only — never crashes at parse
+    # time. None (default) -> the built-in default mix for `stage`.
+    stage_mix: dict[str, list[str]] | None = None
 
 
 class MetricRecord(BaseModel):
@@ -370,6 +393,13 @@ class RunReport(BaseModel):
     # exception to the checks gate. Marks the run so downstream aggregation
     # (Scorecard streak, `alc audit`, …) can tell a spike apart from a real demand.
     spike: bool = False
+    # Advisory notes the control plane found about this run — human-readable,
+    # NEVER a reason to fail it (roadmap-phase-4.md T4). Currently populated
+    # only by `Blueprint.expect == "shrink"` finishing net-positive; a plain
+    # list (rather than one field per rule) so a later advisory rule has
+    # somewhere to land without a new RunReport field each time. Empty
+    # (default) -> byte-identical to before this field existed.
+    warnings: list[str] = []
 
     model_config = {"arbitrary_types_allowed": True}
 

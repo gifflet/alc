@@ -95,7 +95,9 @@ class TestTeamListStatus:
         assert cmd_team(_ns(team_action="list")) == 0
         assert "No members hired" in capsys.readouterr().out
 
-    def test_list_and_status_return_the_same_roster(self, project: Path, capsys) -> None:
+    def test_list_and_status_agree_on_the_roster(self, project: Path, capsys) -> None:
+        # T6: `status` additionally reports Mix Health, so its JSON payload is no
+        # longer a bare roster array — but the roster itself must still agree.
         cmd_team(_ns(team_action="hire", archetype="builder"))
         capsys.readouterr()
 
@@ -105,8 +107,29 @@ class TestTeamListStatus:
         assert cmd_team(_ns(team_action="status", json=True)) == 0
         status_payload = json.loads(capsys.readouterr().out)
 
-        assert list_payload == status_payload
+        assert status_payload["roster"] == list_payload
         assert [m["archetype"] for m in list_payload] == ["builder"]
+
+    def test_status_json_includes_mix_health_with_no_data_yet(
+        self, project: Path, capsys
+    ) -> None:
+        cmd_team(_ns(team_action="hire", archetype="builder"))
+        capsys.readouterr()
+
+        assert cmd_team(_ns(team_action="status", json=True)) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["mix_health"]["stage"] is None
+        assert payload["mix_health"]["total_runs"] == 0
+        assert payload["mix_health"]["by_archetype"] == []
+
+    def test_status_human_output_reports_no_data_yet(self, project: Path, capsys) -> None:
+        cmd_team(_ns(team_action="hire", archetype="builder"))
+        capsys.readouterr()
+
+        assert cmd_team(_ns(team_action="status")) == 0
+        out = capsys.readouterr().out
+        assert "Mix Health: no data yet" in out
 
     def test_json_payload_lists_the_pack_files_and_empty_loops(
         self, project: Path, capsys

@@ -375,6 +375,21 @@ def execute_mandate(
         # masquerade as a disciplined one-shot.
         scorecard = scorecard.model_copy(update={"streak": 0})
 
+    # T4: `expect: shrink` is advisory only — it NEVER fails the run (simplifying
+    # sometimes means growing before shrinking). A mandate that declared it but
+    # finished having grown the codebase (diffstat nets positive) gets a warn on
+    # the report itself; the run log gets its own event below.
+    warnings: list[str] = []
+    if blueprint.expect == "shrink" and diffstat is not None:
+        net_lines = diffstat.adds - diffstat.dels
+        if net_lines > 0:
+            warnings.append(
+                f"Blueprint '{blueprint.name}' declares expect: shrink but the "
+                f"codebase grew by {net_lines} net line(s) "
+                f"(+{diffstat.adds}/-{diffstat.dels}) — never fails the run; "
+                "simplifying sometimes means growing before shrinking."
+            )
+
     # Patch the report's blueprint field to the real name (not the truncated directive).
     final_report = RunReport(
         blueprint=blueprint.name,
@@ -388,7 +403,11 @@ def execute_mandate(
         usage=report.usage,
         archetype=blueprint.archetype,
         spike=blueprint.mode == "spike",
+        warnings=warnings,
     )
+
+    for message in warnings:
+        emit("run_warning", message=message)
 
     # Observe: close the mandate with its outcome and scorecard.
     emit(
@@ -396,6 +415,7 @@ def execute_mandate(
         success=final_report.success,
         attempts=len(final_report.attempts),
         scorecard=final_report.scorecard.model_dump(),
+        diffstat=final_report.diffstat.model_dump() if final_report.diffstat is not None else None,
     )
     return final_report
 

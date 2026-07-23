@@ -25,7 +25,9 @@ _VALID_PERMISSION_MODES: frozenset[str] = frozenset(
     {"acceptEdits", "auto", "bypassPermissions", "default"}
 )
 
-_VALID_ARCHETYPES: frozenset[str] = frozenset(
+# Public (not underscore-prefixed): also imported by stagepolicy.py, whose
+# stage-mix rules (roadmap-phase-4.md T5) validate against the same set.
+VALID_ARCHETYPES: frozenset[str] = frozenset(
     {"prototyper", "builder", "sweeper", "grower", "maintainer"}
 )
 
@@ -238,7 +240,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
             )
 
         # Rule 10: archetype, when declared, should be a recognised value (advisory).
-        if bp.archetype is not None and bp.archetype not in _VALID_ARCHETYPES:
+        if bp.archetype is not None and bp.archetype not in VALID_ARCHETYPES:
             violations.append(
                 Violation(
                     rule="blueprint-archetype-known",
@@ -246,7 +248,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                     message=(
                         f"Blueprint '{bp.name}' declares archetype='{bp.archetype}' "
                         f"which is not a recognised value "
-                        f"(known: {sorted(_VALID_ARCHETYPES)})."
+                        f"(known: {sorted(VALID_ARCHETYPES)})."
                     ),
                 )
             )

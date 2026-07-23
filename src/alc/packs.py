@@ -138,6 +138,7 @@ compute_tier: standard
   - name: smoke
     command: ["true"]
 protect: ["tests/**", "test/**"]
+expect: shrink
 report:
   format: json
   schema:
