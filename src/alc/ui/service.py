@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import json
 import tempfile
-import time
 import uuid
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 
+from alc import runs as runs_core
 from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
@@ -36,14 +36,6 @@ from alc.queue import (
 )
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
-
-# A run finishes at the terminal event for its KIND (mirrors the detail view's
-# buildTimeline): a flow at ``flow_finished``, a task at ``task_finished``. A
-# flow/task run's inner ``mandate_finished`` lines are NOT terminal — the run
-# is still live until its wrapper closes; only a bare mandate run (no flow/task
-# wrapper) finishes at its own ``mandate_finished``.
-_WRAPPER_STARTS = {"flow_started", "task_started"}
-_WRAPPER_TERMINALS = {"flow_finished", "task_finished"}
 
 
 def operator_layer(root: Path) -> Path:
@@ -341,37 +333,6 @@ def _runs_dir(root: Path) -> Path:
     return root / manifest.runs_dir
 
 
-def _run_kind(stem: str) -> str:
-    """Extract the run kind from a run-log stem (``<ts>-<kind>-<slug>-<hex>``)."""
-    parts = stem.split("-")
-    return parts[1] if len(parts) > 1 else ""
-
-
-def _run_finished(path: Path) -> bool:
-    """Return True when the run reached the terminal event for its kind.
-
-    Mirrors the detail view (buildTimeline) so the runs list and the run detail
-    never disagree: a flow/task run's inner ``mandate_finished`` is not terminal
-    — only ``flow_finished`` / ``task_finished`` closes it; a bare mandate run
-    (no flow/task wrapper) closes at its ``mandate_finished``.
-    """
-    try:
-        lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
-    except OSError:
-        return False
-    events: set[str] = set()
-    for ln in lines:
-        try:
-            event = json.loads(ln).get("event")
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, str):
-            events.add(event)
-    if events & _WRAPPER_TERMINALS:
-        return True
-    return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
-
-
 # Grace beyond a turn's max lifetime before a still-unfinished run is deemed dead.
 # A running turn is killed at manifest.default_timeout_s, so a run whose log has
 # gone quiet for longer than that (plus this margin) has no live process behind
@@ -387,39 +348,11 @@ def _stale_after_seconds(root: Path) -> float:
         return 1800 + _STALE_MARGIN_S
 
 
-def _run_stale(mtime: float, finished: bool, stale_after: float, now: float) -> bool:
-    """True when an UNFINISHED run's log has been idle past the interrupted threshold."""
-    return not finished and (now - mtime) > stale_after
-
-
 def list_runs(root: Path, limit: int = 50, offset: int = 0) -> dict:
     """List run logs (newest first) with simple pagination."""
-    runs_dir = _runs_dir(root)
-    if not runs_dir.is_dir():
-        return {"runs": [], "total": 0}
-
-    files = sorted(
-        runs_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True
+    return runs_core.list_runs(
+        _runs_dir(root), _stale_after_seconds(root), limit=limit, offset=offset
     )
-    total = len(files)
-    page = files[offset : offset + limit]
-    stale_after = _stale_after_seconds(root)
-    now = time.time()
-    runs = []
-    for path in page:
-        st = path.stat()
-        finished = _run_finished(path)
-        runs.append(
-            {
-                "stem": path.stem,
-                "kind": _run_kind(path.stem),
-                "mtime": st.st_mtime,
-                "size": st.st_size,
-                "finished": finished,
-                "stale": _run_stale(st.st_mtime, finished, stale_after, now),
-            }
-        )
-    return {"runs": runs, "total": total}
 
 
 def read_run(root: Path, stem: str, offset: int = 0) -> dict:
@@ -428,23 +361,12 @@ def read_run(root: Path, stem: str, offset: int = 0) -> dict:
     ``next_offset`` is the total line count, to be passed back as ``offset`` on
     the next poll so only new lines are returned.
     """
-    path = _runs_dir(root) / f"{stem}.jsonl"
-    if not path.is_file():
-        raise ApiError(f"no run '{stem}'", status=404)
-    lines = path.read_text().splitlines()
-    events = []
-    for line in lines[offset:]:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    stale = _run_stale(
-        path.stat().st_mtime, _run_finished(path), _stale_after_seconds(root), time.time()
-    )
-    return {"events": events, "next_offset": len(lines), "stale": stale}
+    try:
+        return runs_core.read_run(
+            _runs_dir(root), stem, _stale_after_seconds(root), offset=offset
+        )
+    except FileNotFoundError as exc:
+        raise ApiError(f"no run '{stem}'", status=404) from exc
 
 
 # ---------------------------------------------------------------------------
