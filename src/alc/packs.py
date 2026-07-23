@@ -162,6 +162,35 @@ archetype: sweeper
    ```
 """
 
+_SWEEPER_MAP = """\
+---
+name: map
+purpose: Map the public symbols a feature exposes, so `unship` can prove their absence.
+compute_tier: standard
+checks:
+  # This stage only maps a surface — it changes nothing, so a smoke check is enough.
+  - name: smoke
+    command: ["true"]
+report:
+  format: json
+  schema:
+    symbols: list
+    summary: string
+---
+
+## Map Workflow
+
+1. Read the task description to identify the feature being removed.
+2. Search the codebase for every symbol (function, class, endpoint, CLI flag,
+   config key, …) that feature exposes as its public surface — anything another
+   part of the codebase, or a user, could reference by name.
+3. Do NOT change any code in this stage — mapping only; `remove` does the edit.
+4. Output a JSON report matching the schema:
+   ```json
+   {"symbols": ["<symbol_one>", "<symbol_two>"], "summary": "<one sentence>"}
+   ```
+"""
+
 _SWEEPER_JANITOR = """\
 name: janitor
 area: dead and unused code across the codebase — the accumulated cruft map
@@ -184,24 +213,31 @@ stop:
 
 _SWEEPER_UNSHIP_FLOW = """\
 name: unship
-description: Map what a finding touches, remove it behavior-preservingly, then a pure gate.
+description: Map a feature's surface, remove it behavior-preservingly, then prove absence.
 stages:
   - name: map
-    blueprint: plan
+    blueprint: map
   - name: remove
     blueprint: refactor
   - name: gate
     blueprint: refactor
     verify_only: true
+    derive_checks:
+      from_stage: map
+      field: symbols
+      shell_template: '! grep -rn {value} src/'
 """
 
 
 def _sweeper_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
 ) -> dict[str, str]:
-    """Build the Sweeper pack: the janitor Specialist, a refactor Blueprint, its
-    sweep Loop, and the unship Flow it enqueues one demand per finding into."""
+    """Build the Sweeper pack: a map Blueprint (discovers a feature's surface), the
+    janitor Specialist, a refactor Blueprint, its sweep Loop, and the unship Flow —
+    map -> remove -> a gate that derives its checks from what map found, proving
+    every discovered symbol is actually gone (roadmap-phase-4.md T9)."""
     return {
+        ".alc/blueprints/map.md": _SWEEPER_MAP,
         ".alc/blueprints/refactor.md": _SWEEPER_REFACTOR.format(
             check_set_line=_check_set_line(stacks)
         ),

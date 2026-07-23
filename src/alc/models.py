@@ -435,13 +435,43 @@ class RunReport(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
+class DeriveChecksSpec(BaseModel):
+    """Materializes a ``verify_only`` stage's checks from an EARLIER stage's report,
+    instead of a Blueprint's statically declared ones (roadmap-phase-4.md T9).
+
+    Reads ``field`` out of ``from_stage``'s ``RunReport.output_text`` (parsed as a
+    JSON object) and turns each list item into one Check, substituting it for the
+    literal ``{value}`` placeholder in ``shell_template``. This is what closes the
+    Sweeper pack's `unship` Flow: its `map` stage discovers a removed feature's
+    exposed symbols, and its `gate` stage proves each one is GONE
+    (``! grep -rn {value} src/``) — a check list only knowable after the map
+    stage ran, not at Blueprint authoring time.
+
+    The interpolated value comes out of a model's report and lands in a shell
+    command, so it is a security boundary: ``flow.py`` ALWAYS ``shlex.quote()``s
+    ``{value}`` before substitution, and drops any list item that is not a plain
+    string (with a warning) rather than trusting it. ``shlex.quote`` produces a
+    value already safe to sit as a BARE shell word — write ``{value}`` UNQUOTED
+    in the template (as in the example above). Wrapping it in your own quotes
+    (``"{value}"``) nests a quoted string inside another quoted string, which
+    does NOT re-escape it and reopens the exact injection this field exists to
+    close.
+    """
+
+    from_stage: str      # name of an EARLIER stage in the same Flow
+    field: str            # key read from that stage's JSON report; must be a list
+    shell_template: str   # must contain the literal "{value}" placeholder
+
+
 class FlowStage(BaseModel):
     """One stage in a Flow — runs either a Blueprint or a Specialist.
 
     Exactly one of ``blueprint`` or ``specialist`` must be set. A blueprint stage
     runs a Single Mandate; a specialist stage runs the Specialist's Recall -> Act
     -> Learn cycle (keeping its Knowledge File). A ``verify_only`` stage runs the
-    named Blueprint's checks as a pure gate, so it MUST reference a blueprint.
+    named Blueprint's checks as a pure gate, so it MUST reference a blueprint —
+    unless it declares ``derive_checks``, in which case its checks are materialized
+    from an upstream stage's report instead (see ``DeriveChecksSpec``).
     """
 
     name: str
@@ -449,6 +479,11 @@ class FlowStage(BaseModel):
     specialist: str | None = None    # name of an existing Specialist
     compute_tier: str | None = None  # optional override of the Blueprint's tier
     verify_only: bool = False  # when True: run checks as a pure gate, no engine turn
+    # Set only on a verify_only stage: replaces the Blueprint's static checks with
+    # ones materialized from an upstream stage's report. None (default) -> the
+    # verify_only stage keeps resolving checks statically, byte-identical to before
+    # this field existed.
+    derive_checks: DeriveChecksSpec | None = None
 
     @model_validator(mode="after")
     def _exactly_one_ref(self) -> "FlowStage":

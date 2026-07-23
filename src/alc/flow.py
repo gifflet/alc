@@ -4,6 +4,8 @@
 # Assurance Loop, Scorecard) is reused for every stage via execute_mandate.
 from __future__ import annotations
 
+import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -13,6 +15,8 @@ from alc.events import emit
 from alc.intake import load_blueprint, load_specialist, resolve_checks
 from alc.models import (
     Blueprint,
+    Check,
+    DeriveChecksSpec,
     FlowDefinition,
     FlowReport,
     FlowStage,
@@ -26,6 +30,77 @@ from alc.prompts import expand_includes
 from alc.runner import PolicyViolationError, execute_mandate
 from alc.specialist import run_specialist
 from alc.verifier import Verifier
+
+
+def _derive_checks(
+    spec: DeriveChecksSpec, upstream_report: RunReport | None
+) -> tuple[list[Check], list[str]]:
+    """Materialize one Check per item of ``spec.field`` in ``upstream_report``.
+
+    ``upstream_report.output_text`` is whatever the engine produced — it may be
+    absent, not JSON, or JSON that doesn't match the shape a Blueprint's report
+    schema promised. None of that may raise: every failure to read a value
+    degrades to a warning and contributes zero checks, never a traceback.
+
+    Interpolation is a security boundary: ``{value}`` is ALWAYS substituted with
+    ``shlex.quote(item)``, and a list item that is not a plain string is dropped
+    (with a warning) rather than trusted.
+
+    Returns:
+        (checks, warnings) — warnings explain every value/shape problem found;
+        empty when the upstream report was clean.
+    """
+    if upstream_report is None:
+        return [], [
+            f"derive_checks: upstream stage '{spec.from_stage}' produced no report."
+        ]
+
+    try:
+        parsed = json.loads(upstream_report.output_text)
+    except (json.JSONDecodeError, TypeError):
+        return [], [
+            f"derive_checks: stage '{spec.from_stage}' report is not valid JSON "
+            f"— cannot read field '{spec.field}'."
+        ]
+
+    if not isinstance(parsed, dict):
+        return [], [
+            f"derive_checks: stage '{spec.from_stage}' report is not a JSON "
+            f"object — cannot read field '{spec.field}'."
+        ]
+
+    if spec.field not in parsed:
+        return [], [
+            f"derive_checks: stage '{spec.from_stage}' report has no field "
+            f"'{spec.field}'."
+        ]
+
+    values = parsed[spec.field]
+    if not isinstance(values, list):
+        return [], [
+            f"derive_checks: stage '{spec.from_stage}' field '{spec.field}' is "
+            "not a list."
+        ]
+
+    if not values:
+        return [], [
+            f"derive_checks: stage '{spec.from_stage}' field '{spec.field}' is "
+            "an empty list — nothing to derive a check from."
+        ]
+
+    checks: list[Check] = []
+    warnings: list[str] = []
+    for item in values:
+        if not isinstance(item, str):
+            warnings.append(
+                f"derive_checks: dropped non-string item {item!r} from stage "
+                f"'{spec.from_stage}' field '{spec.field}'."
+            )
+            continue
+        shell = spec.shell_template.replace("{value}", shlex.quote(item))
+        checks.append(Check(name=f"absence: {item}", shell=shell))
+
+    return checks, warnings
 
 
 def _compose_stage_directive(
@@ -261,32 +336,62 @@ class FlowRunner:
             if stage.verify_only:
                 # Verify-only stage: run checks as a pure gate — no engine turn.
                 wd = workdir or Path.cwd()
-                check_results = Verifier(
-                    max_output_chars=self._manifest.check_output_chars,
-                    timeout_s=self._manifest.check_timeout_s,
-                    metrics_dir=self._operator_layer.parent / self._manifest.metrics_dir,
-                    run_id=blueprint.name,
-                ).run(resolve_checks(self._manifest, blueprint), wd)
-                all_passed = all(cr.passed for cr in check_results)
-                summary_lines = [
-                    f"{cr.name}: {'pass' if cr.passed else 'fail'}"
-                    for cr in check_results
-                ]
-                report = RunReport(
-                    blueprint=blueprint.name,
-                    engine="(verify-only)",
-                    success=all_passed,
-                    attempts=[],
-                    scorecard=Scorecard(
-                        span=sum(1 for cr in check_results if cr.passed),
-                        passes=0,
-                        # A passing gate is one-shot by definition (zero repairs);
-                        # a failing gate is not a successful one-shot run.
-                        streak=1 if all_passed else 0,
-                        touch=0,
-                    ),
-                    output_text="\n".join(summary_lines),
-                )
+                derive_notes: list[str] = []
+                if stage.derive_checks is not None:
+                    # Materialize checks from an upstream stage's report instead
+                    # of the Blueprint's static ones (roadmap-phase-4.md T9).
+                    stage_reports_by_name = {
+                        s.name: r for s, r in zip(flow.stages, stage_reports)
+                    }
+                    upstream_report = stage_reports_by_name.get(
+                        stage.derive_checks.from_stage
+                    )
+                    checks, derive_notes = _derive_checks(
+                        stage.derive_checks, upstream_report
+                    )
+                else:
+                    checks = resolve_checks(self._manifest, blueprint)
+
+                if stage.derive_checks is not None and not checks:
+                    # "Checks are law" extends here: a gate with ZERO derived
+                    # checks would otherwise vacuously PASS, proving nothing
+                    # about the absence it was asked to demonstrate. Fail
+                    # loudly, with the notes explaining why, instead.
+                    report = RunReport(
+                        blueprint=blueprint.name,
+                        engine="(verify-only)",
+                        success=False,
+                        attempts=[],
+                        scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+                        output_text="\n".join(derive_notes),
+                    )
+                else:
+                    check_results = Verifier(
+                        max_output_chars=self._manifest.check_output_chars,
+                        timeout_s=self._manifest.check_timeout_s,
+                        metrics_dir=self._operator_layer.parent / self._manifest.metrics_dir,
+                        run_id=blueprint.name,
+                    ).run(checks, wd)
+                    all_passed = all(cr.passed for cr in check_results)
+                    summary_lines = derive_notes + [
+                        f"{cr.name}: {'pass' if cr.passed else 'fail'}"
+                        for cr in check_results
+                    ]
+                    report = RunReport(
+                        blueprint=blueprint.name,
+                        engine="(verify-only)",
+                        success=all_passed,
+                        attempts=[],
+                        scorecard=Scorecard(
+                            span=sum(1 for cr in check_results if cr.passed),
+                            passes=0,
+                            # A passing gate is one-shot by definition (zero repairs);
+                            # a failing gate is not a successful one-shot run.
+                            streak=1 if all_passed else 0,
+                            touch=0,
+                        ),
+                        output_text="\n".join(summary_lines),
+                    )
             elif stage.specialist is not None:
                 # Specialist stage: run its Recall -> Act -> Learn cycle in the
                 # flow's shared workdir (so it sees prior stages' edits and keeps

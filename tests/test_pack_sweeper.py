@@ -22,6 +22,7 @@ class TestPackFilesSweeper:
     def test_returns_the_expected_relative_paths(self) -> None:
         files = pack_files("sweeper", stacks=[])
         assert set(files) == {
+            ".alc/blueprints/map.md",
             ".alc/blueprints/refactor.md",
             ".alc/specialists/janitor.yaml",
             ".alc/loops/sweep.yaml",
@@ -74,9 +75,23 @@ class TestPackFilesSweeper:
 
     def test_unship_flow_chains_map_remove_and_a_verify_only_gate(self) -> None:
         content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
-        assert "blueprint: plan" in content
+        assert "blueprint: map" in content
         assert content.count("blueprint: refactor") == 2
         assert "verify_only: true" in content
+
+    def test_unship_gate_derives_its_checks_from_the_map_stage(self) -> None:
+        # roadmap-phase-4.md T9: the gate proves absence of what `map` found,
+        # instead of a fixed check list known only at authoring time.
+        content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
+        assert "derive_checks:" in content
+        assert "from_stage: map" in content
+        assert "field: symbols" in content
+        assert "{value}" in content
+
+    def test_map_blueprint_reports_a_symbols_list(self) -> None:
+        content = pack_files("sweeper", stacks=[])[".alc/blueprints/map.md"]
+        assert "name: map" in content
+        assert "symbols: list" in content
 
 
 # ---------------------------------------------------------------------------

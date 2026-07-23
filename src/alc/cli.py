@@ -1,10 +1,11 @@
 # cli.py — argparse entrypoint for ALC.
 # Provides subcommands: `alc init` (supports --setup and --stage), `alc lint`,
-# `alc run`, `alc spike`, `alc flow`, `alc tick`, `alc retry`, `alc land`,
-# `alc discard`, `alc explore`, `alc compare`, `alc adopt`, `alc conduct`,
-# `alc enqueue`, `alc primer`, `alc new`, `alc team`, `alc prompts`, `alc cycle`,
-# `alc loop`, `alc specialist`, `alc setup`, `alc status`, `alc runs`,
-# `alc audit`, `alc checks`, `alc schedule`, `alc ui`.
+# `alc run`, `alc spike`, `alc flow`, `alc tick`, `alc retry`, `alc land`
+# (supports --push/--pr), `alc discard`, `alc explore`, `alc compare`,
+# `alc adopt`, `alc conduct`, `alc enqueue`, `alc primer`, `alc new`, `alc team`,
+# `alc prompts`, `alc cycle`, `alc loop`, `alc specialist`, `alc setup`,
+# `alc status`, `alc runs`, `alc audit`, `alc checks`, `alc metrics`,
+# `alc schedule`, `alc ui`.
 from __future__ import annotations
 
 import argparse

@@ -342,6 +342,17 @@ def lint_flow(
        exception must never become a delivery path (roadmap-phase-3.md T1).
        Only checked when *stage_blueprints* is supplied; omitting it (existing
        call sites) skips rule 4 entirely, byte-identical to before it existed.
+    5. A stage's derive_checks.shell_template must contain the literal
+       '{value}' placeholder                             (error) — otherwise
+                                                            nothing is ever
+                                                            interpolated
+                                                            (roadmap-phase-4.md T9).
+    6. A stage's derive_checks.from_stage must name a stage that appears
+       EARLIER in the same Flow                           (error) — a forward
+                                                            or self reference
+                                                            can never have a
+                                                            report to read
+                                                            (roadmap-phase-4.md T9).
 
     The exactly-one-of blueprint/specialist rule (and verify_only requiring a
     blueprint) is already enforced by the FlowStage pydantic validator at intake.
@@ -379,7 +390,8 @@ def lint_flow(
 
     # Rule 2/3: every stage's referenced blueprint or specialist must exist.
     # Rule 4: a spike-mode stage may not sit inside a committing Flow.
-    for stage in flow.stages:
+    # Rules 5/6: a derive_checks stage's template and upstream reference.
+    for idx, stage in enumerate(flow.stages):
         if stage.blueprint is not None and stage.blueprint not in available_blueprints:
             violations.append(
                 Violation(
@@ -417,6 +429,38 @@ def lint_flow(
                             f"'{bp.name}' declares mode: spike, which cannot be "
                             "combined with an enabled commit block — the spike "
                             "exception must never become a delivery path."
+                        ),
+                    )
+                )
+
+        if stage.derive_checks is not None:
+            dc = stage.derive_checks
+            # Rule 5: the template must actually interpolate something.
+            if "{value}" not in dc.shell_template:
+                violations.append(
+                    Violation(
+                        rule="flow-derive-checks-template-has-value",
+                        severity="error",
+                        message=(
+                            f"Flow '{flow.name}', stage '{stage.name}': "
+                            "derive_checks.shell_template does not contain the "
+                            "literal '{value}' placeholder — nothing would ever "
+                            "be interpolated into it."
+                        ),
+                    )
+                )
+            # Rule 6: from_stage must be a stage that already ran by this point.
+            earlier_stage_names = {s.name for s in flow.stages[:idx]}
+            if dc.from_stage not in earlier_stage_names:
+                violations.append(
+                    Violation(
+                        rule="flow-derive-checks-from-stage-earlier",
+                        severity="error",
+                        message=(
+                            f"Flow '{flow.name}', stage '{stage.name}': "
+                            f"derive_checks.from_stage '{dc.from_stage}' does not "
+                            "name a stage that appears earlier in the same Flow "
+                            f"(earlier stages: {sorted(earlier_stage_names)})."
                         ),
                     )
                 )

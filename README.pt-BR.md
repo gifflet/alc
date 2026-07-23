@@ -76,7 +76,7 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc specialist <nome> "<tarefa>"` | Roda um Specialist de área (Recall → Act → Learn) |
 | `alc tick [--concurrency N]` | Drena a fila de tarefas — chame isto via cron; `--concurrency N` processa até N tarefas isoladas em paralelo |
 | `alc enqueue <nome> "<tarefa>"` | Escreve uma tarefa direto na fila, sem turno de planner; `--kind flow\|specialist`, `--touches` serializa automaticamente edições que se sobrepõem, `--from-file` enfileira várias de uma vez |
-| `alc land [branch...] [--all]` | Integra branches de demanda `alc/*` na branch atual (cherry-pick linear); sem argumentos, lista as não mergeadas |
+| `alc land [branch...] [--all] [--push\|--pr]` | Integra branches de demanda `alc/*` na branch atual (cherry-pick linear); sem argumentos, lista as não mergeadas; `--push` empurra a branch atual para o remote de entrega depois, `--pr` também abre um pull request via `gh` — uma falha de push/PR nunca reprova o land |
 | `alc discard [branch...] [--all-unmerged]` | Apaga branches `alc/*` à força, poda worktrees obsoletas (`--worktrees`) ou remove bundles antigos (`--bundles --older-than N`) — sempre pede confirmação |
 | `alc explore <blueprint> "<tarefa>" --variants N` | Roda N variantes da mesma unidade em worktrees isoladas (produto cartesiano opcional `--engine`/`--tier`); nunca faz auto-merge — imprime uma tabela por variante (branch, checks, scorecard, custo, diffstat) |
 | `alc compare <branch\|stem>...` | Põe as variantes exploradas lado a lado — as mesmas colunas que o `explore` imprime |
@@ -86,7 +86,8 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc status [--json]` | Retrato de saúde num único comando, para monitoração: tarefas pendentes, falhas em aberto, estado dos loops, branches não mergeadas — sempre sai com código 0 |
 | `alc runs list\|show\|tail` | Inspeciona os run logs (`.alc/runs/*.jsonl`): lista os runs recentes, mostra um por inteiro, ou exibe os últimos N eventos |
 | `alc audit --since 7d` | Agrega os reports arquivados da fila numa janela de tempo: contagem de tarefas, totais/médias do Scorecard, arquivos alterados e uso/custo de engine |
-| `alc team hire\|list\|retire\|status` | Cria, lista ou aposenta um Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — parcial); `alc init --stage pre-pmf\|growth\|strong-pmf` instala o combo de um estágio |
+| `alc metrics [--check NOME] [--json]` | Mostra a série temporal de um metric check gravada no ledger do projeto: valor, delta contra a medição anterior e tendência — somente leitura, populada por checks `metric` (`alc run`/`alc flow`/`alc tick`/…) |
+| `alc team hire\|list\|retire\|status` | Cria, lista ou aposenta um Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — parcial); `alc init --stage pre-pmf\|growth\|strong-pmf` instala o combo de um estágio; `status` também mostra o Mix Health quando `stage` está declarado |
 | `alc checks audit [--json]` | Redetecta o(s) stack(s) e PROPÕE upgrades de check_set contra o Manifest — nunca escreve; aponta checks ainda comentados por falta de binário |
 | `alc schedule install\|list\|remove <tick\|cycle NOME> --every 15m` | Gera e administra a entrada de cron (ou imprime a linha para colar, quando não há `crontab` disponível) que dispara `alc tick`/`alc cycle` num intervalo — install idempotente, remove restrito ao que o próprio ALC marcou |
 | `alc setup [--engine]` | Instala/atualiza a skill user-level do editor (Claude Code ou Gemini) |

@@ -78,7 +78,7 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc specialist <name> "<task>"` | Run an area Specialist (Recall → Act → Learn) |
 | `alc tick [--concurrency N]` | Drain the task queue — call this from cron; `--concurrency N` processes up to N isolated tasks in parallel |
 | `alc enqueue <name> "<task>"` | Write a queue task directly, no planner turn; `--kind flow\|specialist`, `--touches` auto-serializes overlapping edits, `--from-file` batches many at once |
-| `alc land [branch...] [--all]` | Integrate `alc/*` demand branches into the current branch (linear cherry-pick); no arguments lists the unmerged ones |
+| `alc land [branch...] [--all] [--push\|--pr]` | Integrate `alc/*` demand branches into the current branch (linear cherry-pick); no arguments lists the unmerged ones; `--push` pushes the current branch to the delivery remote afterward, `--pr` also opens a pull request via `gh` — a push/PR failure never fails the land |
 | `alc discard [branch...] [--all-unmerged]` | Force-delete `alc/*` branches, prune stale worktrees (`--worktrees`), or remove old bundles (`--bundles --older-than N`) — always asks for confirmation |
 | `alc explore <blueprint> "<task>" --variants N` | Run N variants of the same unit in isolated worktrees (optional `--engine`/`--tier` cartesian product); never auto-merges — prints a per-variant table (branch, checks, scorecard, cost, diffstat) |
 | `alc compare <branch\|stem>...` | Put explored variants side by side — the same columns `explore` prints |
@@ -88,7 +88,8 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc status [--json]` | One-shot health snapshot for monitoring: pending tasks, outstanding failures, loop states, unmerged branches — always exits 0 |
 | `alc runs list\|show\|tail` | Inspect run logs (`.alc/runs/*.jsonl`): list recent runs, show one in full, or tail its last N events |
 | `alc audit --since 7d` | Aggregate the archived queue reports over a trailing window: task counts, Scorecard totals/averages, changed files, and engine usage/cost |
-| `alc team hire\|list\|retire\|status` | Scaffold, roster, or retire an Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — partial); `alc init --stage pre-pmf\|growth\|strong-pmf` installs a stage's combo |
+| `alc metrics [--check NAME] [--json]` | Show the metric-check time series recorded in the project's ledger: value, delta vs the previous measurement, and trend — read-only, populated by `metric` checks (`alc run`/`alc flow`/`alc tick`/…) |
+| `alc team hire\|list\|retire\|status` | Scaffold, roster, or retire an Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — partial); `alc init --stage pre-pmf\|growth\|strong-pmf` installs a stage's combo; `status` also shows Mix Health when `stage` is declared |
 | `alc checks audit [--json]` | Re-detect your stack(s) and PROPOSE check_set upgrades against the Manifest — never writes; flags checks still commented out for a missing binary |
 | `alc schedule install\|list\|remove <tick\|cycle NAME> --every 15m` | Generate and manage the crontab entry (or print the line to paste when no `crontab` is available) that fires `alc tick`/`alc cycle` on a cadence — idempotent install, marker-scoped remove |
 | `alc setup [--engine]` | Install/update the user-level editor skill (Claude Code or Gemini) |
