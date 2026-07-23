@@ -20,6 +20,7 @@ from alc.models import (
     LoopDefinition,
     LoopState,
     Manifest,
+    QueueTask,
     RunReport,
 )
 from alc.notify import fire as notify_fire
@@ -215,6 +216,7 @@ def run_replenish(
     operator_layer: Path,
     loop_def: LoopDefinition,
     engine_override: str | None,
+    state: LoopState | None = None,
 ) -> tuple[int, dict[str, float]]:
     """Run the loop's replenish step and return (enqueued_count, budget_delta).
 
@@ -228,9 +230,27 @@ def run_replenish(
     - signals: read every pending signal (``alc.signals``) and dispatch-enqueue
       one demand per signal — no planning turn, the same direct write
       ``alc enqueue`` uses — then archive each consumed signal.
+    - regression: read the metric ledger (``alc.metrics``) for checks with a
+      ledger record this replenish hasn't considered yet; a check whose newest
+      such record was REJECTED (``MetricRecord.passed`` False — the Verifier's
+      own tolerance judgment at measurement time, never re-derived here) is a
+      regression: dispatch-enqueue ONE fix demand carrying the check name and
+      its delta from the latest ACCEPTED value (the "baseline it should be
+      judged against") as failure feedback, reusing
+      ``queue.build_retry_task``'s delimited-feedback text. Per-check progress
+      lives in ``state.metric_cursor`` (see below) so the same ledger entry is
+      never re-flagged.
 
     The budget_delta carries the engine calls + Usage of the replenish itself so
     the cycle can charge them against the budget.
+
+    ``state`` is optional and used ONLY by the ``regression`` kind, to read and
+    advance ``state.metric_cursor``. It is mutated IN PLACE (not returned) so
+    this function's return stays the fixed (count, budget_delta, replenish_ok)
+    tuple every kind returns; the caller (``run_cycle``) builds its next state
+    via ``state.model_copy(...)`` on this SAME object, which naturally carries
+    the mutated cursor forward. Callers that don't pass ``state`` (or kinds
+    other than ``regression``) are unaffected.
     """
     delta: dict[str, float] = {"engine_calls": 0.0, "usd": 0.0, "tokens": 0.0}
     # False when the replenish engine turn FAILED (planner Act errored / plan
@@ -264,6 +284,12 @@ def run_replenish(
     elif replenish.kind == "signals":
         print(
             f"▶ replenish — signals:{replenish.ref}",
+            file=sys.stderr,
+            flush=True,
+        )
+    elif replenish.kind == "regression":
+        print(
+            f"▶ replenish — regression:{replenish.ref}",
             file=sys.stderr,
             flush=True,
         )
@@ -442,6 +468,106 @@ def run_replenish(
             # demand) — never a lost signal, never a traceback (see
             # alc.signals.archive_signal).
             archive_signal(signals_dir, pending.path)
+    elif replenish.kind == "regression":
+        from alc.conduct import dispatch_enqueue
+        from alc.metrics import latest_accepted_measurement, read_measurements
+        from alc.metrics import ledger_path as metrics_ledger_path
+        from alc.models import ConductorPlan, MetricRecord, PlannedUnit
+        from alc.queue import build_retry_task
+
+        metrics_path = metrics_ledger_path(operator_layer.parent / manifest.metrics_dir)
+        # Parallel drain -> isolated worktrees per fix demand; serial -> shared
+        # workdir. Same rule the `plan`/`signals` kinds above use.
+        isolate = loop_def.drain.concurrency > 1
+        # `state.metric_cursor` (when a state was passed) IS the cursor dict —
+        # mutating it below mutates state in place (see the docstring above).
+        cursor: dict[str, int] = state.metric_cursor if state is not None else {}
+
+        by_check: dict[str, list[MetricRecord]] = {}
+        for record in read_measurements(metrics_path):
+            by_check.setdefault(record.check, []).append(record)
+
+        try:
+            for check_name in sorted(by_check):
+                records = by_check[check_name]
+                seen = cursor.get(check_name, 0)
+                new_records = records[seen:]
+                if not new_records:
+                    continue
+                # Judge the CURRENT state of the check: its newest not-yet-seen
+                # record. If an earlier record in this same window regressed
+                # and a later one already recovered (passed=True), there is
+                # nothing left to fix — only the newest record decides. A
+                # record can only be `passed=False` when a real baseline
+                # existed to fail against — the FIRST measurement of a check
+                # always passes (see verifier._judge_metric) — so a check with
+                # a single measurement can never trip this (Wave 3's "no
+                # possible regression" rule falls out for free, no special
+                # case needed).
+                newest = new_records[-1]
+                regressed = newest if not newest.passed else None
+                if regressed is not None:
+                    # The "baseline it should be judged against": the latest
+                    # value the Verifier actually accepted, i.e. the last
+                    # known-good reading this regression moved away from.
+                    baseline = latest_accepted_measurement(metrics_path, check_name)
+                    baseline_value = (
+                        baseline.value if baseline is not None else regressed.value
+                    )
+                    delta_value = regressed.value - baseline_value
+                    delta_pct = (
+                        (delta_value / baseline_value * 100.0) if baseline_value else 0.0
+                    )
+                    feedback = (
+                        f"Metric check '{check_name}' regressed: baseline (latest "
+                        f"accepted) = {baseline_value:g}, latest = {regressed.value:g} "
+                        f"(delta={delta_value:+g}, {delta_pct:+.2f}%), recorded during "
+                        f"run '{regressed.run}'."
+                    )
+                    # Reuse build_retry_task's delimited failure-feedback
+                    # pattern (queue.py) instead of a second one: a throwaway
+                    # base QueueTask carries the preamble + fix instruction,
+                    # build_retry_task appends the same header/section a
+                    # failed-task retry uses.
+                    base_qt = QueueTask(
+                        flow=replenish.ref,
+                        task=(
+                            f"{replenish.task}\n\n"
+                            f"Fix the regression on metric check '{check_name}'."
+                        ),
+                        isolate=isolate,
+                    )
+                    retry_qt = build_retry_task(base_qt, feedback)
+                    plan = ConductorPlan(
+                        items=[
+                            PlannedUnit(
+                                kind="flow", name=replenish.ref, task=retry_qt.task
+                            )
+                        ]
+                    )
+                    # Same direct write `alc enqueue`/`signals` use — no second
+                    # enqueue path. Detect and propose only: this never touches
+                    # git or history, it just queues a demand for the Policy
+                    # Gate, isolation, and retry to judge like any other.
+                    dispatch_enqueue(
+                        plan,
+                        manifest,
+                        operator_layer,
+                        engine_override=engine_override,
+                        isolate=isolate,
+                        prefix="regression",
+                    )
+                # Advance the cursor past EVERY record considered this cycle,
+                # regressed or not, so the SAME ledger entry is never
+                # re-judged on a later cycle — the "must not re-fire" rule.
+                cursor[check_name] = len(records)
+        except Exception as exc:
+            replenish_ok = False
+            print(
+                f"▶ replenish — regression detection failed: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
     else:  # conduct
         from alc.conduct import conduct
 
@@ -528,7 +654,7 @@ def run_cycle(
 
     # (b) Replenish (Mode A only).
     enqueued, delta, replenish_ok = run_replenish(
-        manifest, operator_layer, loop_def, engine_override
+        manifest, operator_layer, loop_def, engine_override, state=state
     )
 
     # (c) Drain the queue.

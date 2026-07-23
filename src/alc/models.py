@@ -833,16 +833,23 @@ class Replenish(BaseModel):
       ``ref`` is the Flow name every signal-derived demand dispatches to, and
       is required; ``task`` is a shared preamble prepended to each signal's
       title/body.
+    - ``regression``: read the metric ledger (``manifest.metrics_dir``) for any
+      check whose newest not-yet-seen measurement was REJECTED
+      (``MetricRecord.passed`` False — the Verifier's own tolerance judgment,
+      not re-derived here) and auto-enqueue ONE fix demand per regressed check
+      via ``conduct.dispatch_enqueue`` (roadmap-phase-5.md T5). ``ref`` is the
+      Flow name every regression-fix demand dispatches to, and is required;
+      ``task`` is a shared preamble, same contract as ``signals``.
     """
 
-    kind: Literal["specialist", "conduct", "flow", "plan", "signals"]
+    kind: Literal["specialist", "conduct", "flow", "plan", "signals", "regression"]
     ref: str | None = None   # specialist/flow name; None allowed for a conduct replenish
     task: str
 
     @model_validator(mode="after")
     def _ref_required_for_specialist_and_flow(self) -> "Replenish":
-        """Enforce that ``ref`` is set when kind is 'specialist', 'flow', 'plan', or 'signals'."""
-        if self.kind in ("specialist", "flow", "plan", "signals") and not self.ref:
+        """Enforce that ``ref`` is set for every kind except 'conduct' (which plans freely)."""
+        if self.kind in ("specialist", "flow", "plan", "signals", "regression") and not self.ref:
             raise ValueError(
                 f"Replenish with kind='{self.kind}' requires a non-empty 'ref'."
             )
@@ -930,6 +937,15 @@ class LoopState(BaseModel):
     # Cumulative usage per unit; keys among engine_calls / usd / tokens.
     budget_used: dict[str, float] = {}
     stopped_reason: str | None = None
+    # Per-check cursor for the `regression` replenish (roadmap-phase-5.md T5):
+    # how many metric-ledger records for this check name had already been
+    # considered as of the end of the last cycle. Advances past EVERY record
+    # seen (regressed or not), so a regression whose fix has already been
+    # enqueued is never re-detected from the SAME ledger entry on a later
+    # cycle. Additive default {} -> an existing persisted state JSON (with no
+    # such key) still loads, and a loop with no `regression` replenish never
+    # touches this field.
+    metric_cursor: dict[str, int] = {}
 
 
 class CycleRecord(BaseModel):
