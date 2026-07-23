@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import tempfile
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
 import yaml
@@ -19,6 +20,7 @@ from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
 from alc.models import FlowReport, QueueTask
+from alc.packs import PACKS, pack_files
 from alc.policy import lint as _lint
 from alc.policy import validate_provisions, validate_prompts
 from alc.prompts import (
@@ -34,7 +36,8 @@ from alc.queue import (
     outstanding_failures,
     write_retry_task,
 )
-from alc.stagepolicy import lint_stage
+from alc.scaffold import detect_stacks
+from alc.stagepolicy import lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
 
@@ -506,3 +509,87 @@ def delete_prompt(root: Path, name: str) -> None:
     if not file.exists():
         raise ApiError(f"no prompt named '{name}'", status=404)
     file.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Team (Archetype Packs: roster, hire, Mix Health) — mirrors cli.py's
+# `_team_roster` / `_team_hire`, which stay the reference behavior.
+# ---------------------------------------------------------------------------
+
+
+def team_roster(root: Path) -> dict:
+    """Return {members, mix_health}: the hired roster and the stage's Mix Health.
+
+    A member is an archetype whose pack files (`packs.pack_files`) are present
+    on disk — the same test `_team_roster` uses, so the UI roster and
+    `alc team list` never disagree. Each member carries its present files and
+    the state of any loops its pack brought (`load_loop_state`).
+
+    `mix_health` is `stagepolicy.mix_health`'s report, serialised as-is: with no
+    `stage` declared its `core`/`secondary` stay empty (breakdown, never
+    judged); `total_runs == 0` is the "no data yet" signal — never a misleading
+    all-zero table.
+    """
+    ol = operator_layer(root)
+    manifest = load_manifest(ol)
+    stacks = detect_stacks(root)
+    loops_directory = loops_dir(manifest, ol)
+    loops_prefix = f"{manifest.loops_dir}/"
+
+    members = []
+    for archetype in sorted(PACKS):
+        files = pack_files(archetype, stacks)
+        present = sorted(rel for rel in files if (root / rel).exists())
+        if not present:
+            continue  # not hired
+
+        member_loops = []
+        for rel_path in sorted(files):
+            if rel_path.startswith(loops_prefix) and rel_path.endswith(".yaml"):
+                loop_name = Path(rel_path).stem
+                state = load_loop_state(state_path(loops_directory, loop_name), loop_name)
+                member_loops.append(
+                    {
+                        "name": state.name,
+                        "status": state.status,
+                        "cycle": state.cycle,
+                        "stopped_reason": state.stopped_reason,
+                    }
+                )
+        members.append({"archetype": archetype, "files": present, "loops": member_loops})
+
+    done_dir = root / manifest.queue_dir / "done"
+    health = mix_health(done_dir, manifest)
+    return {"members": members, "mix_health": asdict(health)}
+
+
+def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
+    """Write *archetype*'s pack files, then lint; return {written, lint}.
+
+    Mirrors `_team_hire`'s contract exactly: a WHOLE-pack refusal (ApiError
+    409) when any of the pack's files already exists on disk and `force` is
+    False — never a partial write. An unknown archetype is ApiError(404),
+    naming the valid ones (`PACKS`'s keys).
+    """
+    if archetype not in PACKS:
+        available = ", ".join(sorted(PACKS)) or "none yet"
+        raise ApiError(f"no pack named '{archetype}' yet (available: {available})", status=404)
+
+    files = pack_files(archetype, detect_stacks(root))
+
+    if not force:
+        existing = sorted(rel for rel in files if (root / rel).exists())
+        if existing:
+            raise ApiError(
+                f"'{archetype}' already has file(s) on disk: {', '.join(existing)}; "
+                "pass force to overwrite",
+                status=409,
+            )
+
+    written = sorted(files)
+    for rel_path in written:
+        target = root / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(files[rel_path])
+
+    return {"written": written, "lint": lint_project(root)}
