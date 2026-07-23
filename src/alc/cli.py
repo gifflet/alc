@@ -1,7 +1,7 @@
 # cli.py — argparse entrypoint for ALC.
 # Provides subcommands: `alc init` (supports --setup), `alc lint`, `alc run`,
 # `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`, `alc conduct`,
-# `alc cycle`, `alc loop`, `alc specialist`, `alc setup`.
+# `alc enqueue`, `alc new`, `alc cycle`, `alc loop`, `alc specialist`, `alc setup`.
 from __future__ import annotations
 
 import argparse
@@ -641,6 +641,87 @@ def cmd_primer(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_new(args: argparse.Namespace) -> int:
+    """Run `alc new <kind> <name> [--force] [--from NAME]`: author a unit from a core scaffold.
+
+    ``kind`` is one of blueprint/flow/specialist/loop/primer; the target
+    directory comes from the manifest. Refuses to overwrite an existing unit
+    without ``--force``. The payload is validated through the collection's real
+    loader (same temp-dir trick as ``alc.ui.collections._parse_raw``) BEFORE
+    anything is written, so an invalid payload never touches disk — primers have
+    no structured loader, so any text is valid for them, same as in the UI.
+    ``--from NAME`` clones an existing unit of the same kind, replacing its
+    ``name:`` field.
+    """
+    import re
+    import tempfile
+
+    from alc.authoring import scaffold_text
+    from alc.intake import (
+        load_blueprint,
+        load_flow,
+        load_loop,
+        load_manifest,
+        load_specialist,
+    )
+
+    dir_attr = {
+        "blueprint": "blueprints_dir",
+        "flow": "flows_dir",
+        "specialist": "specialists_dir",
+        "loop": "loops_dir",
+        "primer": "primers_dir",
+    }[args.kind]
+    suffix = ".md" if args.kind in ("blueprint", "primer") else ".yaml"
+    loader = {
+        "blueprint": load_blueprint,
+        "flow": load_flow,
+        "specialist": load_specialist,
+        "loop": load_loop,
+    }.get(args.kind)
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    directory = operator_layer.parent / getattr(manifest, dir_attr)
+    path = directory / f"{args.name}{suffix}"
+
+    if path.exists() and not args.force:
+        print(
+            f"[ERROR] {args.kind} '{args.name}' already exists: {path}; "
+            "pass --force to overwrite",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.from_name:
+        source = directory / f"{args.from_name}{suffix}"
+        if not source.is_file():
+            print(
+                f"[ERROR] no {args.kind} named '{args.from_name}' to clone from",
+                file=sys.stderr,
+            )
+            return 1
+        raw = re.sub(
+            r"^name:.*$", f"name: {args.name}", source.read_text(), count=1, flags=re.MULTILINE
+        )
+    else:
+        raw = scaffold_text(f"{args.kind}s", args.name)
+
+    if loader is not None:
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / f"{args.name}{suffix}").write_text(raw)
+            try:
+                loader(Path(td), args.name)
+            except Exception as exc:  # noqa: BLE001 — surface any parse/validation error
+                print(f"[ERROR] invalid {args.kind} '{args.name}': {exc}", file=sys.stderr)
+                return 1
+
+    directory.mkdir(parents=True, exist_ok=True)
+    path.write_text(raw)
+    print(path)
+    return 0
+
+
 def cmd_prompts(args: argparse.Namespace) -> int:
     """Run `alc prompts <action>`: list or eject keyed prompt overrides."""
     from alc.intake import load_manifest
@@ -971,6 +1052,130 @@ def cmd_retry(args: argparse.Namespace) -> int:
         print(f"  {failure.reason}")
         print()
     print("Run: alc retry <stem>   (or: alc retry --all)")
+    return 0
+
+
+def _enqueue_entries_from_file(path: Path) -> list[dict]:
+    """Read batch entries for `alc enqueue --from-file`.
+
+    A ``.jsonl`` file holds one JSON object per line (``task`` required; ``kind``,
+    ``name``, ``id``, ``depends_on``, ``touches`` optional — each entry falls back
+    to the CLI's own flags when absent). Any other extension is plain text, one
+    task per line; blank lines and ``#`` comments are skipped.
+    """
+    import json
+
+    if not path.is_file():
+        raise FileNotFoundError(f"no such file: {path}")
+
+    lines = path.read_text().splitlines()
+    if path.suffix == ".jsonl":
+        entries: list[dict] = []
+        for lineno, raw_line in enumerate(lines, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{path}:{lineno}: invalid JSON: {exc}") from exc
+            if not isinstance(entry, dict) or "task" not in entry:
+                raise ValueError(f"{path}:{lineno}: missing 'task' key")
+            entries.append(entry)
+        return entries
+
+    return [
+        {"task": line.strip()}
+        for line in lines
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def cmd_enqueue(args: argparse.Namespace) -> int:
+    """Run `alc enqueue <name> "<task>" [--kind flow|specialist] [--engine NAME] \
+[--isolate/--no-isolate] [--id ID] [--depends-on ID] [--touches PATH] \
+[--from-file PATH] [--json]`.
+
+    Writes queue task file(s) straight to disk — no planner turn. Each item's
+    target unit is validated (``load_flow`` / ``load_specialist``) BEFORE
+    anything is written, so a typo never leaves a half-written batch behind.
+    Delegates to ``dispatch_enqueue`` (``conduct.py:488``), which already applies
+    ``derive_dependencies`` (serializing units whose ``touches`` overlap).
+
+    ``--from-file`` batches multiple tasks: a ``.jsonl`` file supplies one item
+    per line (each may override ``kind``/``name``/``id``/``depends_on``/
+    ``touches``); any other extension is plain text, one task per line, against
+    the single ``--kind``/``<name>``/``--id``/``--depends-on``/``--touches``
+    given on the command line.
+    """
+    from pydantic import ValidationError
+
+    from alc.conduct import dispatch_enqueue
+    from alc.intake import load_flow, load_manifest, load_specialist
+    from alc.models import ConductorPlan, PlannedUnit
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+
+    if args.from_file:
+        try:
+            entries = _enqueue_entries_from_file(Path(args.from_file))
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+    else:
+        if not args.task:
+            print("[ERROR] TASK is required unless --from-file is given", file=sys.stderr)
+            return 1
+        entries = [{"task": args.task}]
+
+    try:
+        items = [
+            PlannedUnit(
+                kind=entry.get("kind", args.kind),
+                name=entry.get("name", args.name),
+                task=entry["task"],
+                id=entry.get("id", args.id),
+                depends_on=entry.get("depends_on", list(args.depends_on)),
+                touches=entry.get("touches", list(args.touches)),
+            )
+            for entry in entries
+        ]
+    except ValidationError as exc:
+        print(f"[ERROR] invalid enqueue entry: {exc}", file=sys.stderr)
+        return 1
+
+    flows_dir = operator_layer.parent / manifest.flows_dir
+    specialists_dir = operator_layer.parent / manifest.specialists_dir
+    for item in items:
+        try:
+            if item.kind == "specialist":
+                load_specialist(specialists_dir, item.name)
+            else:
+                load_flow(flows_dir, item.name)
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+
+    files = dispatch_enqueue(
+        ConductorPlan(items=items),
+        manifest,
+        operator_layer,
+        engine_override=args.engine,
+        isolate=args.isolate,
+        prefix="enqueue",
+    )
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(files)
+        return 0
+
+    print(f"Enqueued {len(files)} task(s):")
+    for f in files:
+        print(f"  {f}")
+    print("Run: alc tick")
     return 0
 
 
@@ -1375,6 +1580,84 @@ def main() -> None:
         help="List the outstanding failures as JSON (machine-readable).",
     )
 
+    # alc enqueue <name> "<task>" [--kind flow|specialist] [--engine NAME]
+    #             [--isolate/--no-isolate] [--id ID] [--depends-on ID] [--touches PATH]
+    #             [--from-file PATH] [--json]
+    enqueue_parser = subparsers.add_parser(
+        "enqueue",
+        help="Write one or more queue task(s) directly, with no planner turn.",
+    )
+    enqueue_parser.add_argument("name", help="Flow or specialist name to dispatch.")
+    enqueue_parser.add_argument(
+        "task",
+        nargs="?",
+        default=None,
+        help="Free-text task description. Omit when using --from-file.",
+    )
+    enqueue_parser.add_argument(
+        "--kind",
+        choices=["flow", "specialist"],
+        default="flow",
+        help="Unit kind to dispatch (default: flow).",
+    )
+    enqueue_parser.add_argument("--engine", default=None, help="Override the default engine.")
+    enqueue_parser.add_argument(
+        "--isolate",
+        dest="isolate",
+        action="store_true",
+        default=True,
+        help="Run the enqueued task(s) in an isolated git worktree (default).",
+    )
+    enqueue_parser.add_argument(
+        "--no-isolate",
+        dest="isolate",
+        action="store_false",
+        help="Do not isolate the enqueued task(s) in a worktree.",
+    )
+    enqueue_parser.add_argument(
+        "--id",
+        dest="id",
+        default=None,
+        metavar="ID",
+        help="Short slug identifying this unit so another --depends-on can reference it.",
+    )
+    enqueue_parser.add_argument(
+        "--depends-on",
+        dest="depends_on",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="Id of a unit this one depends on (repeatable).",
+    )
+    enqueue_parser.add_argument(
+        "--touches",
+        dest="touches",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "File path/glob this unit will edit; overlapping touches are "
+            "serialized automatically (repeatable)."
+        ),
+    )
+    enqueue_parser.add_argument(
+        "--from-file",
+        dest="from_file",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Batch-enqueue tasks from a file: a .jsonl file (one JSON object per "
+            "line, 'task' required, other keys optional) or plain text (one task "
+            "per line; blank lines and '#' comments are skipped)."
+        ),
+    )
+    enqueue_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the written filenames as JSON (machine-readable).",
+    )
+
     # alc land [branch...] [--all] [--json]
     land_parser = subparsers.add_parser(
         "land",
@@ -1579,6 +1862,31 @@ def main() -> None:
         help="Overwrite an existing Primer file.",
     )
 
+    # alc new <kind> <name> [--force] [--from NAME]
+    new_parser = subparsers.add_parser(
+        "new",
+        help="Author a new unit (blueprint/flow/specialist/loop/primer) from a core scaffold.",
+    )
+    new_parser.add_argument(
+        "kind",
+        choices=["blueprint", "flow", "specialist", "loop", "primer"],
+        help="Kind of unit to create.",
+    )
+    new_parser.add_argument("name", help="Unit name (filename stem).")
+    new_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite an existing unit of the same kind and name.",
+    )
+    new_parser.add_argument(
+        "--from",
+        dest="from_name",
+        default=None,
+        metavar="NAME",
+        help="Clone an existing unit of the same kind, replacing its name: field.",
+    )
+
     # alc prompts <action> [name] [--force]
     prompts_parser = subparsers.add_parser(
         "prompts",
@@ -1703,6 +2011,8 @@ def main() -> None:
         sys.exit(cmd_tick(args))
     elif args.command == "retry":
         sys.exit(cmd_retry(args))
+    elif args.command == "enqueue":
+        sys.exit(cmd_enqueue(args))
     elif args.command == "land":
         sys.exit(cmd_land(args))
     elif args.command == "discard":
@@ -1717,6 +2027,8 @@ def main() -> None:
         sys.exit(cmd_specialist(args))
     elif args.command == "primer":
         sys.exit(cmd_primer(args))
+    elif args.command == "new":
+        sys.exit(cmd_new(args))
     elif args.command == "prompts":
         if args.action == "eject" and not args.name:
             parser.error("prompts eject requires a prompt NAME")
