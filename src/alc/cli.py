@@ -5,7 +5,7 @@
 # `alc adopt`, `alc conduct`, `alc enqueue`, `alc primer`, `alc new`, `alc team`,
 # `alc prompts`, `alc cycle`, `alc loop`, `alc specialist`, `alc setup`,
 # `alc status`, `alc runs`, `alc audit`, `alc checks`, `alc metrics`,
-# `alc schedule`, `alc ui`.
+# `alc schedule`, `alc ui`, `alc signal`, `alc serve`, `alc artifacts`.
 from __future__ import annotations
 
 import argparse
@@ -2400,6 +2400,62 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_artifacts(args: argparse.Namespace) -> int:
+    """Run `alc artifacts [<stem>] [--json]`: list a run's captured e2e evidence
+    (roadmap-phase-5.md T7) — screenshots, curled responses, the health-poll log,
+    or whatever else a `needs_service` Blueprint's `capture:` command produced.
+
+    With no `<stem>`, shows the most recent run that captured any artifact.
+    Read-only: artifacts are only ever produced by `alc run`/`alc flow`/`alc
+    tick`/… against a Blueprint that declares `capture:`.
+    """
+    from alc.artifacts import artifact_type, latest_run_with_artifacts, run_artifacts
+    from alc.intake import load_manifest
+    from alc.output import emit_json
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    runs_dir = operator_layer.parent / manifest.runs_dir
+
+    if args.stem:
+        try:
+            result = run_artifacts(runs_dir, args.stem)
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+    else:
+        result = latest_run_with_artifacts(runs_dir)
+        if result is None:
+            if getattr(args, "json", False):
+                emit_json({"stem": None, "artifacts": []})
+                return 0
+            print(
+                "No run has captured any artifacts yet — a Blueprint's `capture:` "
+                "command (on a `needs_service` run) populates them."
+            )
+            return 0
+
+    if getattr(args, "json", False):
+        emit_json(
+            {
+                "stem": result.stem,
+                "artifacts": [
+                    {"path": p, "type": artifact_type(p)} for p in result.artifacts
+                ],
+            }
+        )
+        return 0
+
+    if not result.artifacts:
+        print(f"Run '{result.stem}' captured no artifacts.")
+        return 0
+
+    print(f"Run: {result.stem}")
+    for p in result.artifacts:
+        print(f"  {p}   ({artifact_type(p)})")
+    return 0
+
+
 def cmd_schedule(args: argparse.Namespace) -> int:
     """Run `alc schedule install|list|remove <tick|cycle NAME> --every 15m`.
 
@@ -3592,6 +3648,31 @@ def main() -> None:
         help="Output the series as JSON (machine-readable).",
     )
 
+    # alc artifacts [<stem>] [--json]
+    artifacts_parser = subparsers.add_parser(
+        "artifacts",
+        help=(
+            "List a run's captured e2e evidence (screenshots, curled "
+            "responses, the health-poll log) — proof a `needs_service` run's "
+            "`capture:` command actually verified the app live."
+        ),
+    )
+    artifacts_parser.add_argument(
+        "stem",
+        nargs="?",
+        default=None,
+        help=(
+            "Run-log filename stem (e.g. from `alc runs list`). Default: the "
+            "most recent run that captured any artifact."
+        ),
+    )
+    artifacts_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the artifact list as JSON (machine-readable).",
+    )
+
     # alc schedule install|list|remove <tick|cycle NAME> --every 15m
     schedule_parser = subparsers.add_parser(
         "schedule",
@@ -3769,6 +3850,8 @@ def main() -> None:
         sys.exit(cmd_checks(args))
     elif args.command == "metrics":
         sys.exit(cmd_metrics(args))
+    elif args.command == "artifacts":
+        sys.exit(cmd_artifacts(args))
     elif args.command == "schedule":
         sys.exit(cmd_schedule(args))
     elif args.command == "ui":

@@ -109,6 +109,7 @@ def load_blueprint(blueprints_dir: Path, name: str) -> Blueprint:
         mode=fm.get("mode"),
         protect=fm.get("protect") or [],
         expect=fm.get("expect"),
+        capture=fm.get("capture"),
     )
 
 

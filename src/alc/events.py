@@ -98,6 +98,18 @@ def emit(event: str, **payload: object) -> None:
         pass
 
 
+def current_run_log_path() -> Path | None:
+    """Return the path bound by the innermost active `bind_run_log`, or None.
+
+    Lets a leaf that needs a stable, human-correlatable id for "the current
+    run" (e.g. e2e evidence capture, roadmap-phase-5.md T6) reuse the SAME
+    stem `alc runs show <stem>` already reads by, instead of minting a second
+    one. None when no run log is bound (mirrors emit()'s own no-op contract).
+    """
+    binding = _run_log.get()
+    return binding.path if binding is not None else None
+
+
 def new_run_log_path(runs_dir: Path, kind: str, label: str) -> Path:
     """Return a fresh, time-ordered run-log path under ``runs_dir``.
 

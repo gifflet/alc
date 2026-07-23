@@ -96,8 +96,9 @@ hard-coding model names.
 - **Attended Mode** — a human is present and iterating.
 - **Unattended Mode** — Flows run without a human, via four elements: **Source**
   (where the task comes from), **Trigger** (what starts it), **Sandbox** (isolated
-  environment), **Gate** (how the result is reviewed). The cron Trigger path is
-  available via `alc tick` over a YAML task queue; webhook triggering is future work.
+  environment), **Gate** (how the result is reviewed). Two Trigger paths ship today:
+  cron, via `alc tick` over a YAML task queue, and a webhook, via `alc serve --webhook`
+  (a minimal HTTP door onto signal intake and the enqueue path — see below).
 
 ### Specialist & Knowledge File
 A **Specialist** is an agent that keeps a **Knowledge File** (a working model of one
@@ -214,6 +215,51 @@ declared, neither part changes anything.
 
 Opt-in throughout: no `stage` in the Manifest means no mix rule anywhere, exactly as
 before this existed.
+
+### Signal intake & the closed loop — the Grower's loop, completed
+
+Every demand so far started in the operator's head — a goal, a roadmap, a hand-written
+YAML. A **Signal** is how real usage gets in instead: a typed JSON file (`kind` ∈
+`error`/`feedback`/`issue`/`review`, plus `source`, `title`, `body`, `ts`) dropped into
+`manifest.signals_dir` (default `.alc/signals`), written by `alc signal ingest` or
+received over `alc serve --webhook`'s `POST /signal` — an error tracker, a user report,
+an issue, a code review comment, whatever the operator can turn into that shape. No
+per-SaaS connector: one typed intake, any source that can format JSON.
+
+A signal is DATA, not a command — on its own it does nothing. A `signals` replenish
+kind on an Autonomous Loop reads every pending signal and turns each into a demand
+(the signal's title/body become the task) through `dispatch_enqueue` — the exact write
+`alc enqueue` uses — so it clears the Policy Gate, isolates, and retries like any other
+demand; the consumed signal moves to `signals_dir/done/`, mirroring the queue's own
+archive. External signal never bypasses the control plane.
+
+That demand becomes a change the Assurance Loop verifies. When the Blueprint carries a
+`metric` check, verifying it also records a measurement in the project's ledger — the
+loop's **measurement** leg closes as a byproduct of checks that were already running,
+no separate instrumentation step. A `needs_service` Blueprint that also declares
+`capture:` (a shell command — a screenshot script, a curl into a file, whatever the
+operator supplies) goes one step further: once the health poll has proven the app
+reachable, ALC runs it and collects whatever it wrote — plus the health-poll log,
+persisted instead of discarded — into `RunReport.artifacts`. `alc artifacts [<stem>]`
+reads them back: the difference between "the checks exited 0" and an actual screenshot
+of the golden path having worked.
+
+A second replenish kind, `regression`, closes the last leg. Each cycle it reads the
+metric ledger for any check whose newest measurement the Verifier itself REJECTED (its
+own tolerance judgment, not re-derived) and auto-enqueues ONE fix demand carrying the
+delta as failure feedback — the same delimited-feedback shape a failed check's retry
+already uses. The control plane only detects and proposes; it never rolls back on its
+own — the fix demand is verified by the Policy Gate, isolation, and checks like any
+other, same as everything upstream of it.
+
+Chained together, this is the Grower's loop from the essay that inspired this roadmap,
+closed in code rather than left as aspiration:
+
+**signal → demand → change → measurement → regression → demand**
+
+Every step reuses a primitive that already existed — the queue, the Policy Gate, the
+Assurance Loop, the metric ledger — so closing the loop added exactly two replenish
+kinds and one typed intake, never a second execution path.
 
 ## Maturity Ladder
 

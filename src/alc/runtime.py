@@ -110,6 +110,24 @@ class RuntimeService:
         except (urllib.error.URLError, OSError):
             return False
 
+    def captured_output(self) -> str:
+        """Return the full captured stdout+stderr so far, without truncation.
+
+        Safe to call any time after ``__enter__`` starts the process (including
+        after a failed ``__enter__``), as long as it is called BEFORE teardown
+        closes the log file. Best-effort: an unreadable log yields "" rather
+        than raising — this backs e2e evidence capture (roadmap-phase-5.md T6),
+        which must never fail a run.
+        """
+        if self._log is None:
+            return ""
+        try:
+            self._log.seek(0)
+            data = self._log.read()
+        except (OSError, ValueError):
+            return ""
+        return data.decode("utf-8", errors="replace")
+
     def _output_tail(self) -> str:
         """Return the tail of the captured server output for a diagnostic message."""
         if self._log is None:

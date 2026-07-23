@@ -51,6 +51,12 @@ name: qa
 purpose: Verify the change end-to-end against a live instance of the service.
 compute_tier: standard
 needs_service: true
+# e2e evidence (roadmap-phase-5.md T6): runs once the health poll has already
+# proven the service reachable, and writes into $ALC_ARTIFACTS_DIR — ALC
+# collects whatever lands there (plus the health-poll log) into the
+# RunReport, readable back via `alc artifacts`. Swap for a real screenshot
+# tool; this curl is the smallest example that proves the pattern.
+capture: curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/health-check.txt"
 {check_set_line}checks:
   # Hits the live service ALC started for this run ($ALC_BASE_URL) — the inline
   # check that keeps this Blueprint lint-clean even when check_set resolves empty.

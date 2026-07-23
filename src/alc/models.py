@@ -135,6 +135,17 @@ class Blueprint(BaseModel):
     # it NEVER fails the run: simplifying sometimes means growing before
     # shrinking. None (default) -> no-op, byte-identical.
     expect: Literal["shrink"] | None = None
+    # e2e evidence capture (roadmap-phase-5.md T6): a shell command run AFTER
+    # the health poll has already proven the app reachable — only meaningful
+    # alongside `needs_service: true` and a Manifest `service` (inert
+    # otherwise). `$ALC_ARTIFACTS_DIR` is injected pointing at this run's
+    # artifacts directory; anything the command writes there (a screenshot, a
+    # curled response, whatever) is collected into `RunReport.artifacts`,
+    # alongside the health-poll log RuntimeService captures. Never-raise: a
+    # failing/absent capture warns and the run carries on (see `alc.evidence`,
+    # the `commit.py` never-raise pattern). None (default) -> no-op,
+    # byte-identical.
+    capture: str | None = None
 
 
 class ProvisionSpec(BaseModel):
@@ -296,6 +307,14 @@ class Manifest(BaseModel):
     # `signals/done/`, mirroring `queue_dir`'s archive. An absent/empty
     # directory is a no-op — opt-in, byte-identical to today.
     signals_dir: str = ".alc/signals"
+    # Per-project directory of e2e evidence a `needs_service` run's `capture:`
+    # command produces (roadmap-phase-5.md T6) — one subdirectory per run
+    # (named after that run's own run-log stem), holding whatever the capture
+    # command wrote plus the persisted health-poll log. `alc artifacts` reads
+    # the paths back out of `RunReport.artifacts` (via the run log); the
+    # directory itself is never scanned blind. Unused when no Blueprint
+    # declares `capture:` — opt-in, byte-identical to today.
+    artifacts_dir: str = ".alc/artifacts"
     # Declarative quarantine (roadmap-phase-3.md T11): a check named here still RUNS
     # every attempt, but a failure of it can never fail the run — the AssuranceLoop
     # excludes it from the checks that block success/trigger repair. It stays fully
@@ -439,6 +458,13 @@ class RunReport(BaseModel):
     # somewhere to land without a new RunReport field each time. Empty
     # (default) -> byte-identical to before this field existed.
     warnings: list[str] = []
+    # e2e evidence this run captured (roadmap-phase-5.md T6) — project-root-
+    # relative paths under `manifest.artifacts_dir`, populated only when the
+    # Blueprint declares `capture:` on a `needs_service` run (see
+    # `alc.evidence.capture_evidence`). Empty (default) -> byte-identical to
+    # before this field existed; an archived report from before this wave
+    # still loads.
+    artifacts: list[str] = []
 
     model_config = {"arbitrary_types_allowed": True}
 

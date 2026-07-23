@@ -230,6 +230,10 @@ class _ServiceRun:
         finally:
             release_ports(self._allocated)
 
+    def captured_output(self) -> str:
+        """Delegate to the wrapped RuntimeService's captured stdout+stderr (see T6)."""
+        return self._svc.captured_output()
+
 
 def execute_mandate(
     manifest: Manifest,
@@ -356,8 +360,40 @@ def execute_mandate(
     # When the CORE owns the service, `service_ctx` starts the app (and blocks until
     # it is healthy) before the loop and tears it down after, so it is up for the whole
     # Act + repair + verify. Otherwise `service_ctx` is a null context (no-op).
+    artifacts: list[str] = []
+    capture_warnings: list[str] = []
     with service_ctx:
         report = loop.run(request=request, checks=resolve_checks(manifest, blueprint))
+        # T6: `isinstance(service_ctx, _ServiceRun)` is only True when the health
+        # poll already proved the app reachable (a failed poll raises out of
+        # `service_ctx.__enter__` before this line is ever reached) AND
+        # `operator_layer is not None` (the ONE condition `_resolve_runtime`
+        # requires to build a `_ServiceRun` at all). Gated on `blueprint.capture`
+        # too — a `needs_service` run with no `capture:` never touches this at
+        # all (no artifacts, byte-identical to before T6).
+        if isinstance(service_ctx, _ServiceRun) and blueprint.capture:
+            from alc.evidence import capture_evidence
+            from alc.events import current_run_log_path
+
+            run_log_path = current_run_log_path()
+            if run_log_path is not None:
+                # Reuses the SAME stem `alc runs show <stem>` reads by, so
+                # `alc artifacts <stem>` correlates directly with a run log.
+                run_stem = run_log_path.stem
+            else:
+                import uuid
+
+                run_stem = uuid.uuid4().hex
+            project_root = operator_layer.parent  # type: ignore[union-attr]
+            artifacts, capture_warnings = capture_evidence(
+                command=blueprint.capture,
+                health_log=service_ctx.captured_output(),
+                workdir=effective_workdir,
+                artifacts_dir=project_root / manifest.artifacts_dir / run_stem,
+                project_root=project_root,
+                env=_env,
+                timeout_s=manifest.check_timeout_s,
+            )
 
     # Snapshot the git state after the Assurance Loop and compute changed paths.
     state_after = _git_state(effective_workdir)
@@ -389,6 +425,10 @@ def execute_mandate(
                 f"(+{diffstat.adds}/-{diffstat.dels}) — never fails the run; "
                 "simplifying sometimes means growing before shrinking."
             )
+    # T6: a capture command failing (or its artifacts dir being unwritable) is
+    # never fatal to a green run — warn and carry on, same contract as the
+    # `expect: shrink` advisory above.
+    warnings.extend(capture_warnings)
 
     # Patch the report's blueprint field to the real name (not the truncated directive).
     final_report = RunReport(
@@ -404,6 +444,7 @@ def execute_mandate(
         archetype=blueprint.archetype,
         spike=blueprint.mode == "spike",
         warnings=warnings,
+        artifacts=artifacts,
     )
 
     for message in warnings:
@@ -416,6 +457,7 @@ def execute_mandate(
         attempts=len(final_report.attempts),
         scorecard=final_report.scorecard.model_dump(),
         diffstat=final_report.diffstat.model_dump() if final_report.diffstat is not None else None,
+        artifacts=final_report.artifacts,
     )
     return final_report
 
