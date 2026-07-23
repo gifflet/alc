@@ -10,7 +10,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from alc.models import Check
+from alc.metrics import (
+    append_measurement,
+    latest_accepted_measurement,
+    ledger_path,
+    within_tolerance,
+)
+from alc.models import Check, MetricRecord
 
 # Maximum characters captured from a check's combined stdout+stderr.
 _MAX_OUTPUT_CHARS = 4096
@@ -32,7 +38,11 @@ class Verifier:
     """Runs Blueprint checks as subprocesses and collects pass/fail results."""
 
     def __init__(
-        self, max_output_chars: int = _MAX_OUTPUT_CHARS, timeout_s: int | None = None
+        self,
+        max_output_chars: int = _MAX_OUTPUT_CHARS,
+        timeout_s: int | None = None,
+        metrics_dir: Path | None = None,
+        run_id: str = "",
     ) -> None:
         # Cap on a check's combined stdout+stderr fed into the repair context.
         # Defaults to the former hardcoded value so an unset manifest is identical.
@@ -41,6 +51,32 @@ class Verifier:
         # forever — the pre-timeout behavior). A hung check would otherwise freeze the
         # whole drain with NO visible cause; the timeout bounds it and surfaces why.
         self._timeout_s = timeout_s
+        # Where a `metric` check's ledger lives (roadmap-phase-4.md T2). None ->
+        # a metric check still runs and is judged, but nothing is recorded (no
+        # project root to write into — the pre-metrics behavior for every
+        # existing caller that never passes this).
+        self._metrics_dir = metrics_dir
+        # Free-text label recorded alongside a metric measurement (the
+        # Blueprint name, at every production call site) — see MetricRecord.run.
+        self._run_id = run_id
+        # Per-run baseline snapshot, keyed by check name. A Verifier is
+        # constructed ONCE per mandate (runner.py) / per verify_only stage
+        # (flow.py) — i.e. once per run — so caching here is exactly per-run
+        # scope. Captured lazily, the FIRST time this instance judges a given
+        # check, and reused for every later attempt (repairs, the final
+        # re-verify at assurance.py's repair-budget-exhausted path) within
+        # this SAME run. Without this, a repair attempt would compare against
+        # the value THIS SAME RUN just wrote a moment earlier, laundering a
+        # regression into a pass by the second attempt.
+        self._baseline_cache: dict[str, MetricRecord | None] = {}
+        # Last value actually WRITTEN to the ledger for a given check name,
+        # within this SAME run. A failing run re-measures the same check on
+        # every repair attempt plus the final post-budget re-verify — an
+        # UNCHANGED number would otherwise flood the ledger with duplicate
+        # points for what is really one logical measurement. A value that
+        # genuinely MOVED (a repair actually changed something) is still
+        # recorded, so real intra-run progress stays visible.
+        self._recorded: dict[str, float] = {}
 
     def run(
         self,
@@ -87,7 +123,15 @@ class Verifier:
         time — the check's real cost, visible in per-check history (`alc checks
         history`) — while ``passed``/``output``/``exit_code``/``timed_out``
         reflect only the LAST (deciding) attempt.
+
+        A ``metric`` check takes a DIFFERENT path entirely (``_run_metric``):
+        tolerance already absorbs benchmark noise, so a failing measurement is
+        never retried here the way a flaky command/shell check is — a rerun
+        would just record extra ledger noise for a single logical measurement.
         """
+        if check.metric is not None:
+            return self._run_metric(check, workdir)
+
         result = self._run_once(check, workdir)
         total_duration = result.duration_s
         retries_left = check.flaky
@@ -152,3 +196,165 @@ class Verifier:
                 exit_code=proc.returncode,
                 timed_out=True,
             )
+
+    def _run_metric(self, check: Check, workdir: Path) -> CheckResult:
+        """Run a ``metric`` check: execute its command, parse a single number
+        off stdout, and judge that number against the metric ledger.
+
+        "Checks are law" extends to numbers: the process's own exit code still
+        gates pass/fail first (a metric command that itself fails cannot be
+        trusted), and non-numeric stdout is a FAILED check with a clear
+        message — never a crash. Only once a clean number is in hand does
+        ``_judge_metric`` compare it against history and record it.
+        """
+        if check.direction is None:
+            # The Policy Gate (policy.py) makes this an error that blocks `alc
+            # run` before it starts; this is a defensive backstop for a
+            # Verifier invoked directly (e.g. a `verify_only` flow stage).
+            return CheckResult(
+                name=check.name,
+                passed=False,
+                output=(
+                    f"metric check '{check.name}' declares no 'direction' "
+                    "('lower_is_better' or 'higher_is_better') — cannot be judged."
+                ),
+            )
+
+        argv = ["sh", "-c", check.metric] if isinstance(check.metric, str) else check.metric
+        start = time.monotonic()
+        try:
+            proc = subprocess.Popen(
+                argv,
+                cwd=workdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            return CheckResult(
+                name=check.name,
+                passed=False,
+                output=f"metric check could not start: {exc}",
+                duration_s=time.monotonic() - start,
+            )
+
+        try:
+            stdout, stderr = proc.communicate(timeout=self._timeout_s)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
+            tail = ((stdout or "") + (stderr or ""))[: self._max_output_chars]
+            return CheckResult(
+                name=check.name,
+                passed=False,
+                output=(
+                    f"metric check '{check.name}' timed out after {self._timeout_s}s "
+                    f"and was killed.\n{tail}"
+                ),
+                duration_s=time.monotonic() - start,
+                exit_code=proc.returncode,
+                timed_out=True,
+            )
+
+        duration_s = time.monotonic() - start
+        stdout = stdout or ""
+        combined = (stdout + (stderr or ""))[: self._max_output_chars]
+
+        if proc.returncode != 0:
+            return CheckResult(
+                name=check.name,
+                passed=False,
+                output=combined or f"metric check '{check.name}' exited {proc.returncode}.",
+                duration_s=duration_s,
+                exit_code=proc.returncode,
+            )
+
+        try:
+            value = float(stdout.strip())
+        except ValueError:
+            return CheckResult(
+                name=check.name,
+                passed=False,
+                output=(
+                    f"metric check '{check.name}' printed non-numeric stdout: "
+                    f"{stdout.strip()[:200]!r} — a metric command must print a "
+                    "single number."
+                ),
+                duration_s=duration_s,
+                exit_code=proc.returncode,
+            )
+
+        passed, message = self._judge_metric(check, value)
+        return CheckResult(
+            name=check.name,
+            passed=passed,
+            output=message,
+            duration_s=duration_s,
+            exit_code=proc.returncode,
+        )
+
+    def _judge_metric(self, check: Check, value: float) -> tuple[bool, str]:
+        """Compare *value* against this RUN's frozen baseline for ``check``,
+        record the new value, and return ``(passed, message)``.
+
+        The baseline is the most recent ACCEPTED measurement — see
+        ``alc.metrics.latest_accepted_measurement`` — snapshotted ONCE (on
+        this instance's first judgment of this check name) and reused for
+        every later attempt in this run (``self._baseline_cache``): a value
+        THIS run just recorded, accepted or not, must never become the
+        baseline for THIS run's own next attempt. No baseline yet -> record
+        and PASS (never fail a run for having no history). The measurement is
+        recorded EITHER WAY — a regression's value is still visible in the
+        ledger, just never selected as a future baseline (see
+        ``latest_accepted_measurement``) — so the comparison always reflects
+        an honest history rather than a rewritten one (roadmap-phase-4.md T2).
+
+        A failing run re-measures the same check on every repair attempt plus
+        the final post-budget re-verify; an UNCHANGED value is judged (and its
+        pass/fail returned) every time, but only WRITTEN to the ledger once
+        per distinct value in this run (``self._recorded``) — otherwise one
+        logical measurement floods the series with identical duplicate points.
+        A value that genuinely moved between attempts is still recorded.
+        """
+        if self._metrics_dir is None:
+            return True, (
+                f"metric '{check.name}' = {value:g} (no metrics_dir configured — not recorded)."
+            )
+
+        path = ledger_path(self._metrics_dir)
+        if check.name not in self._baseline_cache:
+            self._baseline_cache[check.name] = latest_accepted_measurement(path, check.name)
+        baseline = self._baseline_cache[check.name]
+
+        if baseline is None:
+            passed = True
+            message = f"metric '{check.name}' = {value:g} (first measurement — recorded as baseline)."
+        else:
+            passed = within_tolerance(value, baseline.value, check.direction, check.tolerance_pct)
+            delta_pct = (
+                (value - baseline.value) / baseline.value * 100 if baseline.value else 0.0
+            )
+            verdict = "within tolerance" if passed else "REGRESSION"
+            message = (
+                f"metric '{check.name}' = {value:g} vs baseline {baseline.value:g} "
+                f"({check.direction}, tolerance={check.tolerance_pct:g}%): "
+                f"delta={delta_pct:+.2f}% — {verdict}."
+            )
+
+        if self._recorded.get(check.name) != value:
+            append_measurement(
+                path,
+                MetricRecord(
+                    check=check.name, value=value, ts=time.time(), run=self._run_id, passed=passed
+                ),
+            )
+            self._recorded[check.name] = value
+
+        return passed, message

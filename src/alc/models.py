@@ -13,14 +13,31 @@ from alc.engine import Usage
 class Check(BaseModel):
     """A single verification command declared by a Blueprint.
 
-    Exactly one of ``command`` or ``shell`` must be set:
+    Exactly one of ``command``, ``shell``, or ``metric`` must be set:
       - ``command``: an argv list run directly, e.g. ["pytest", "-q"].
       - ``shell``: a shell one-liner run via ``sh -c``, e.g. 'test -z "$(git diff)"'.
+      - ``metric``: a command (argv list or shell one-liner, same shape rules as
+        ``command``/``shell``) that prints a SINGLE NUMBER on stdout. The engine
+        never judges this number — the Verifier compares it against the most
+        recent measurement recorded in the project's metric ledger (see
+        ``alc.metrics``, roadmap-phase-4.md T2) and decides pass/fail itself.
+        ``direction`` says which way is better; ``tolerance_pct`` absorbs
+        benchmark noise. A metric check with no recorded history yet always
+        PASSES (its value is simply recorded as the first baseline).
     """
 
     name: str
     command: list[str] | None = None  # e.g. ["pytest", "-q"]
     shell: str | None = None          # e.g. 'test -z "$(git status --porcelain)"'
+    metric: list[str] | str | None = None  # e.g. ["scripts/bench.py"] or "cat size.txt"
+    # Which way is "better" for `metric`'s printed number. Required whenever
+    # `metric` is set — enforced as a Policy Gate ERROR (policy.py), not here:
+    # see roadmap-phase-4.md T1 for why this stays a lint-time diagnostic
+    # (Blueprint context in the message) rather than a pydantic crash at intake.
+    direction: Literal["lower_is_better", "higher_is_better"] | None = None
+    # Percent slack around the baseline before a metric regression fails the
+    # run — benchmarks are noisy; 0.0 (default) means "no slack at all".
+    tolerance_pct: float = 0.0
     # How many times the Verifier re-runs THIS check after a FAILING attempt,
     # before the control plane spends a repair engine turn on it (roadmap-phase-3.md
     # T11) — seconds against a model call. 0 (default) = no rerun, byte-identical.
@@ -28,10 +45,11 @@ class Check(BaseModel):
 
     @model_validator(mode="after")
     def _exactly_one_form(self) -> "Check":
-        """Enforce that exactly one of command/shell is declared (fail fast at intake)."""
-        if (self.command is None) == (self.shell is None):
+        """Enforce that exactly one of command/shell/metric is declared (fail fast at intake)."""
+        if sum(f is not None for f in (self.command, self.shell, self.metric)) != 1:
             raise ValueError(
-                f"Check '{self.name}' must declare exactly one of 'command' or 'shell'."
+                f"Check '{self.name}' must declare exactly one of "
+                "'command', 'shell', or 'metric'."
             )
         return self
 
@@ -40,6 +58,13 @@ class Check(BaseModel):
     def _flaky_non_negative(cls, v: int) -> int:
         if v < 0:
             raise ValueError("Check.flaky must be >= 0.")
+        return v
+
+    @field_validator("tolerance_pct")
+    @classmethod
+    def _tolerance_pct_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("Check.tolerance_pct must be >= 0.")
         return v
 
 
@@ -225,6 +250,10 @@ class Manifest(BaseModel):
     loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
     runs_dir: str = ".alc/runs"         # Structured per-run event logs (observability)
     variants_dir: str = ".alc/variants"  # Archived `alc explore` variant reports (`compare`/`adopt`)
+    # Per-project JSONL ledger of metric-check measurements (roadmap-phase-4.md
+    # T2) — one MetricRecord per line, appended by the Verifier. `alc metrics`
+    # reads it back into a time series.
+    metrics_dir: str = ".alc/metrics"
     # Declarative quarantine (roadmap-phase-3.md T11): a check named here still RUNS
     # every attempt, but a failure of it can never fail the run — the AssuranceLoop
     # excludes it from the checks that block success/trigger repair. It stays fully
@@ -236,6 +265,31 @@ class Manifest(BaseModel):
     # or webhook fired where the control plane already detects the failure. None
     # (default) -> notify off, byte-identical to today.
     notify: NotifyConfig | None = None
+
+
+class MetricRecord(BaseModel):
+    """One line of the per-project metric ledger (``manifest.metrics_dir``).
+
+    Written by the Verifier every time it runs a ``metric`` check (roadmap-phase-4.md
+    T2), following the shape of ``loop.CycleRecord``/``loop.append_ledger``: one
+    JSON object per line, appended best-effort. ``run`` is the label the caller
+    supplied to the Verifier (the Blueprint name in every production call site)
+    — free-text context for tracing a measurement back to what produced it, not
+    interpreted by anything that reads the ledger.
+    """
+
+    check: str
+    value: float
+    ts: float   # epoch seconds
+    run: str
+    # Whether this measurement was ACCEPTED by the Verifier's tolerance check
+    # at record time. Every measurement is recorded regardless — an honest
+    # history — but only an ACCEPTED one may ever become the next baseline
+    # (alc.metrics.latest_accepted_measurement): a value that itself failed
+    # must never move the goalpost, or the gate ratchets itself open one
+    # regression at a time. Defaults True so a record from before this field
+    # existed still parses (the conservative "was fine" reading).
+    passed: bool = True
 
 
 class CheckOutcome(BaseModel):

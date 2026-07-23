@@ -264,6 +264,8 @@ class FlowRunner:
                 check_results = Verifier(
                     max_output_chars=self._manifest.check_output_chars,
                     timeout_s=self._manifest.check_timeout_s,
+                    metrics_dir=self._operator_layer.parent / self._manifest.metrics_dir,
+                    run_id=blueprint.name,
                 ).run(resolve_checks(self._manifest, blueprint), wd)
                 all_passed = all(cr.passed for cr in check_results)
                 summary_lines = [

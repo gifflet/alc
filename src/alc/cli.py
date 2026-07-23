@@ -2076,6 +2076,62 @@ def _checks_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_metrics(args: argparse.Namespace) -> int:
+    """Run `alc metrics [--check NAME] [--json]`: the metric-check time series
+    recorded in the project's ledger (roadmap-phase-4.md T3).
+
+    Read-only — a metric's baseline is only ever recorded by the Verifier while
+    running a Blueprint's checks (`alc run`/`alc flow`/`alc tick`/…).
+    """
+    from dataclasses import asdict
+    from datetime import datetime, timezone
+
+    from alc.intake import load_manifest
+    from alc.metrics import ledger_path, metric_series
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    path = ledger_path(operator_layer.parent / manifest.metrics_dir)
+
+    series = metric_series(path, check=args.check)
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json({name: [asdict(p) for p in points] for name, points in series.items()})
+        return 0
+
+    if not series:
+        print(
+            "No metric history yet — run a Blueprint with a `metric` check to "
+            "populate the ledger."
+        )
+        return 0
+
+    for name in sorted(series):
+        print(f"{name}:")
+        for point in series[name]:
+            ts = datetime.fromtimestamp(point.ts, tz=timezone.utc).isoformat().replace(
+                "+00:00", "Z"
+            )
+            # A rejected point never became the check's baseline (see
+            # alc.metrics.latest_accepted_measurement) — flagged here so a
+            # reader can tell which points the gate actually accepted.
+            status = "accepted" if point.passed else "REJECTED"
+            if point.delta is None:
+                print(
+                    f"  {ts}  value={point.value:g}  run={point.run}  "
+                    f"(first measurement, {status})"
+                )
+            else:
+                print(
+                    f"  {ts}  value={point.value:g}  delta={point.delta:+g}  "
+                    f"trend={point.trend}  run={point.run}  status={status}"
+                )
+
+    return 0
+
+
 def cmd_schedule(args: argparse.Namespace) -> int:
     """Run `alc schedule install|list|remove <tick|cycle NAME> --every 15m`.
 
@@ -3122,6 +3178,27 @@ def main() -> None:
         help="Output the history as JSON (machine-readable).",
     )
 
+    # alc metrics [--check NAME] [--json]
+    metrics_parser = subparsers.add_parser(
+        "metrics",
+        help=(
+            "Show the metric-check time series recorded in the project's "
+            "ledger: values, delta, and trend per check."
+        ),
+    )
+    metrics_parser.add_argument(
+        "--check",
+        default=None,
+        metavar="NAME",
+        help="Only show this check's series (default: every check in the ledger).",
+    )
+    metrics_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the series as JSON (machine-readable).",
+    )
+
     # alc schedule install|list|remove <tick|cycle NAME> --every 15m
     schedule_parser = subparsers.add_parser(
         "schedule",
@@ -3262,6 +3339,8 @@ def main() -> None:
         sys.exit(cmd_audit(args))
     elif args.command == "checks":
         sys.exit(cmd_checks(args))
+    elif args.command == "metrics":
+        sys.exit(cmd_metrics(args))
     elif args.command == "schedule":
         sys.exit(cmd_schedule(args))
     elif args.command == "ui":

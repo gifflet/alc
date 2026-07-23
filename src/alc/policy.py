@@ -71,6 +71,15 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           a quarantine that the
                                                           lint stays silent about
                                                           would be invisible debt.
+    14. A resolved check that declares 'metric' must also declare 'direction'
+                                                 (error) — roadmap-phase-4.md T1:
+                                                          the Verifier cannot judge
+                                                          a number without knowing
+                                                          which way is better. Kept
+                                                          as a gate rule (not a
+                                                          pydantic validator) so the
+                                                          message carries the owning
+                                                          Blueprint's name.
 
     Rule 1 is the ONE relaxation in the whole gate (roadmap-phase-3.md T1): a
     Blueprint declaring `mode: spike` still gets flagged for having no checks,
@@ -262,6 +271,23 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                     ),
                 )
             )
+
+        # Rule 14: a metric check without a direction cannot be judged — the
+        # Verifier would have no way to know whether a bigger or a smaller
+        # number is the regression.
+        for check in resolve_checks(manifest, bp):
+            if check.metric is not None and check.direction is None:
+                violations.append(
+                    Violation(
+                        rule="metric-requires-direction",
+                        severity="error",
+                        message=(
+                            f"Blueprint '{bp.name}' check '{check.name}' declares "
+                            "'metric' without 'direction' — set direction: "
+                            "lower_is_better or higher_is_better."
+                        ),
+                    )
+                )
 
         # Rule 12: protect globs, when declared, must be well-formed relative
         # patterns. A changed-file path is always workdir-relative (git status
