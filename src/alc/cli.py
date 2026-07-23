@@ -1,8 +1,8 @@
 # cli.py — argparse entrypoint for ALC.
-# Provides subcommands: `alc init` (supports --setup), `alc lint`, `alc run`,
-# `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`, `alc conduct`,
-# `alc enqueue`, `alc new`, `alc cycle`, `alc loop`, `alc specialist`, `alc setup`,
-# `alc status`, `alc runs`, `alc audit`.
+# Provides subcommands: `alc init` (supports --setup and --stage), `alc lint`,
+# `alc run`, `alc flow`, `alc tick`, `alc retry`, `alc land`, `alc discard`,
+# `alc conduct`, `alc enqueue`, `alc new`, `alc team`, `alc cycle`, `alc loop`,
+# `alc specialist`, `alc setup`, `alc status`, `alc runs`, `alc audit`.
 from __future__ import annotations
 
 import argparse
@@ -140,8 +140,57 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+# Pack combo `alc init --stage NAME` hires — sugar over `alc team hire`, not a
+# new install path. `stage` itself has ZERO runtime effect; it only selects
+# which packs get hired at init time (see roadmap-phase-2.md's scope decisions).
+_STAGE_PACKS: dict[str, list[str]] = {
+    "pre-pmf": ["prototyper", "builder", "sweeper"],
+    "growth": ["builder", "sweeper", "grower", "maintainer"],
+    "strong-pmf": ["sweeper", "grower", "maintainer", "builder"],
+}
+
+
+def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
+    """Hire every pack in `_STAGE_PACKS[stage]`; never hard-fails.
+
+    A pack not yet shipped (a later wave) is reported plainly and skipped rather
+    than raising. A pack whose files already exist on disk is also skipped
+    (reported) unless `force` is set, mirroring `alc team hire`'s own contract.
+    """
+    from alc.packs import PACKS, pack_files
+    from alc.scaffold import detect_stacks
+
+    stacks = detect_stacks(project_root)
+    print(f"Stage '{stage}':")
+    for archetype in _STAGE_PACKS[stage]:
+        if archetype not in PACKS:
+            print(f"  {archetype}: not available yet (a later wave adds this pack).")
+            continue
+
+        files = pack_files(archetype, stacks)
+        existing = sorted(rel for rel in files if (project_root / rel).exists())
+        if existing and not force:
+            print(
+                f"  {archetype}: already has file(s) on disk "
+                f"({', '.join(existing)}); pass --force to overwrite."
+            )
+            continue
+
+        for rel_path, content in sorted(files.items()):
+            target = project_root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        print(f"  {archetype}: hired ({', '.join(sorted(files))})")
+
+
 def cmd_init(args: argparse.Namespace) -> int:
-    """Run `alc init [--force] [--setup]`: scaffold a default Operator Layer into cwd."""
+    """Run `alc init [--force] [--setup] [--stage pre-pmf|growth|strong-pmf]`.
+
+    Scaffolds a default Operator Layer into cwd. `--stage` additionally hires the
+    pack combo for that stage's mix (`_STAGE_PACKS`) via the same file-writing
+    contract as `alc team hire`. Without it, only a discovery hint is printed —
+    no pack is installed unless explicitly asked (opt-in byte-identical `init`).
+    """
     from alc.scaffold import detect_stack, scaffold
 
     project_root = Path.cwd()
@@ -166,6 +215,15 @@ def cmd_init(args: argparse.Namespace) -> int:
         }
         checks_desc = _stack_checks.get(stack_label, "real checks")
         print(f"Detected {stack_label} — scaffolded real checks ({checks_desc}).")
+
+    if args.stage:
+        _install_stage_packs(project_root, args.stage, args.force)
+    else:
+        print(
+            "Archetype Packs (test authoring, dead-code sweeps, dependency "
+            "patrol, …) are available via `alc team hire <archetype>`. "
+            "See: alc team list"
+        )
 
     if args.setup:
         from alc.setup_skill import _resolve_version, install_skill
@@ -720,6 +778,185 @@ def cmd_new(args: argparse.Namespace) -> int:
     directory.mkdir(parents=True, exist_ok=True)
     path.write_text(raw)
     print(path)
+    return 0
+
+
+def cmd_team(args: argparse.Namespace) -> int:
+    """Run `alc team hire|list|retire|status`: the operator verb over Archetype Packs.
+
+    Packs (``alc.packs``) are the implementation; ``team`` is the only verb an
+    operator sees — ``hire`` scaffolds a pack's files then lints, ``list``/
+    ``status`` show the hired roster (and the state of any loops a member
+    brought), ``retire`` archives a member's loop definition(s) instead of
+    deleting them.
+    """
+    if args.team_action == "hire":
+        return _team_hire(args)
+    if args.team_action == "retire":
+        return _team_retire(args)
+    return _team_roster(args)  # 'list' and 'status' share the same roster output
+
+
+def _team_hire(args: argparse.Namespace) -> int:
+    """`alc team hire <archetype> [--force]`: scaffold a pack's files, then lint."""
+    from alc.intake import load_all_blueprints, load_manifest
+    from alc.packs import PACKS, pack_files
+    from alc.policy import has_errors, lint, validate_prompts, validate_provisions
+    from alc.scaffold import detect_stacks
+
+    if args.archetype not in PACKS:
+        available = ", ".join(sorted(PACKS)) or "none yet"
+        print(
+            f"[ERROR] no pack named '{args.archetype}' yet (available: {available})",
+            file=sys.stderr,
+        )
+        return 1
+
+    operator_layer = _find_operator_layer()
+    project_root = operator_layer.parent
+    manifest = load_manifest(operator_layer)
+
+    files = pack_files(args.archetype, detect_stacks(project_root))
+
+    if not args.force:
+        existing = sorted(rel for rel in files if (project_root / rel).exists())
+        if existing:
+            print(
+                f"[ERROR] '{args.archetype}' already has file(s) on disk: "
+                f"{', '.join(existing)}; pass --force to overwrite",
+                file=sys.stderr,
+            )
+            return 1
+
+    for rel_path, content in sorted(files.items()):
+        target = project_root / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+
+    print(f"Hired '{args.archetype}':")
+    for rel_path in sorted(files):
+        print(f"  {rel_path}")
+
+    blueprints = load_all_blueprints(manifest, operator_layer)
+    violations = lint(manifest, blueprints)
+    violations += validate_prompts(manifest, operator_layer, blueprints)
+    violations += validate_provisions(manifest, project_root)
+
+    if not violations:
+        print("No violations found. Operator Layer is conformant.")
+    else:
+        for v in violations:
+            tag = "[ERROR]" if v.severity == "error" else "[WARN] "
+            print(f"{tag} [{v.rule}] {v.message}")
+
+    return 1 if has_errors(violations) else 0
+
+
+def _team_roster(args: argparse.Namespace) -> int:
+    """`alc team list|status`: the hired roster and the state of loops each member brought."""
+    from alc.intake import load_manifest
+    from alc.loop import load_loop_state, loops_dir, state_path
+    from alc.packs import PACKS, pack_files
+    from alc.scaffold import detect_stacks
+
+    operator_layer = _find_operator_layer()
+    project_root = operator_layer.parent
+    manifest = load_manifest(operator_layer)
+    stacks = detect_stacks(project_root)
+    loops_directory = loops_dir(manifest, operator_layer)
+    loops_prefix = f"{manifest.loops_dir}/"
+
+    roster = []
+    for archetype in sorted(PACKS):
+        files = pack_files(archetype, stacks)
+        present = sorted(rel for rel in files if (project_root / rel).exists())
+        if not present:
+            continue  # not hired
+
+        member_loops = []
+        for rel_path in sorted(files):
+            if rel_path.startswith(loops_prefix) and rel_path.endswith(".yaml"):
+                loop_name = Path(rel_path).stem
+                state = load_loop_state(state_path(loops_directory, loop_name), loop_name)
+                member_loops.append(
+                    {
+                        "name": state.name,
+                        "status": state.status,
+                        "cycle": state.cycle,
+                        "stopped_reason": state.stopped_reason,
+                    }
+                )
+        roster.append({"archetype": archetype, "files": present, "loops": member_loops})
+
+    if getattr(args, "json", False):
+        from alc.output import emit_json
+
+        emit_json(roster)
+        return 0
+
+    if not roster:
+        print("No members hired yet. Run: alc team hire <archetype>")
+        return 0
+
+    print("Hired members:")
+    for member in roster:
+        print(f"  {member['archetype']}")
+        for rel_path in member["files"]:
+            print(f"    {rel_path}")
+        if member["loops"]:
+            for loop in member["loops"]:
+                line = f"    loop {loop['name']}: {loop['status']} (cycle {loop['cycle']})"
+                if loop["status"] == "stopped":
+                    line += f", stopped_reason={loop['stopped_reason']}"
+                print(line)
+        else:
+            print("    loops: (none)")
+    return 0
+
+
+def _team_retire(args: argparse.Namespace) -> int:
+    """`alc team retire <member>`: archive that member's loop definition(s), never delete."""
+    from alc.intake import load_manifest
+    from alc.loop import loops_dir
+    from alc.packs import PACKS, pack_files
+    from alc.scaffold import detect_stacks
+
+    if args.member not in PACKS:
+        available = ", ".join(sorted(PACKS)) or "none yet"
+        print(
+            f"[ERROR] no pack named '{args.member}' yet (available: {available})",
+            file=sys.stderr,
+        )
+        return 1
+
+    operator_layer = _find_operator_layer()
+    project_root = operator_layer.parent
+    manifest = load_manifest(operator_layer)
+    loops_prefix = f"{manifest.loops_dir}/"
+
+    files = pack_files(args.member, detect_stacks(project_root))
+    loop_files = sorted(
+        rel for rel in files if rel.startswith(loops_prefix) and rel.endswith(".yaml")
+    )
+
+    retired_dir = loops_dir(manifest, operator_layer) / "retired"
+    moved: list[str] = []
+    for rel_path in loop_files:
+        src = project_root / rel_path
+        if not src.exists():
+            continue
+        retired_dir.mkdir(parents=True, exist_ok=True)
+        dest = retired_dir / src.name
+        src.rename(dest)
+        moved.append(str(dest.relative_to(project_root)))
+
+    if not moved:
+        print(f"'{args.member}' has no loop(s) on disk to retire.")
+        return 0
+
+    print(f"Retired '{args.member}':")
+    for rel_path in moved:
+        print(f"  {rel_path}")
     return 0
 
 
@@ -1623,7 +1860,7 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # alc init [--force] [--setup]
+    # alc init [--force] [--setup] [--stage pre-pmf|growth|strong-pmf]
     init_parser = subparsers.add_parser(
         "init",
         help="Scaffold a default Operator Layer (.alc/) into the current directory.",
@@ -1644,6 +1881,15 @@ def main() -> None:
         "--engine",
         default="claude-code",
         help="Engine whose editor skill to install with --setup (default: claude-code).",
+    )
+    init_parser.add_argument(
+        "--stage",
+        choices=["pre-pmf", "growth", "strong-pmf"],
+        default=None,
+        help=(
+            "Also hire the Archetype Pack combo for this stage's mix "
+            "(see `alc team list`). Omit to only print a discovery hint."
+        ),
     )
 
     # alc setup [--engine NAME]
@@ -2070,6 +2316,48 @@ def main() -> None:
         help="Clone an existing unit of the same kind, replacing its name: field.",
     )
 
+    # alc team hire|list|retire|status
+    team_parser = subparsers.add_parser(
+        "team",
+        help="Hire, list, retire, or check the status of Archetype Packs (team roster).",
+    )
+    team_subparsers = team_parser.add_subparsers(dest="team_action", required=True)
+
+    team_hire_parser = team_subparsers.add_parser(
+        "hire", help="Scaffold an Archetype Pack's files, then run `alc lint`."
+    )
+    team_hire_parser.add_argument("archetype", help="Pack name, e.g. 'builder'.")
+    team_hire_parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Overwrite the pack's files even if some already exist.",
+    )
+
+    team_list_parser = team_subparsers.add_parser(
+        "list", help="List hired members and the state of any loops they brought."
+    )
+    team_list_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the roster as JSON (machine-readable).",
+    )
+
+    team_status_parser = team_subparsers.add_parser("status", help="Alias for `alc team list`.")
+    team_status_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Output the roster as JSON (machine-readable).",
+    )
+
+    team_retire_parser = team_subparsers.add_parser(
+        "retire",
+        help="Archive a hired member's loop definition(s) into loops/retired/.",
+    )
+    team_retire_parser.add_argument("member", help="Archetype name to retire, e.g. 'builder'.")
+
     # alc prompts <action> [name] [--force]
     prompts_parser = subparsers.add_parser(
         "prompts",
@@ -2299,6 +2587,8 @@ def main() -> None:
         sys.exit(cmd_primer(args))
     elif args.command == "new":
         sys.exit(cmd_new(args))
+    elif args.command == "team":
+        sys.exit(cmd_team(args))
     elif args.command == "prompts":
         if args.action == "eject" and not args.name:
             parser.error("prompts eject requires a prompt NAME")
