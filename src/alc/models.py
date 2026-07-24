@@ -451,6 +451,12 @@ class RunReport(BaseModel):
     # exception to the checks gate. Marks the run so downstream aggregation
     # (Scorecard streak, `alc audit`, …) can tell a spike apart from a real demand.
     spike: bool = False
+    # True when a verify_only+derive_checks gate materialized ZERO checks because
+    # the upstream stage SUCCEEDED and legitimately reported an empty list — the
+    # work ran, but there was nothing to prove (removing a symbol-less artifact).
+    # Distinct from a hard failure (could-not-derive). INVARIANT: inconclusive=True
+    # implies success=False. Default False keeps every existing consumer identical.
+    inconclusive: bool = False
     # Advisory notes the control plane found about this run — human-readable,
     # NEVER a reason to fail it (roadmap-phase-4.md T4). Currently populated
     # only by `Blueprint.expect == "shrink"` finishing net-positive; a plain
@@ -569,6 +575,12 @@ class FlowReport(BaseModel):
     stages: list[RunReport]    # one RunReport per executed stage
     scorecard: Scorecard       # aggregate across all stages
     commit_sha: str | None = None  # set when a terminal commit was created on success
+    # True when the flow's only non-success is an inconclusive gate (its work
+    # stages ran, but absence could not be proven because there was legitimately
+    # nothing to prove). INVARIANT: inconclusive=True implies success=False. Such a
+    # flow is neither committed nor reverted — its changes stay in the tree.
+    # Default False keeps every existing consumer identical.
+    inconclusive: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +644,10 @@ class TickResult(BaseModel):
     # (or not yet merged); True = its branch merged into main; False = its branch
     # was LEFT (a conflict). Read by the honest merged/left cycle metric.
     merged: bool | None = None
+    # Mirrors the underlying FlowReport.inconclusive so the loop's cycle accounting
+    # can tell an inconclusive drain (real work ran, nothing to prove) apart from a
+    # failure. Default False keeps legacy Gate records identical.
+    inconclusive: bool = False
     report: FlowReport
 
 
@@ -982,6 +998,10 @@ class CycleRecord(BaseModel):
     drained: int
     succeeded: int
     failed: int
+    # Drained results that were INCONCLUSIVE (real work ran, but a gate had nothing
+    # to prove) — counted apart from succeeded/failed. Default 0 keeps old ledger
+    # lines valid and a cycle with no inconclusive result byte-identical.
+    inconclusive: int = 0
     # Honest auto-merge tally: how many of this cycle's committing-demand branches
     # merged into main vs were LEFT (a conflict). Both default 0 so old ledger
     # lines stay valid and a cycle with no auto-merge branch is byte-identical.

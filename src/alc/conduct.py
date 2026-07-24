@@ -6,7 +6,6 @@
 # DIP seam: the Engine is injected by the caller; no concrete adapter is imported here.
 from __future__ import annotations
 
-import json
 import sys
 import uuid
 from fnmatch import fnmatch
@@ -37,7 +36,7 @@ from alc.prompts import (
     resolve_prompt,
 )
 from alc.runner import PolicyViolationError
-from alc.textutil import slugify as _slugify
+from alc.textutil import extract_json, slugify as _slugify
 
 
 # ---------------------------------------------------------------------------
@@ -73,24 +72,12 @@ def parse_plan(
     """
     specialists = available_specialists or set()
 
-    # First attempt: the whole text is valid JSON.
-    raw: object = None
-    try:
-        raw = json.loads(output_text)
-    except json.JSONDecodeError:
-        # Second attempt: extract the outermost JSON array from the text.
-        start = output_text.find("[")
-        end = output_text.rfind("]")
-        if start == -1 or end == -1 or end <= start:
-            raise ValueError(
-                f"No JSON array found in Conductor output. Output was:\n{output_text!r}"
-            )
-        try:
-            raw = json.loads(output_text[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Malformed JSON in Conductor output: {exc}. Output was:\n{output_text!r}"
-            ) from exc
+    # Strict JSON first, then recover a bracketed payload from fences/prose.
+    raw = extract_json(output_text)
+    if raw is None:
+        raise ValueError(
+            f"No JSON array found in Conductor output. Output was:\n{output_text!r}"
+        )
 
     if not isinstance(raw, list):
         raise ValueError(

@@ -3,13 +3,14 @@
 # is ever called.
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 from alc.commit import commit_workdir, has_non_alc_changes, revert_workdir
 from alc.flow import FlowRunner
 from alc.intake import load_manifest
-from alc.models import CommitSpec, FlowDefinition, FlowStage
+from alc.models import CommitSpec, DeriveChecksSpec, FlowDefinition, FlowStage
 
 # ---------------------------------------------------------------------------
 # Inline operator layer + git helpers.
@@ -360,6 +361,69 @@ class TestFlowTerminalCommit:
         # A WARN must have been printed to stderr.
         captured = capsys.readouterr()
         assert "[WARN]" in captured.err
+
+
+class TestFlowInconclusiveDoesNotRevert:
+    """An inconclusive flow (a verify_only gate that derived ZERO checks because
+    the upstream stage legitimately reported nothing to prove) is neither
+    committed nor reverted: the completed work stays uncommitted in the tree."""
+
+    def test_inconclusive_flow_preserves_changes_and_does_not_commit(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from alc.engine import Capabilities, EngineResult
+
+        repo = _build_repo(tmp_path)
+
+        class _MapEmptyEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                # The demand completed real work (removed a symbol-less data file),
+                # then honestly reported an empty symbol list — nothing to prove.
+                (request.workdir / "feature.txt").write_text("real work\n")
+                return EngineResult(ok=True, output_text=json.dumps({"symbols": []}))
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _MapEmptyEngine()
+        )
+
+        flow = FlowDefinition(
+            name="unship",
+            stages=[
+                FlowStage(name="map", blueprint="chore"),
+                FlowStage(
+                    name="gate",
+                    blueprint="chore",
+                    verify_only=True,
+                    derive_checks=DeriveChecksSpec(
+                        from_stage="map",
+                        field="symbols",
+                        shell_template="! grep -rn {value} src/",
+                    ),
+                ),
+            ],
+            commit=CommitSpec(enabled=True, message="feat(auto): {task}"),
+        )
+        manifest = load_manifest(repo / ".alc")
+        runner = FlowRunner(manifest=manifest, operator_layer=repo / ".alc")
+        report = runner.run(
+            flow=flow, task="unship the data file", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is False
+        assert report.inconclusive is True
+        assert report.commit_sha is None
+        # The revert hook must NOT run: the engine's completed work is preserved.
+        assert (repo / "feature.txt").exists()
+        # No commit was created either — the change stays uncommitted in the tree.
+        assert _git_log_subjects(repo) == ["seed operator layer"]
 
 
 # ---------------------------------------------------------------------------

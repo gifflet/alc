@@ -114,6 +114,40 @@ isolate: false
 """
 
 
+def _tick_result(success: bool, inconclusive: bool):
+    """Build a TickResult carrying a FlowReport with the given outcome flags.
+
+    Used to drive run_cycle's accounting directly (via a patched process_queue)
+    without needing a real inconclusive-producing flow on disk.
+    """
+    from alc.models import FlowReport, RunReport, Scorecard, TickResult
+
+    run = RunReport(
+        blueprint="x",
+        engine="mock",
+        success=success,
+        inconclusive=inconclusive,
+        attempts=[],
+        scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+        output_text="",
+    )
+    flow = FlowReport(
+        flow="f",
+        engine="mock",
+        success=success,
+        inconclusive=inconclusive,
+        stages=[run],
+        scorecard=run.scorecard,
+    )
+    return TickResult(
+        task_file="t.yaml",
+        flow="f",
+        success=success,
+        inconclusive=inconclusive,
+        report=flow,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Models: round-trip + validators
 # ---------------------------------------------------------------------------
@@ -494,6 +528,86 @@ class TestReplenishFailedSummary:
         assert summary == (
             "cycle 1: replenished=0 drained=1 succeeded=1 failed=0"
         )
+
+
+# ---------------------------------------------------------------------------
+# Inconclusive outcome: accounting, summary, and the CycleRecord field
+# ---------------------------------------------------------------------------
+
+
+class TestInconclusiveCycleRecord:
+    def test_inconclusive_defaults_to_zero(self) -> None:
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=0, succeeded=0, failed=0,
+            progress=False, budget_delta={},
+        )
+        assert rec.inconclusive == 0
+
+    def test_summary_shows_inconclusive_when_present(self) -> None:
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=2, succeeded=1, failed=0,
+            inconclusive=1, progress=True, budget_delta={},
+        )
+        assert "inconclusive=1" in format_cycle_summary(rec)
+
+    def test_summary_omits_inconclusive_when_zero(self) -> None:
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=1, succeeded=1, failed=0,
+            progress=True, budget_delta={},
+        )
+        summary = format_cycle_summary(rec)
+        assert "inconclusive=" not in summary
+        assert summary == (
+            "cycle 1: replenished=0 drained=1 succeeded=1 failed=0"
+        )
+
+
+class TestInconclusiveAccounting:
+    def test_inconclusive_results_are_progress_and_excluded_from_failed(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+
+        results = [
+            _tick_result(success=True, inconclusive=False),
+            _tick_result(success=False, inconclusive=True),
+            _tick_result(success=False, inconclusive=False),
+        ]
+        monkeypatch.setattr("alc.loop.process_queue", lambda *a, **k: results)
+
+        _new_state, record = run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"),
+            engine_override="mock",
+        )
+        assert record.drained == 3
+        assert record.succeeded == 1
+        assert record.inconclusive == 1
+        # The inconclusive result is NOT counted as a failure.
+        assert record.failed == 1
+        assert record.progress is True
+
+    def test_only_inconclusive_still_counts_as_progress(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        _write_loop(operator_layer, "deliver", _LOOP_MODE_B)
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+
+        results = [_tick_result(success=False, inconclusive=True)]
+        monkeypatch.setattr("alc.loop.process_queue", lambda *a, **k: results)
+
+        new_state, record = run_cycle(
+            manifest, operator_layer, loop_def, LoopState(name="deliver"),
+            engine_override="mock",
+        )
+        assert record.succeeded == 0
+        assert record.inconclusive == 1
+        assert record.failed == 0
+        assert record.progress is True
+        # Progress means the no-progress streak resets — no false no-progress stop.
+        assert new_state.consecutive_no_progress == 0
 
 
 # ---------------------------------------------------------------------------

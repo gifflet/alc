@@ -663,8 +663,12 @@ def run_cycle(
     )
     drained = len(results)
     succeeded = sum(1 for r in results if r.success)
-    failed = drained - succeeded
-    progress = succeeded > 0
+    # Inconclusive drains (real work ran, a gate had nothing to prove) are counted
+    # apart from succeeded/failed: they are neither. Excluding them from `failed`
+    # keeps the ledger honest, and they still count as progress below.
+    inconclusive = sum(1 for r in results if r.inconclusive)
+    failed = drained - succeeded - inconclusive
+    progress = succeeded > 0 or inconclusive > 0
     # Honest auto-merge tally: a committing-demand branch either MERGED into main
     # or was LEFT (a conflict). None means the result had no auto-merge branch.
     merged = sum(1 for r in results if r.merged is True)
@@ -696,6 +700,7 @@ def run_cycle(
         drained=drained,
         succeeded=succeeded,
         failed=failed,
+        inconclusive=inconclusive,
         merged=merged,
         left=left,
         replenish_failed=not replenish_ok,
@@ -729,6 +734,10 @@ def format_cycle_summary(record: CycleRecord) -> str:
         f"drained={record.drained} succeeded={record.succeeded} "
         f"failed={record.failed}"
     )
+    # Surface inconclusive drains (work ran, a gate had nothing to prove) only when
+    # any occurred; a cycle with none stays byte-identical to the old summary.
+    if record.inconclusive > 0:
+        line += f" inconclusive={record.inconclusive}"
     # Surface the honest auto-merge tally only when a committing-demand branch was
     # merged or left this cycle; otherwise stay byte-identical to the old summary.
     if record.merged + record.left > 0:

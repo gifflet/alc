@@ -493,6 +493,7 @@ def _process_task_body(
         success=success,
         branch=branch,
         auto_merge=demand_committed,
+        inconclusive=report.inconclusive,
         report=report,
     )
 

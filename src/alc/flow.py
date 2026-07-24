@@ -4,7 +4,6 @@
 # Assurance Loop, Scorecard) is reused for every stage via execute_mandate.
 from __future__ import annotations
 
-import json
 import shlex
 import sys
 from pathlib import Path
@@ -29,12 +28,13 @@ from alc.policy import has_errors, lint, lint_flow
 from alc.prompts import expand_includes
 from alc.runner import PolicyViolationError, execute_mandate
 from alc.specialist import run_specialist
+from alc.textutil import extract_json
 from alc.verifier import Verifier
 
 
 def _derive_checks(
     spec: DeriveChecksSpec, upstream_report: RunReport | None
-) -> tuple[list[Check], list[str]]:
+) -> tuple[list[Check], list[str], bool]:
     """Materialize one Check per item of ``spec.field`` in ``upstream_report``.
 
     ``upstream_report.output_text`` is whatever the engine produced — it may be
@@ -47,46 +47,53 @@ def _derive_checks(
     (with a warning) rather than trusted.
 
     Returns:
-        (checks, warnings) — warnings explain every value/shape problem found;
-        empty when the upstream report was clean.
+        (checks, warnings, nothing_to_prove) — warnings explain every value/shape
+        problem found (empty when the upstream report was clean). ``nothing_to_prove``
+        is True ONLY when the field was a well-formed EMPTY list (the upstream stage
+        legitimately had nothing to derive a check from); it is False for every
+        could-not-derive shape (no report, not JSON, not an object, missing field,
+        non-list field) and whenever at least one check was produced. The caller
+        uses it to tell an INCONCLUSIVE gate apart from a hard failure.
     """
     if upstream_report is None:
         return [], [
             f"derive_checks: upstream stage '{spec.from_stage}' produced no report."
-        ]
+        ], False
 
-    try:
-        parsed = json.loads(upstream_report.output_text)
-    except (json.JSONDecodeError, TypeError):
+    parsed = extract_json(upstream_report.output_text)
+    if parsed is None:
         return [], [
             f"derive_checks: stage '{spec.from_stage}' report is not valid JSON "
             f"— cannot read field '{spec.field}'."
-        ]
+        ], False
 
     if not isinstance(parsed, dict):
         return [], [
             f"derive_checks: stage '{spec.from_stage}' report is not a JSON "
             f"object — cannot read field '{spec.field}'."
-        ]
+        ], False
 
     if spec.field not in parsed:
         return [], [
             f"derive_checks: stage '{spec.from_stage}' report has no field "
             f"'{spec.field}'."
-        ]
+        ], False
 
     values = parsed[spec.field]
     if not isinstance(values, list):
         return [], [
             f"derive_checks: stage '{spec.from_stage}' field '{spec.field}' is "
             "not a list."
-        ]
+        ], False
 
     if not values:
+        # A well-formed EMPTY list: the upstream stage had nothing to prove. This
+        # is the ONLY branch that signals nothing_to_prove — the caller turns it
+        # into an INCONCLUSIVE gate (not a failure) when the upstream succeeded.
         return [], [
             f"derive_checks: stage '{spec.from_stage}' field '{spec.field}' is "
             "an empty list — nothing to derive a check from."
-        ]
+        ], True
 
     checks: list[Check] = []
     warnings: list[str] = []
@@ -100,7 +107,7 @@ def _derive_checks(
         shell = spec.shell_template.replace("{value}", shlex.quote(item))
         checks.append(Check(name=f"absence: {item}", shell=shell))
 
-    return checks, warnings
+    return checks, warnings, False
 
 
 def _compose_stage_directive(
@@ -337,6 +344,8 @@ class FlowRunner:
                 # Verify-only stage: run checks as a pure gate — no engine turn.
                 wd = workdir or Path.cwd()
                 derive_notes: list[str] = []
+                nothing_to_prove = False
+                upstream_report: RunReport | None = None
                 if stage.derive_checks is not None:
                     # Materialize checks from an upstream stage's report instead
                     # of the Blueprint's static ones (roadmap-phase-4.md T9).
@@ -346,21 +355,33 @@ class FlowRunner:
                     upstream_report = stage_reports_by_name.get(
                         stage.derive_checks.from_stage
                     )
-                    checks, derive_notes = _derive_checks(
+                    checks, derive_notes, nothing_to_prove = _derive_checks(
                         stage.derive_checks, upstream_report
                     )
                 else:
                     checks = resolve_checks(self._manifest, blueprint)
 
                 if stage.derive_checks is not None and not checks:
-                    # "Checks are law" extends here: a gate with ZERO derived
-                    # checks would otherwise vacuously PASS, proving nothing
-                    # about the absence it was asked to demonstrate. Fail
-                    # loudly, with the notes explaining why, instead.
+                    # ZERO derived checks splits into two outcomes:
+                    #   INCONCLUSIVE — the upstream stage SUCCEEDED and legitimately
+                    #     reported an empty list: the work ran, but there was nothing
+                    #     to prove. Not a success (nothing was verified) and not a
+                    #     failure (the work completed) — mark it so the flow neither
+                    #     commits nor reverts it.
+                    #   FAILURE — the upstream report could not be read at all
+                    #     (absent / not JSON / wrong shape). A gate with zero checks
+                    #     would otherwise vacuously PASS, proving nothing about the
+                    #     absence it was asked to demonstrate. Fail loudly.
+                    gate_inconclusive = (
+                        nothing_to_prove
+                        and upstream_report is not None
+                        and upstream_report.success
+                    )
                     report = RunReport(
                         blueprint=blueprint.name,
                         engine="(verify-only)",
                         success=False,
+                        inconclusive=gate_inconclusive,
                         attempts=[],
                         scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
                         output_text="\n".join(derive_notes),
@@ -443,8 +464,11 @@ class FlowRunner:
             stage_reports.append(report)
             emit("stage_finished", stage=stage.name, success=report.success)
 
-            # Fail-fast: stop the pipeline if this stage did not succeed.
-            if not report.success:
+            # Fail-fast: stop the pipeline on a HARD failure only. An inconclusive
+            # stage (the work ran, but a gate had nothing to prove) is not a hard
+            # failure, so it does not break the pipeline. In practice the gate is
+            # terminal, but keeping this general leaves the control correct.
+            if not report.success and not report.inconclusive:
                 break
 
             # Thread this stage's output into the next stage's context.
@@ -454,6 +478,16 @@ class FlowRunner:
         success = len(stage_reports) == len(flow.stages) and all(
             r.success for r in stage_reports
         )
+        # Flow-level inconclusive: not a success, yet every stage ran and each is
+        # success-or-inconclusive with at least one inconclusive. This is the
+        # "work completed, nothing left to prove" outcome — never committed, never
+        # reverted. Any hard-failed or skipped stage makes this False (a failure).
+        flow_inconclusive = (
+            not success
+            and len(stage_reports) == len(flow.stages)
+            and all(r.success or r.inconclusive for r in stage_reports)
+            and any(r.inconclusive for r in stage_reports)
+        )
         aggregate_scorecard = Scorecard(
             span=sum(r.scorecard.span for r in stage_reports),
             passes=sum(r.scorecard.passes for r in stage_reports),
@@ -461,15 +495,19 @@ class FlowRunner:
             touch=0,
         )
 
-        # Revert hook: when a committing flow fails, discard this demand's uncommitted
-        # changes so the shared workdir is clean for the next demand (atomic semantics).
-        # Gated on commit.enabled (never runs for a non-committing/commit=None flow)
-        # and not success (never runs on a green flow, which commits instead).
+        # Revert hook: when a committing flow HARD-fails, discard this demand's
+        # uncommitted changes so the shared workdir is clean for the next demand
+        # (atomic semantics). Gated on commit.enabled (never runs for a
+        # non-committing/commit=None flow), not success (never runs on a green flow,
+        # which commits instead), and not flow_inconclusive (an inconclusive flow
+        # completed real work — reverting it would throw that work away; it is
+        # neither committed nor reverted, its changes stay in the tree).
         if (
             not skip_commit
             and flow.commit is not None
             and flow.commit.enabled
             and not success
+            and not flow_inconclusive
             and len(stage_reports) > 0
         ):
             # `.alc/` is ALWAYS protected; the operator's commit.exclude only ADDS.
@@ -528,6 +566,7 @@ class FlowRunner:
             flow=flow.name,
             engine=engine_name,
             success=success,
+            inconclusive=flow_inconclusive,
             stages=stage_reports,
             scorecard=aggregate_scorecard,
             commit_sha=commit_sha,
