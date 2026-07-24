@@ -66,6 +66,98 @@ stages:
     blueprint: chore
 """
 
+# ---------------------------------------------------------------------------
+# require_real_checks fixtures — a gate that resolves to ONLY the scaffold
+# smoke placeholder, plus gates that carry a real extra check (pass and fail).
+# ---------------------------------------------------------------------------
+
+# Gate whose resolved checks are EXACTLY the scaffold smoke placeholder.
+_SMOKE_GATE_BLUEPRINT = """\
+---
+name: smoke-gate
+purpose: Gate that resolves to only the scaffold smoke placeholder.
+compute_tier: standard
+checks:
+  - name: smoke
+    command: ["true"]
+---
+# Workflow (never executed in verify-only mode)
+This body is irrelevant; the stage is verify-only.
+"""
+
+# Gate with a real check beyond the smoke placeholder — it is NOT smoke-only,
+# so require_real_checks is inert and the real checks run (and pass).
+_REAL_PASS_GATE_BLUEPRINT = """\
+---
+name: real-pass-gate
+purpose: Gate with a real check beyond the smoke placeholder — passes.
+compute_tier: standard
+checks:
+  - name: smoke
+    command: ["true"]
+  - name: guard
+    command: ["true"]
+---
+# Workflow (never executed in verify-only mode)
+This body is irrelevant; the stage is verify-only.
+"""
+
+# Gate with a real check beyond the smoke placeholder — NOT smoke-only, so the
+# real checks run and the failing one fails the gate (never inconclusive).
+_REAL_FAIL_GATE_BLUEPRINT = """\
+---
+name: real-fail-gate
+purpose: Gate with a real check beyond the smoke placeholder — fails.
+compute_tier: standard
+checks:
+  - name: smoke
+    command: ["true"]
+  - name: guard
+    command: ["false"]
+---
+# Workflow (never executed in verify-only mode)
+This body is irrelevant; the stage is verify-only.
+"""
+
+# Flow: engine build stage, then a require_real_checks gate that is smoke-only.
+_FLOW_SMOKE_GATE = """\
+name: smoke-gate-flow
+description: Build stage then a require_real_checks gate that is smoke-only.
+stages:
+  - name: build
+    blueprint: chore
+  - name: gate
+    blueprint: smoke-gate
+    verify_only: true
+    require_real_checks: true
+"""
+
+# Flow: engine build stage, then a require_real_checks gate whose real checks pass.
+_FLOW_REAL_PASS = """\
+name: real-pass-gate-flow
+description: Build stage then a require_real_checks gate whose real checks pass.
+stages:
+  - name: build
+    blueprint: chore
+  - name: gate
+    blueprint: real-pass-gate
+    verify_only: true
+    require_real_checks: true
+"""
+
+# Flow: engine build stage, then a require_real_checks gate whose real check fails.
+_FLOW_REAL_FAIL = """\
+name: real-fail-gate-flow
+description: Build stage then a require_real_checks gate whose real check fails.
+stages:
+  - name: build
+    blueprint: chore
+  - name: gate
+    blueprint: real-fail-gate
+    verify_only: true
+    require_real_checks: true
+"""
+
 
 @pytest.fixture
 def verify_layer(operator_layer: Path) -> Path:
@@ -77,6 +169,22 @@ def verify_layer(operator_layer: Path) -> Path:
     (blueprints_dir / "gate-fail.md").write_text(_GATE_FAIL_BLUEPRINT)
     (flows_dir / "verify-pass-flow.yaml").write_text(_FLOW_PASS)
     (flows_dir / "verify-fail-first-flow.yaml").write_text(_FLOW_FAIL_FIRST)
+
+    return operator_layer
+
+
+@pytest.fixture
+def require_real_checks_layer(operator_layer: Path) -> Path:
+    """Extend the shared operator_layer with require_real_checks gates and flows."""
+    blueprints_dir = operator_layer / "blueprints"
+    flows_dir = operator_layer / "flows"
+
+    (blueprints_dir / "smoke-gate.md").write_text(_SMOKE_GATE_BLUEPRINT)
+    (blueprints_dir / "real-pass-gate.md").write_text(_REAL_PASS_GATE_BLUEPRINT)
+    (blueprints_dir / "real-fail-gate.md").write_text(_REAL_FAIL_GATE_BLUEPRINT)
+    (flows_dir / "smoke-gate-flow.yaml").write_text(_FLOW_SMOKE_GATE)
+    (flows_dir / "real-pass-gate-flow.yaml").write_text(_FLOW_REAL_PASS)
+    (flows_dir / "real-fail-gate-flow.yaml").write_text(_FLOW_REAL_FAIL)
 
     return operator_layer
 
@@ -215,3 +323,203 @@ class TestVerifyOnlyStage:
         assert report.scorecard.streak == 0, (
             "A failing gate must keep the aggregate streak at 0"
         )
+
+
+# ---------------------------------------------------------------------------
+# require_real_checks gate: honest INCONCLUSIVE when the project has only the
+# placeholder smoke check, inert when the resolved checks are real.
+# ---------------------------------------------------------------------------
+
+_GIT_MANIFEST = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+engines:
+  mock:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+"""
+
+_GIT_CHORE = """\
+---
+name: chore
+purpose: Apply a low-risk, well-scoped maintenance change.
+compute_tier: standard
+checks:
+  - name: smoke
+    command: ["true"]
+---
+# Workflow
+1. Make the smallest change that satisfies the task.
+"""
+
+
+class TestRequireRealChecks:
+    def test_require_real_checks_without_verify_only_is_rejected(self) -> None:
+        """require_real_checks only gates a verify_only stage: setting it on a
+        non-verify_only stage is a pydantic ValidationError at intake."""
+        from pydantic import ValidationError
+
+        from alc.models import FlowStage
+
+        with pytest.raises(ValidationError):
+            FlowStage(name="g", blueprint="x", require_real_checks=True)
+
+    def test_smoke_only_gate_is_inconclusive_and_names_the_fix(
+        self, require_real_checks_layer: Path, tmp_path: Path
+    ) -> None:
+        """A require_real_checks gate whose resolved checks are ONLY the smoke
+        placeholder reports success=False, inconclusive=True, and points the
+        operator at how to add real checks."""
+        from alc.intake import load_flow
+
+        manifest = load_manifest(require_real_checks_layer)
+        flows_dir = require_real_checks_layer.parent / manifest.flows_dir
+        flow = load_flow(flows_dir, "smoke-gate-flow")
+
+        runner = FlowRunner(manifest=manifest, operator_layer=require_real_checks_layer)
+        report = runner.run(
+            flow=flow, task="unship a placeholder-only feature", workdir=tmp_path
+        )
+
+        gate = report.stages[-1]
+        assert gate.success is False
+        assert gate.inconclusive is True
+        assert "real checks" in gate.output_text
+        assert "alc checks audit" in gate.output_text
+
+    def test_real_checks_run_and_gate_passes_when_they_pass(
+        self, require_real_checks_layer: Path, tmp_path: Path
+    ) -> None:
+        """When the gate resolves REAL checks, require_real_checks is inert: the
+        checks actually run and a passing battery passes the gate."""
+        from alc.intake import load_flow
+
+        manifest = load_manifest(require_real_checks_layer)
+        flows_dir = require_real_checks_layer.parent / manifest.flows_dir
+        flow = load_flow(flows_dir, "real-pass-gate-flow")
+
+        runner = FlowRunner(manifest=manifest, operator_layer=require_real_checks_layer)
+        report = runner.run(flow=flow, task="unship a real feature", workdir=tmp_path)
+
+        gate = report.stages[-1]
+        assert report.success is True
+        assert gate.success is True
+        assert gate.inconclusive is False
+        # The real check actually ran (its result is in the summary).
+        assert "guard: pass" in gate.output_text
+
+    def test_real_checks_run_and_gate_fails_when_they_fail(
+        self, require_real_checks_layer: Path, tmp_path: Path
+    ) -> None:
+        """When the gate resolves REAL checks, a failing one fails the gate on
+        its own result — never an inconclusive skip."""
+        from alc.intake import load_flow
+
+        manifest = load_manifest(require_real_checks_layer)
+        flows_dir = require_real_checks_layer.parent / manifest.flows_dir
+        flow = load_flow(flows_dir, "real-fail-gate-flow")
+
+        runner = FlowRunner(manifest=manifest, operator_layer=require_real_checks_layer)
+        report = runner.run(flow=flow, task="unship a real feature", workdir=tmp_path)
+
+        gate = report.stages[-1]
+        assert report.success is False
+        assert gate.success is False
+        assert gate.inconclusive is False
+        # The real check actually ran and failed.
+        assert "guard: fail" in gate.output_text
+
+    def test_inconclusive_gate_preserves_work_and_does_not_commit_or_revert(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A committing flow whose require_real_checks gate is inconclusive is
+        neither committed nor reverted: the removal's work stays in the tree."""
+        import subprocess
+
+        from alc.engine import Capabilities, EngineResult
+        from alc.models import CommitSpec, FlowDefinition, FlowStage
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "test@alc.local"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "ALC Test"],
+            check=True,
+            capture_output=True,
+        )
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_GIT_MANIFEST)
+        (alc / "blueprints" / "chore.md").write_text(_GIT_CHORE)
+        (alc / "blueprints" / "smoke-gate.md").write_text(_SMOKE_GATE_BLUEPRINT)
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed operator layer"],
+            check=True,
+            capture_output=True,
+        )
+
+        class _WriteEngine:
+            name = "mock"
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request):
+                # The removal did real work, then the gate finds only placeholder
+                # checks — the work ran but cannot be verified.
+                (request.workdir / "feature.txt").write_text("real work\n")
+                return EngineResult(ok=True, output_text="[mock] removed the feature")
+
+        monkeypatch.setattr(
+            "alc.runner.resolve_engine", lambda name, engines: _WriteEngine()
+        )
+
+        flow = FlowDefinition(
+            name="unship",
+            stages=[
+                FlowStage(name="remove", blueprint="chore"),
+                FlowStage(
+                    name="gate",
+                    blueprint="smoke-gate",
+                    verify_only=True,
+                    require_real_checks=True,
+                ),
+            ],
+            commit=CommitSpec(enabled=True, message="feat(auto): {task}"),
+        )
+        manifest = load_manifest(alc)
+        runner = FlowRunner(manifest=manifest, operator_layer=alc)
+        report = runner.run(
+            flow=flow, task="unship placeholder", engine_override="mock", workdir=repo
+        )
+
+        assert report.success is False
+        assert report.inconclusive is True
+        assert report.commit_sha is None
+        # The revert hook must NOT run: the removal's work is preserved.
+        assert (repo / "feature.txt").exists()
+        # No terminal commit either — only the seed commit exists.
+        subjects = subprocess.run(
+            ["git", "-C", str(repo), "log", "--format=%s"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+        assert subjects == ["seed operator layer"]

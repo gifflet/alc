@@ -171,7 +171,7 @@ archetype: sweeper
 _SWEEPER_MAP = """\
 ---
 name: map
-purpose: Map the public symbols a feature exposes, so `unship` can prove their absence.
+purpose: Map the public symbols a feature exposes, for `unship`'s optional derive_checks gate.
 compute_tier: standard
 checks:
   # This stage only maps a surface — it changes nothing, so a smoke check is enough.
@@ -185,6 +185,11 @@ report:
 ---
 
 ## Map Workflow
+
+This stage is used ONLY when you enable the optional map + derive_checks stages
+in `unship` (a grep-based prove-absence opt-in). The default `unship` gate
+verifies the removal with the project's real checks instead, so an ordinary
+removal never runs this stage.
 
 1. Read the task description to identify the feature being removed.
 2. List ONLY the UNIQUE identifiers that feature exposes as its public surface —
@@ -227,29 +232,51 @@ stop:
 
 _SWEEPER_UNSHIP_FLOW = """\
 name: unship
-description: Map a feature's surface, remove it behavior-preservingly, then prove absence.
+description: Remove a feature behavior-preservingly, then verify the removal with the project's real checks.
 stages:
-  - name: map
-    blueprint: map
   - name: remove
     blueprint: refactor
   - name: gate
     blueprint: refactor
     verify_only: true
-    derive_checks:
-      from_stage: map
-      field: symbols
-      shell_template: '! grep -rn {value} . --exclude-dir=.git --exclude-dir=.alc --exclude-dir=node_modules'
+    require_real_checks: true
+# ---------------------------------------------------------------------------
+# OPT-IN: prove-absence by text search (map + derive_checks).
+#
+# The gate above verifies the removal with the project's REAL checks (checks
+# are law). Text search is only a heuristic — a name that is not unique can
+# never be proven absent — so real checks are preferred. To ALSO grep the repo
+# for every removed symbol, add a `map` stage BEFORE `remove` and give the gate
+# a `derive_checks` block instead of `require_real_checks`:
+#
+#   - name: map
+#     blueprint: map
+#   - name: remove
+#     blueprint: refactor
+#   - name: gate
+#     blueprint: refactor
+#     verify_only: true
+#     derive_checks:
+#       from_stage: map
+#       field: symbols
+#       shell_template: '! grep -rn {value} . --exclude-dir=.git --exclude-dir=.alc --exclude-dir=node_modules'
+#
+# The `map` stage lists only UNIQUE symbols and returns an EMPTY list when the
+# removal has none (routing the gate to inconclusive). See .alc/blueprints/map.md.
+# ---------------------------------------------------------------------------
 """
 
 
 def _sweeper_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
 ) -> dict[str, str]:
-    """Build the Sweeper pack: a map Blueprint (discovers a feature's surface), the
-    janitor Specialist, a refactor Blueprint, its sweep Loop, and the unship Flow —
-    map -> remove -> a gate that derives its checks from what map found, proving
-    every discovered symbol is actually gone (roadmap-phase-4.md T9)."""
+    """Build the Sweeper pack: a refactor Blueprint, the janitor Specialist, its
+    sweep Loop, and the unship Flow — remove -> a require_real_checks gate that
+    verifies the removal with the project's REAL checks (checks are law), reporting
+    INCONCLUSIVE when the project has only placeholder checks. The grep-based
+    prove-absence strategy (a map Blueprint + a derive_checks gate,
+    roadmap-phase-4.md T9) is retained as a documented opt-in: map.md still ships
+    and the unship Flow carries the recipe as a commented block."""
     return {
         ".alc/blueprints/map.md": _SWEEPER_MAP,
         ".alc/blueprints/refactor.md": _SWEEPER_REFACTOR.format(

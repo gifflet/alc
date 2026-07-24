@@ -11,7 +11,7 @@ from pathlib import Path
 from alc.commit import commit_workdir, has_non_alc_changes, revert_workdir
 from alc.commitmsg import make_commit_message_provider
 from alc.events import emit
-from alc.intake import load_blueprint, load_specialist, resolve_checks
+from alc.intake import is_smoke_only, load_blueprint, load_specialist, resolve_checks
 from alc.models import (
     Blueprint,
     Check,
@@ -361,7 +361,34 @@ class FlowRunner:
                 else:
                     checks = resolve_checks(self._manifest, blueprint)
 
-                if stage.derive_checks is not None and not checks:
+                # A require_real_checks gate whose statically resolved checks are
+                # nothing but the scaffold smoke placeholder cannot verify anything:
+                # ["true"] would pass vacuously. Report it INCONCLUSIVE (the removal
+                # ran but is UNVERIFIED) with the SAME shape as the derive-checks
+                # inconclusive case, so the flow neither commits nor reverts it.
+                require_real_checks_skip = (
+                    stage.require_real_checks
+                    and stage.derive_checks is None
+                    and is_smoke_only(self._manifest, blueprint)
+                )
+
+                if require_real_checks_skip:
+                    report = RunReport(
+                        blueprint=blueprint.name,
+                        engine="(verify-only)",
+                        success=False,
+                        inconclusive=True,
+                        attempts=[],
+                        scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+                        output_text=(
+                            "gate skipped: this stage requires real checks but the "
+                            "blueprint resolves to only the smoke placeholder — the "
+                            "removal ran but is UNVERIFIED. Add real checks to your "
+                            "manifest check_sets (see `alc checks audit` or the UI "
+                            "Checks view)."
+                        ),
+                    )
+                elif stage.derive_checks is not None and not checks:
                     # ZERO derived checks splits into two outcomes:
                     #   INCONCLUSIVE — the upstream stage SUCCEEDED and legitimately
                     #     reported an empty list: the work ran, but there was nothing

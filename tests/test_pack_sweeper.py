@@ -73,31 +73,37 @@ class TestPackFilesSweeper:
         assert "kind: plan" in content
         assert "ref: janitor" in content
 
-    def test_unship_flow_chains_map_remove_and_a_verify_only_gate(self) -> None:
-        content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
-        assert "blueprint: map" in content
-        assert content.count("blueprint: refactor") == 2
-        assert "verify_only: true" in content
+    def test_unship_flow_chains_remove_and_a_verify_only_gate(self, tmp_path: Path) -> None:
+        # The shipped flow's ACTIVE stages are remove -> a verify_only gate that
+        # verifies with the project's REAL checks (require_real_checks); the
+        # grep-based prove-absence (map + derive_checks) is a commented opt-in.
+        operator_layer = _hire(tmp_path)
+        flow = load_flow(operator_layer / "flows", "unship")
+        assert [s.name for s in flow.stages] == ["remove", "gate"]
+        assert flow.stages[-1].verify_only is True
+        assert flow.stages[-1].require_real_checks is True
+        assert flow.stages[-1].derive_checks is None
 
-    def test_unship_gate_derives_its_checks_from_the_map_stage(self) -> None:
-        # roadmap-phase-4.md T9: the gate proves absence of what `map` found,
-        # instead of a fixed check list known only at authoring time.
+    def test_unship_keeps_the_derive_checks_recipe_as_a_commented_opt_in(self) -> None:
+        # The grep-based prove-absence strategy is retained as DOCUMENTATION: every
+        # line that names it is a comment, so the loaded flow never activates it.
+        # roadmap-phase-4.md T9's recipe (map + derive_checks) stays well-formed.
         content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
-        assert "derive_checks:" in content
-        assert "from_stage: map" in content
-        assert "field: symbols" in content
-        assert "{value}" in content
-
-    def test_unship_gate_proof_is_layout_agnostic(self) -> None:
-        # The absence proof must search the whole tracked codebase, not a
-        # hardcoded `src/` dir that does not exist in every project (static
-        # sites, non-`src/` layouts) — else the grep vacuously passes and proves
-        # nothing. `git grep` searches tracked files regardless of layout.
-        content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
-        # Searches the whole repo from its root (no hardcoded `src/` that would
-        # not exist in every layout), skipping ALC's own dir and VCS/deps noise.
+        for token in ("derive_checks", "from_stage: map", "field: symbols", "{value}"):
+            lines = [ln for ln in content.splitlines() if token in ln]
+            assert lines, f"expected the opt-in recipe to document {token!r}"
+            assert all(ln.lstrip().startswith("#") for ln in lines), (
+                f"{token!r} must live in the commented opt-in, not an active stage"
+            )
+        # The commented grep stays layout-agnostic: it searches the whole repo
+        # from its root (no hardcoded `src/` absent in many layouts), skipping
+        # ALC's own dir and VCS/deps noise.
         assert "src/" not in content
         assert "--exclude-dir=.alc" in content
+        # The recipe still documents the map stage's unique-symbol / empty-list
+        # contract (an empty list routes the gate to inconclusive).
+        assert "unique" in content.lower()
+        assert "empty" in content.lower()
 
     def test_map_blueprint_reports_a_symbols_list(self) -> None:
         content = pack_files("sweeper", stacks=[])[".alc/blueprints/map.md"]
@@ -150,8 +156,9 @@ class TestSweeperPackLoadsThroughTheRealLoaders:
     def test_unship_loads_as_a_flow_definition(self, tmp_path: Path) -> None:
         operator_layer = _hire(tmp_path)
         flow = load_flow(operator_layer / "flows", "unship")
-        assert [s.name for s in flow.stages] == ["map", "remove", "gate"]
+        assert [s.name for s in flow.stages] == ["remove", "gate"]
         assert flow.stages[-1].verify_only is True
+        assert flow.stages[-1].require_real_checks is True
 
     def test_sweep_loop_replenish_resolves_to_an_existing_specialist(
         self, tmp_path: Path

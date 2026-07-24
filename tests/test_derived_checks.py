@@ -697,35 +697,74 @@ class TestGateHandlesFencedMapReportEndToEnd:
         assert "not valid JSON" in report.stages[-1].output_text
 
 
-class TestSweeperPackUnshipFlowProvesAbsenceForReal:
-    """The Sweeper pack's shipped `unship` Flow (packs.py), run end-to-end,
-    must actually prove absence — not ship a placeholder gate."""
+# ---------------------------------------------------------------------------
+# The Sweeper pack's SHIPPED `unship` Flow (remove -> a require_real_checks
+# gate) verifies the removal with the project's REAL checks — end-to-end.
+# ---------------------------------------------------------------------------
 
-    def _hire(self, tmp_path: Path) -> Path:
+# A manifest whose `python` check_set holds ONE cheap, deterministic shell check
+# — the real check the gate resolves and runs (roadmap-phase-4.md / Boris:
+# "checks are law"). `! test -f dead_marker` passes iff the marker file is gone.
+_PYTHON_CHECK_MANIFEST = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+engines:
+  mock:
+    type: mock
+check_sets:
+  python:
+    - name: no-dead-marker
+      shell: '! test -f dead_marker'
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+specialists_dir: .alc/specialists
+loops_dir: .alc/loops
+"""
+
+
+def _hire_sweeper(
+    tmp_path: Path,
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    manifest_text: str | None = None,
+) -> Path:
+    """Write the Sweeper pack into *tmp_path*. When *manifest_text* is None, a
+    default Operator Layer is scaffolded first; otherwise it is written verbatim
+    (so a test can supply a real check_set the gate must resolve)."""
+    if manifest_text is None:
         scaffold(tmp_path)
-        for rel_path, text in pack_files("sweeper", stacks=[]).items():
-            target = tmp_path / rel_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
-        return tmp_path / ".alc"
+    for rel_path, text in pack_files("sweeper", stacks).items():
+        target = tmp_path / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+    if manifest_text is not None:
+        manifest_path = tmp_path / ".alc" / "manifest.yaml"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(manifest_text)
+    return tmp_path / ".alc"
 
-    def test_unship_flow_gate_passes_when_the_mapped_symbol_is_truly_gone(
+
+class TestSweeperPackUnshipGateRunsRealChecks:
+    """The shipped `unship` Flow (remove -> a require_real_checks gate) resolves
+    the project's real check_set at the gate and passes/fails on its result."""
+
+    def test_gate_passes_when_the_real_check_is_satisfied(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from alc.intake import load_flow
 
-        operator_layer = self._hire(tmp_path)
-        (tmp_path / "src").mkdir()
-        (tmp_path / "src" / "app.py").write_text("def dead_export(): ...\n")
+        stacks = [("Python", "python", [("test", ["pytest", "-q"])])]
+        operator_layer = _hire_sweeper(tmp_path, stacks, _PYTHON_CHECK_MANIFEST)
+        (tmp_path / "dead_marker").write_text("x\n")
 
-        def _delete_dead_export(workdir: Path) -> None:
-            (workdir / "src" / "app.py").write_text("# removed\n")
+        def _remove_marker(workdir: Path) -> None:
+            (workdir / "dead_marker").unlink()
 
         engine = _ScriptedEngine(
-            [
-                (None, json.dumps({"symbols": ["dead_export"], "summary": "mapped"})),
-                (_delete_dead_export, json.dumps({"status": "ok", "summary": "removed"})),
-            ]
+            [(_remove_marker, json.dumps({"status": "ok", "summary": "removed"}))]
         )
         monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine)
 
@@ -734,15 +773,142 @@ class TestSweeperPackUnshipFlowProvesAbsenceForReal:
         runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
         report = runner.run(
             flow=flow,
-            task="unship dead_export",
+            task="unship the dead code",
             engine_override="mock",
             workdir=tmp_path,
         )
 
         assert report.success is True
         assert report.stages[-1].success is True
+        # The gate actually ran the project's real check_set (resolve_checks path).
+        assert "no-dead-marker: pass" in report.stages[-1].output_text
 
-    def test_unship_flow_gate_fails_when_the_mapped_symbol_survives(
+    def test_gate_fails_when_the_real_check_is_violated(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from alc.intake import load_flow
+
+        stacks = [("Python", "python", [("test", ["pytest", "-q"])])]
+        operator_layer = _hire_sweeper(tmp_path, stacks, _PYTHON_CHECK_MANIFEST)
+        (tmp_path / "dead_marker").write_text("x\n")
+
+        # The engine never removes the marker -> the real check stays violated,
+        # so the removal fails its own check_set instead of passing vacuously.
+        engine = _ScriptedEngine(
+            [(None, json.dumps({"status": "ok", "summary": "left it"}))]
+        )
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine)
+
+        manifest = load_manifest(operator_layer)
+        flow = load_flow(operator_layer / "flows", "unship")
+        runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+        report = runner.run(
+            flow=flow,
+            task="unship the dead code",
+            engine_override="mock",
+            workdir=tmp_path,
+        )
+
+        assert report.success is False
+        # The real check gated the outcome — the marker is still present.
+        assert (tmp_path / "dead_marker").exists()
+
+
+def test_stackless_unship_gate_is_inconclusive_not_a_false_pass(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Hired with NO stack, the refactor gate resolves to only the smoke
+    placeholder: the shipped `unship` reports INCONCLUSIVE (never a false pass),
+    and the removal's edit is preserved — neither reverted nor committed."""
+    from alc.intake import load_flow
+
+    operator_layer = _hire_sweeper(tmp_path, stacks=[])
+
+    def _do_work(workdir: Path) -> None:
+        (workdir / "removed.txt").write_text("edited by remove\n")
+
+    engine = _ScriptedEngine(
+        [(_do_work, json.dumps({"status": "ok", "summary": "removed"}))]
+    )
+    monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine)
+
+    manifest = load_manifest(operator_layer)
+    flow = load_flow(operator_layer / "flows", "unship")
+    runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+    report = runner.run(
+        flow=flow,
+        task="unship a placeholder-only feature",
+        engine_override="mock",
+        workdir=tmp_path,
+    )
+
+    assert report.success is False
+    assert report.inconclusive is True
+    # The remove stage's edit survives (no revert, no commit).
+    assert (tmp_path / "removed.txt").exists()
+
+
+# The opt-in prove-absence flow, matching the commented recipe the pack ships:
+# map -> remove -> a gate that derives grep checks from what map found.
+_UNSHIP_PROVE_FLOW = """\
+name: unship-prove
+description: Opt-in prove-absence — map a feature's symbols, remove it, grep to prove each is gone.
+stages:
+  - name: map
+    blueprint: map
+  - name: remove
+    blueprint: refactor
+  - name: gate
+    blueprint: refactor
+    verify_only: true
+    derive_checks:
+      from_stage: map
+      field: symbols
+      shell_template: '! grep -rn {value} . --exclude-dir=.git --exclude-dir=.alc --exclude-dir=node_modules'
+"""
+
+
+class TestOptInDeriveChecksFlowStillProvesAbsence:
+    """The grep-based prove-absence strategy is retained as a documented opt-in.
+    Authored as a real flow (map -> remove -> gate WITH derive_checks) it still
+    proves absence end-to-end: an empty map is inconclusive, a surviving symbol
+    fails the derived grep check."""
+
+    def _hire(self, tmp_path: Path) -> Path:
+        operator_layer = _hire_sweeper(tmp_path, stacks=[])
+        (operator_layer / "flows" / "unship-prove.yaml").write_text(_UNSHIP_PROVE_FLOW)
+        return operator_layer
+
+    def test_empty_map_is_inconclusive_not_a_false_pass(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from alc.intake import load_flow
+
+        operator_layer = self._hire(tmp_path)
+
+        engine = _ScriptedEngine(
+            [
+                (None, json.dumps({"symbols": [], "summary": "nothing unique"})),
+                (None, json.dumps({"status": "ok", "summary": "removed"})),
+            ]
+        )
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine)
+
+        manifest = load_manifest(operator_layer)
+        flow = load_flow(operator_layer / "flows", "unship-prove")
+        runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
+        report = runner.run(
+            flow=flow,
+            task="unship a duplicate declaration",
+            engine_override="mock",
+            workdir=tmp_path,
+        )
+
+        assert report.success is False
+        assert report.inconclusive is True
+        assert report.stages[-1].inconclusive is True
+
+    def test_surviving_symbol_fails_the_derived_grep_check(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         from alc.intake import load_flow
@@ -760,7 +926,7 @@ class TestSweeperPackUnshipFlowProvesAbsenceForReal:
         monkeypatch.setattr("alc.runner.resolve_engine", lambda name, engines: engine)
 
         manifest = load_manifest(operator_layer)
-        flow = load_flow(operator_layer / "flows", "unship")
+        flow = load_flow(operator_layer / "flows", "unship-prove")
         runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
         report = runner.run(
             flow=flow,
@@ -770,4 +936,6 @@ class TestSweeperPackUnshipFlowProvesAbsenceForReal:
         )
 
         assert report.success is False
+        assert report.inconclusive is False
         assert report.stages[-1].success is False
+        assert "absence: dead_export: fail" in report.stages[-1].output_text

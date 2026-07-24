@@ -524,6 +524,12 @@ class FlowStage(BaseModel):
     # verify_only stage keeps resolving checks statically, byte-identical to before
     # this field existed.
     derive_checks: DeriveChecksSpec | None = None
+    # Only meaningful on a verify_only stage WITHOUT derive_checks: when the stage's
+    # resolved checks are nothing but the scaffold smoke placeholder, report the gate
+    # INCONCLUSIVE (the work ran but is UNVERIFIED) instead of vacuously passing on
+    # ["true"]. Inert when the resolved checks are real. Default False is
+    # byte-identical to before this field existed.
+    require_real_checks: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_ref(self) -> "FlowStage":
@@ -537,6 +543,11 @@ class FlowStage(BaseModel):
             raise ValueError(
                 f"FlowStage '{self.name}' is verify_only and must reference a "
                 "'blueprint' (it runs that blueprint's checks), not a 'specialist'."
+            )
+        if self.require_real_checks and not self.verify_only:
+            raise ValueError(
+                f"FlowStage '{self.name}' sets require_real_checks but is not "
+                "verify_only — the flag only gates a verify_only stage's checks."
             )
         return self
 
