@@ -1,12 +1,18 @@
 # test_branches_api.py — GET /branches, POST /branches/land, POST /branches/discard.
 # `client`/`registered`/`project` come from conftest.py (a non-git scaffolded
 # project); git-backed tests here layer a real LOCAL repo on top, mirroring
-# the house style (tests/test_land.py / tests/test_discard.py).
+# the house style (tests/test_land.py / tests/test_discard.py). The land-with-
+# delivery tests (push/PR) reuse tests/test_delivery.py's pattern: a local bare
+# repo standing in for the remote, and a FAKE `gh` binary on PATH — never a
+# real push and never the real `gh`.
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -36,6 +42,66 @@ def _make_branch(repo: Path, branch: str, filename: str, content: str) -> None:
 
 def _branch_exists(repo: Path, branch: str) -> bool:
     return _git(repo, "branch", "--list", branch).stdout.strip() != ""
+
+
+def _make_bare_remote(base: Path) -> Path:
+    """Initialize a local BARE repo standing in for a remote. Never a real push."""
+    remote = base / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True
+    )
+    return remote
+
+
+def _install_fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Put a fake `gh` binary first on PATH; return its backing state file.
+
+    `gh pr create ...` records its --base/--head/--title/--body into the state
+    file as JSON and prints a fake PR URL. The real `gh` is never invoked by
+    any test in this file. Mirrors tests/test_delivery.py's helper.
+    """
+    state = tmp_path / "gh.state.json"
+    bin_dir = tmp_path / "fakebin-gh"
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "gh"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys, pathlib\n"
+        f"STATE = pathlib.Path({str(state)!r})\n"
+        "args = sys.argv[1:]\n"
+        "def opt(name):\n"
+        "    return args[args.index(name) + 1] if name in args else None\n"
+        "STATE.write_text(json.dumps({\n"
+        "    'base': opt('--base'), 'head': opt('--head'),\n"
+        "    'title': opt('--title'), 'body': opt('--body'),\n"
+        "}))\n"
+        "print('https://example.invalid/pr/1')\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return state
+
+
+def _path_with_only_git(tmp_path: Path) -> str:
+    """Return a PATH entry that resolves `git` but nothing else (notably not `gh`)."""
+    bin_dir = tmp_path / "gitonly-bin"
+    bin_dir.mkdir(exist_ok=True)
+    git_path = shutil.which("git")
+    assert git_path is not None
+    link = bin_dir / "git"
+    if not link.exists():
+        link.symlink_to(git_path)
+    return str(bin_dir)
+
+
+def _add_delivery_to_manifest(
+    root: Path, mode: str, remote: str = "origin", base: str = "main"
+) -> None:
+    """Append a `delivery:` block to an already-scaffolded project's manifest.yaml."""
+    manifest_path = root / ".alc" / "manifest.yaml"
+    text = manifest_path.read_text()
+    text += f"\ndelivery:\n  mode: {mode}\n  remote: {remote}\n  base: {base}\n"
+    manifest_path.write_text(text)
 
 
 @pytest.fixture
@@ -89,6 +155,9 @@ class TestLandBranches:
         assert body["conflicted"] == []
         assert not _branch_exists(git_project, "alc/tick-aaa")
         assert not _branch_exists(git_project, "alc/tick-bbb")
+        # `mode` omitted, no manifest `delivery` -> local, byte-identical: no
+        # delivery is attempted at all, so there is no `warning` key either.
+        assert "warning" not in body
 
     def test_lands_only_the_named_branches(
         self, client, git_registered: str, git_project: Path
@@ -127,6 +196,134 @@ class TestLandBranches:
         resp = client.post(f"/api/projects/{registered}/branches/land", json={})
         assert resp.status_code == 409
         assert "git repository" in resp.json()["detail"]
+
+
+class TestLandBranchesDelivery:
+    """`mode: push|pr` (ui-phase-5.md T3/T4.1): the remote last mile wrapped
+    over `alc.delivery`, never a real push and never the real `gh`."""
+
+    def test_mode_push_pushes_the_landed_branch(
+        self, client, git_registered: str, git_project: Path, tmp_path: Path
+    ) -> None:
+        remote = _make_bare_remote(tmp_path)
+        _git(git_project, "remote", "add", "origin", str(remote))
+        _make_branch(git_project, "alc/tick-aaa", "a.txt", "a\n")
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/land",
+            json={"mode": "push"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["merged"] == ["alc/tick-aaa"]
+        assert body["warning"] is None
+        local_sha = _git(git_project, "rev-parse", "main").stdout.strip()
+        remote_sha = subprocess.run(
+            ["git", "--git-dir", str(remote), "rev-parse", "main"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert remote_sha == local_sha
+
+    def test_mode_push_failure_is_a_warning_not_a_500(
+        self, client, git_registered: str, git_project: Path
+    ) -> None:
+        # No remote configured -> the push step fails; the local land already succeeded.
+        _make_branch(git_project, "alc/tick-aaa", "a.txt", "a\n")
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/land",
+            json={"mode": "push"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["merged"] == ["alc/tick-aaa"]  # the local merge still succeeded
+        assert not _branch_exists(git_project, "alc/tick-aaa")  # ... and is really landed
+        assert body["warning"] is not None
+        assert "failed" in body["warning"]
+
+    def test_mode_pr_opens_a_pr_via_the_fake_gh(
+        self,
+        client,
+        git_registered: str,
+        git_project: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        remote = _make_bare_remote(tmp_path)
+        _git(git_project, "remote", "add", "origin", str(remote))
+        state = _install_fake_gh(tmp_path, monkeypatch)
+        _make_branch(git_project, "alc/tick-aaa", "a.txt", "a\n")
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/land",
+            json={"mode": "pr"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["merged"] == ["alc/tick-aaa"]
+        assert body["warning"] is None
+        data = json.loads(state.read_text())
+        assert data["base"] == "main"
+        assert data["head"] == "main"
+        assert "alc/tick-aaa" in data["body"]
+
+    def test_mode_pr_with_gh_missing_is_a_warning_not_a_500(
+        self,
+        client,
+        git_registered: str,
+        git_project: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        remote = _make_bare_remote(tmp_path)
+        _git(git_project, "remote", "add", "origin", str(remote))
+        _make_branch(git_project, "alc/tick-aaa", "a.txt", "a\n")
+        monkeypatch.setenv("PATH", _path_with_only_git(tmp_path))  # git yes, gh no
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/land",
+            json={"mode": "pr"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["merged"] == ["alc/tick-aaa"]
+        assert body["warning"] is not None
+        assert "gh not installed" in body["warning"]
+
+    def test_manifest_delivery_mode_is_used_when_the_body_omits_mode(
+        self, client, git_registered: str, git_project: Path, tmp_path: Path
+    ) -> None:
+        remote = _make_bare_remote(tmp_path)
+        _git(git_project, "remote", "add", "origin", str(remote))
+        _add_delivery_to_manifest(git_project, mode="push")
+        _make_branch(git_project, "alc/tick-aaa", "a.txt", "a\n")
+
+        resp = client.post(f"/api/projects/{git_registered}/branches/land", json={})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["warning"] is None
+        local_sha = _git(git_project, "rev-parse", "main").stdout.strip()
+        remote_sha = subprocess.run(
+            ["git", "--git-dir", str(remote), "rev-parse", "main"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert remote_sha == local_sha
+
+    def test_body_mode_overrides_the_manifest_delivery_mode(
+        self, client, git_registered: str, git_project: Path, tmp_path: Path
+    ) -> None:
+        # Manifest defaults to push; the request explicitly asks for local -> no delivery.
+        _add_delivery_to_manifest(git_project, mode="push")
+        _make_branch(git_project, "alc/tick-aaa", "a.txt", "a\n")
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/land",
+            json={"mode": "local"},
+        )
+        assert resp.status_code == 200
+        assert "warning" not in resp.json()
 
 
 class TestDiscardBranches:

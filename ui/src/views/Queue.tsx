@@ -28,7 +28,7 @@ import { ConfirmDialog, Dialog, DialogButton } from '../components/Dialog'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { EmptyState } from '../components/EmptyState'
-import { Field, NumberInput } from '../components/fields'
+import { Field, NumberInput, Select } from '../components/fields'
 import { Loading, Pill } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
 import type { Tone } from '../components/StatusDot'
@@ -39,7 +39,7 @@ import type {
   Branch,
   DoneTask,
   FlowReport,
-  MergeReport,
+  LandResult,
   PendingTask,
   QueueTask,
   Signal,
@@ -123,6 +123,16 @@ function apiMessage(error: unknown): string | null {
   return error ? 'Request failed.' : null
 }
 
+/** The delivery mode for Land's push/PR last mile (DeliverySpec, ui-phase-5.md
+ * T4): a single select for the whole section rather than one per row — a land
+ * always pushes the CURRENT branch (never a per-row target), so the choice is
+ * one decision for the panel, not one per unmerged branch. */
+const LAND_MODE_OPTIONS = [
+  { value: 'local', label: 'Local only' },
+  { value: 'push', label: 'Push' },
+  { value: 'pr', label: 'Open PR' },
+]
+
 /** The unmerged `alc/*` branches a drain leaves behind (each demand's own
  * worktree exit-commit), with Land/Discard actions. Lives on Queue rather
  * than a dedicated view: these branches are exactly what draining the queue
@@ -133,7 +143,8 @@ function BranchesSection() {
   const { data, isLoading } = useBranches(id)
   const land = useLandBranches(id)
   const discard = useDiscardBranches(id)
-  const [landReport, setLandReport] = useState<MergeReport | null>(null)
+  const [landMode, setLandMode] = useState<'local' | 'push' | 'pr'>('local')
+  const [landReport, setLandReport] = useState<LandResult | null>(null)
   const [discarding, setDiscarding] = useState<string | null>(null)
 
   if (isLoading) return null
@@ -151,7 +162,10 @@ function BranchesSection() {
 
   const doLand = (name: string) => {
     setLandReport(null)
-    land.mutate([name], { onSuccess: (report) => setLandReport(report) })
+    land.mutate(
+      { branches: [name], mode: landMode === 'local' ? undefined : landMode },
+      { onSuccess: (report) => setLandReport(report) },
+    )
   }
 
   const confirmDiscard = () => {
@@ -194,9 +208,21 @@ function BranchesSection() {
 
   return (
     <section>
-      <h3 className="mb-1 text-[11px] uppercase tracking-wide text-faint">
-        Branches <span className="tabular">({unmerged.length})</span>
-      </h3>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h3 className="text-[11px] uppercase tracking-wide text-faint">
+          Branches <span className="tabular">({unmerged.length})</span>
+        </h3>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-faint">Land mode</span>
+          <div className="w-32">
+            <Select
+              value={landMode}
+              onChange={(v) => setLandMode(v as 'local' | 'push' | 'pr')}
+              options={LAND_MODE_OPTIONS}
+            />
+          </div>
+        </div>
+      </div>
       {unmerged.length === 0 ? (
         <p className="text-[12px] text-faint">No unmerged alc/* branches.</p>
       ) : (
@@ -206,6 +232,9 @@ function BranchesSection() {
         <p className="mt-1 text-[11px] text-warn">
           Left for manual resolution: {landReport.conflicted.join(', ')}
         </p>
+      )}
+      {landReport?.warning && (
+        <p className="mt-1 text-[11px] text-warn">Delivery warning: {landReport.warning}</p>
       )}
       {apiMessage(land.error) && <p className="mt-1 text-[11px] text-error">{apiMessage(land.error)}</p>}
       {apiMessage(discard.error) && (

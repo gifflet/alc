@@ -16,10 +16,10 @@ import type {
   EngineInfo,
   ExecView,
   HireResult,
+  LandResult,
   LintResult,
   LoopLedger,
   LoopState,
-  MergeReport,
   MetricSeries,
   ProjectSummary,
   PromptDetail,
@@ -161,10 +161,16 @@ export const api = {
 
   // Branches (`alc land` / `alc discard`)
   getBranches: (id: string) => request<BranchList>(`${proj(id)}/branches`),
-  landBranches: (id: string, branches?: string[]) =>
-    request<MergeReport>(`${proj(id)}/branches/land`, {
+  /** `mode` overrides the project manifest's own `delivery.mode` for this land
+   * (DeliverySpec, `local`/`push`/`pr`); omitted keeps the wire body exactly
+   * what it was before delivery existed. */
+  landBranches: (id: string, branches?: string[], mode?: 'local' | 'push' | 'pr') =>
+    request<LandResult>(`${proj(id)}/branches/land`, {
       method: 'POST',
-      body: JSON.stringify(branches !== undefined ? { branches } : {}),
+      body: JSON.stringify({
+        ...(branches !== undefined ? { branches } : {}),
+        ...(mode !== undefined ? { mode } : {}),
+      }),
     }),
   discardBranches: (id: string, body: DiscardBranchesBody) =>
     request<DiscardResult>(`${proj(id)}/branches/discard`, {

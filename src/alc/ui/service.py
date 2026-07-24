@@ -23,11 +23,12 @@ from alc import runs as runs_core
 from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
 from alc.branches import delete_branches, list_alc_branches, prune_worktrees
+from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
-from alc.merge import auto_merge_branches
-from alc.models import FlowReport, QueueTask, Signal
+from alc.merge import MergeReport, auto_merge_branches
+from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
 from alc.packs import PACKS, pack_files
 from alc.policy import lint as _lint
 from alc.policy import validate_provisions, validate_prompts
@@ -769,10 +770,75 @@ def list_branches(root: Path) -> dict:
     }
 
 
-def land_branches(root: Path, branches: list[str] | None) -> dict:
+def _resolve_land_delivery(
+    root: Path, mode: str | None, remote: str | None, base: str | None
+) -> DeliverySpec:
+    """Resolve the effective DeliverySpec for a UI land request.
+
+    Mirrors `cli._resolve_delivery`'s override relationship: the manifest's
+    own `delivery` block is the default, and the request body's `mode` (else
+    `remote`/`base`, when given) overrides it for this call only. An
+    unreadable/missing manifest just falls back to `DeliverySpec()`'s own
+    default (mode: local) — same never-raise contract as the CLI resolver.
+    """
+    try:
+        delivery = load_manifest(operator_layer(root)).delivery or DeliverySpec()
+    except Exception:  # noqa: BLE001 — mirrors cli._resolve_delivery
+        delivery = DeliverySpec()
+
+    updates = {
+        k: v
+        for k, v in {"mode": mode, "remote": remote, "base": base}.items()
+        if v is not None
+    }
+    return delivery.model_copy(update=updates) if updates else delivery
+
+
+def _land_delivery_warning(
+    repo_root: Path, delivery: DeliverySpec, report: MergeReport
+) -> str | None:
+    """The remote last mile after a UI land (mirrors `cli._deliver`): push the
+    current branch, and for `mode: "pr"` also open a PR via `gh`.
+
+    Returns the failure reason as a warning string, or None once every
+    attempted step succeeded. NEVER raises: a push failure or a missing `gh`
+    is reported back, not thrown — the local merge this runs after already
+    succeeded, exactly like `alc land --push`/`--pr`.
+    """
+    branch = current_branch(repo_root)
+    if branch is None:
+        return "could not resolve the current branch; skipping delivery."
+
+    ok, message = push_branch(repo_root, delivery.remote, branch)
+    if not ok:
+        return message
+    if delivery.mode != "pr":
+        return None
+
+    files = changed_files(repo_root, delivery.base, branch)
+    body = build_pr_body(report, files)
+    ok, message = open_pr(repo_root, delivery.base, branch, f"alc land: {branch}", body)
+    return None if ok else message
+
+
+def land_branches(
+    root: Path,
+    branches: list[str] | None,
+    mode: str | None = None,
+    remote: str | None = None,
+    base: str | None = None,
+) -> dict:
     """Integrate *branches* (every unmerged `alc/*` branch when omitted); return the MergeReport.
 
     Mirrors `alc land --all`'s branch selection when no explicit list is given.
+
+    ``mode``/``remote``/``base`` are the UI's equivalent of `alc land`'s
+    ``--push``/``--pr`` flags (roadmap-phase-4.md T8's DeliverySpec, wrapped
+    for the UI, ui-phase-5.md T3): omitted, they fall back to the manifest's
+    own `delivery` block, then to ``local`` — the response then stays byte-
+    identical to before this existed (no ``warning`` key at all). For
+    ``push``/``pr``, a delivery failure is carried back as ``warning`` in the
+    response, NEVER a 500 — the local merge above already succeeded.
     """
     if not is_git_repo(root):
         raise ApiError("not inside a git repository", status=409)
@@ -783,7 +849,12 @@ def land_branches(root: Path, branches: list[str] | None) -> dict:
         else [b.name for b in list_alc_branches(repo_root) if not b.merged]
     )
     report = auto_merge_branches(repo_root, targets)
-    return {"merged": report.merged, "conflicted": report.conflicted}
+    result: dict = {"merged": report.merged, "conflicted": report.conflicted}
+
+    delivery = _resolve_land_delivery(root, mode, remote, base)
+    if delivery.mode != "local":
+        result["warning"] = _land_delivery_warning(repo_root, delivery, report)
+    return result
 
 
 def discard_branches(

@@ -249,6 +249,43 @@ describe('Branches', () => {
     const note = await screen.findByText(/left for manual resolution/i)
     expect(note.textContent).toContain('alc/tick-aaaaaaaa')
   })
+
+  it('sends the chosen delivery mode when landing', async () => {
+    const mock = installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches/land': { merged: ['alc/tick-aaaaaaaa'], conflicted: [], warning: null },
+      '/branches': { available: true, branches: [branch] },
+      '/signals': [],
+    })
+    renderWithProviders(<Queue />)
+
+    await screen.findByText('alc/tick-aaaaaaaa')
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'push')
+    await userEvent.click(screen.getByRole('button', { name: 'Land alc/tick-aaaaaaaa' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/branches/land'))
+    expect(post?.body).toEqual({ branches: ['alc/tick-aaaaaaaa'], mode: 'push' })
+  })
+
+  it('surfaces a delivery warning from a push/PR attempt without hiding the merge', async () => {
+    installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches/land': {
+        merged: ['alc/tick-aaaaaaaa'],
+        conflicted: [],
+        warning: 'git push origin main failed: no such remote',
+      },
+      '/branches': { available: true, branches: [branch] },
+      '/signals': [],
+    })
+    renderWithProviders(<Queue />)
+
+    await screen.findByText('alc/tick-aaaaaaaa')
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'pr')
+    await userEvent.click(screen.getByRole('button', { name: 'Land alc/tick-aaaaaaaa' }))
+
+    expect(await screen.findByText(/no such remote/i)).toBeInTheDocument()
+  })
 })
 
 const signal: Signal = {

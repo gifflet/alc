@@ -189,6 +189,15 @@ export interface MergeReport {
   conflicted: string[]
 }
 
+/** POST /branches/land's own response: a MergeReport plus the outcome of the
+ * optional push/PR delivery (DeliverySpec, `mode: "push"|"pr"`). `warning` is
+ * present only when a delivery step was attempted: `null` once every attempted
+ * step succeeded, the failure reason otherwise — never swallowed, and never a
+ * sign the local merge above failed too (it already succeeded either way). */
+export interface LandResult extends MergeReport {
+  warning?: string | null
+}
+
 /** Outcome of POST /branches/discard. */
 export interface DiscardResult {
   deleted: string[]

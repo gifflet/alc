@@ -293,11 +293,14 @@ export function useRetryQueue(id: string) {
   })
 }
 
-/** Integrate `branches` (every unmerged one when omitted, mirrors `alc land --all`). */
+/** Integrate `branches` (every unmerged one when omitted, mirrors `alc land --all`).
+ * `mode` overrides the manifest's own delivery mode for this land only (push/PR
+ * last mile, DeliverySpec) — omitted keeps today's local-only wire body. */
 export function useLandBranches(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (branches?: string[]) => api.landBranches(id, branches),
+    mutationFn: (body: { branches?: string[]; mode?: 'local' | 'push' | 'pr' }) =>
+      api.landBranches(id, body.branches, body.mode),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.branches(id) }),
   })
 }
