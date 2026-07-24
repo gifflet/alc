@@ -121,7 +121,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <p className="text-[12px] text-muted">{message}</p>
+      <div className="text-[12px] text-muted">{message}</div>
     </Dialog>
   )
 }

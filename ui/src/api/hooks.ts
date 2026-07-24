@@ -293,6 +293,16 @@ export function useEnqueueTask(id: string) {
   })
 }
 
+/** Batch enqueue (ui-phase-5.md T9) — several tasks in one request; invalidates
+ * the queue once, same as the single-task mutation. */
+export function useEnqueueBatch(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (tasks: Partial<QueueTask>[]) => api.enqueueBatch(id, tasks),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.queue(id) }),
+  })
+}
+
 export function useDeletePending(id: string) {
   const qc = useQueryClient()
   return useMutation({

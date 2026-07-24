@@ -145,6 +145,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(task),
     }),
+  /** Batch enqueue (ui-phase-5.md T9): each entry has the same shape as a single
+   * task, sharing no write path with `enqueueTask` beyond the backend's own
+   * per-item `enqueue`. */
+  enqueueBatch: (id: string, tasks: Partial<QueueTask>[]) =>
+    request<{ stems: string[] }>(`${proj(id)}/queue/batch`, {
+      method: 'POST',
+      body: JSON.stringify({ tasks }),
+    }),
   deletePending: (id: string, stem: string) =>
     request<void>(`${proj(id)}/queue/${encodeURIComponent(stem)}`, { method: 'DELETE' }),
   retryQueue: (id: string, body: { stem?: string; all?: boolean }) =>

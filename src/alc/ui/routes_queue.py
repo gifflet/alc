@@ -17,6 +17,16 @@ class RetryBody(BaseModel):
     all: bool = False
 
 
+class BatchEnqueueBody(BaseModel):
+    """Body for POST /queue/batch: several QueueTask payloads in one request.
+
+    Each item has the same shape as the single POST /queue body — no separate
+    schema, so a batch entry accepts exactly what a solo enqueue does.
+    """
+
+    tasks: list[dict]
+
+
 # ---------------------------------------------------------------------------
 # Queue
 # ---------------------------------------------------------------------------
@@ -30,6 +40,11 @@ def get_queue(ctx: ProjectContext = Depends(get_project)) -> dict:
 @router.post("/queue", status_code=201)
 def enqueue(task: dict = Body(...), ctx: ProjectContext = Depends(get_project)) -> dict:
     return {"stem": service.enqueue(ctx.root, task)}
+
+
+@router.post("/queue/batch", status_code=201)
+def enqueue_batch(body: BatchEnqueueBody, ctx: ProjectContext = Depends(get_project)) -> dict:
+    return {"stems": service.enqueue_batch(ctx.root, body.tasks)}
 
 
 @router.delete("/queue/{stem}", status_code=204)

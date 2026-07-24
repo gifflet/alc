@@ -15,6 +15,7 @@ import {
   useBranches,
   useDeletePending,
   useDiscardBranches,
+  useEnqueueBatch,
   useEnqueueTask,
   useIngestSignal,
   useLandBranches,
@@ -28,7 +29,7 @@ import { ConfirmDialog, Dialog, DialogButton } from '../components/Dialog'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { EmptyState } from '../components/EmptyState'
-import { Field, NumberInput, Select } from '../components/fields'
+import { Checkbox, Field, NumberInput, Select } from '../components/fields'
 import { Loading, Pill } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
 import type { Tone } from '../components/StatusDot'
@@ -146,6 +147,9 @@ function BranchesSection() {
   const [landMode, setLandMode] = useState<'local' | 'push' | 'pr'>('local')
   const [landReport, setLandReport] = useState<LandResult | null>(null)
   const [discarding, setDiscarding] = useState<string | null>(null)
+  const [pruneWorktrees, setPruneWorktrees] = useState(false)
+  const [gcBundles, setGcBundles] = useState(false)
+  const [olderThanDays, setOlderThanDays] = useState<number | ''>(30)
 
   if (isLoading) return null
 
@@ -170,7 +174,20 @@ function BranchesSection() {
 
   const confirmDiscard = () => {
     if (!discarding) return
-    discard.mutate({ branches: [discarding] }, { onSuccess: () => setDiscarding(null) })
+    discard.mutate(
+      {
+        branches: [discarding],
+        ...(pruneWorktrees ? { worktrees: true } : {}),
+        ...(gcBundles && olderThanDays !== '' ? { bundles: { older_than_days: olderThanDays } } : {}),
+      },
+      {
+        onSuccess: () => {
+          setDiscarding(null)
+          setPruneWorktrees(false)
+          setGcBundles(false)
+        },
+      },
+    )
   }
 
   const columns: Column<Branch>[] = [
@@ -243,7 +260,29 @@ function BranchesSection() {
       {discarding && (
         <ConfirmDialog
           title="Discard branch?"
-          message={`This permanently deletes ${discarding}. This cannot be undone.`}
+          message={
+            <div className="flex flex-col gap-2">
+              <p>{`This permanently deletes ${discarding}. This cannot be undone.`}</p>
+              <Checkbox
+                checked={pruneWorktrees}
+                onChange={setPruneWorktrees}
+                label="Also prune orphaned git worktrees"
+              />
+              <Checkbox
+                checked={gcBundles}
+                onChange={setGcBundles}
+                label="Also delete bundle files older than…"
+              />
+              {gcBundles && (
+                <div className="flex items-center gap-2 pl-5">
+                  <div className="w-20">
+                    <NumberInput value={olderThanDays} onChange={setOlderThanDays} placeholder="30" />
+                  </div>
+                  <span className="text-[11px] text-faint">days</span>
+                </div>
+              )}
+            </div>
+          }
           confirmLabel="Discard"
           onConfirm={confirmDiscard}
           onCancel={() => setDiscarding(null)}
@@ -539,6 +578,7 @@ export function Queue() {
   const id = useProjectId()
   const { data, isLoading } = useQueue(id)
   const enqueue = useEnqueueTask(id)
+  const enqueueBatch = useEnqueueBatch(id)
   const retry = useRetryQueue(id)
   const del = useDeletePending(id)
   const [enqueuing, setEnqueuing] = useState(false)
@@ -555,6 +595,14 @@ export function Queue() {
       onSuccess: () => {
         setEnqueuing(false)
         enqueue.reset()
+      },
+    })
+
+  const submitEnqueueBatch = (tasks: Parameters<typeof enqueueBatch.mutate>[0]) =>
+    enqueueBatch.mutate(tasks, {
+      onSuccess: () => {
+        setEnqueuing(false)
+        enqueueBatch.reset()
       },
     })
 
@@ -639,11 +687,19 @@ export function Queue() {
           onClose={() => {
             setEnqueuing(false)
             enqueue.reset()
+            enqueueBatch.reset()
           }}
           onSubmit={submitEnqueue}
+          onSubmitBatch={submitEnqueueBatch}
           pending={pending}
-          saving={enqueue.isPending}
-          error={enqueue.error instanceof ApiError ? enqueue.error.message : null}
+          saving={enqueue.isPending || enqueueBatch.isPending}
+          error={
+            enqueue.error instanceof ApiError
+              ? enqueue.error.message
+              : enqueueBatch.error instanceof ApiError
+                ? enqueueBatch.error.message
+                : null
+          }
         />
       )}
 

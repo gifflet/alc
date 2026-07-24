@@ -10,15 +10,25 @@ function firstLine(text: string): string {
   return text.split('\n')[0]
 }
 
+/** Split a batch textarea into one task per non-blank line. */
+function batchLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 export function EnqueueDialog({
   onClose,
   onSubmit,
+  onSubmitBatch,
   pending,
   saving,
   error,
 }: {
   onClose: () => void
   onSubmit: (task: Partial<QueueTask>) => void
+  onSubmitBatch: (tasks: Partial<QueueTask>[]) => void
   pending: PendingTask[]
   saving: boolean
   error: string | null
@@ -27,9 +37,11 @@ export function EnqueueDialog({
   const flows = useCollection(id, 'flows').data ?? []
   const specialists = useCollection(id, 'specialists').data ?? []
 
+  const [mode, setMode] = useState<'single' | 'batch'>('single')
   const [kind, setKind] = useState<'flow' | 'specialist'>('flow')
   const [name, setName] = useState('')
   const [task, setTask] = useState('')
+  const [batchText, setBatchText] = useState('')
   const [isolate, setIsolate] = useState(true)
   const [taskId, setTaskId] = useState('')
   const [deps, setDeps] = useState<string[]>([])
@@ -48,14 +60,20 @@ export function EnqueueDialog({
   const toggleDep = (depId: string) =>
     setDeps((cur) => (cur.includes(depId) ? cur.filter((d) => d !== depId) : [...cur, depId]))
 
+  const tasks = batchLines(batchText)
+
   const submit = () => {
+    if (mode === 'batch') {
+      onSubmitBatch(tasks.map((line) => ({ kind, name, task: line, isolate })))
+      return
+    }
     const payload: Partial<QueueTask> = { kind, name, task, isolate }
     if (taskId.trim()) payload.id = taskId.trim()
     if (deps.length) payload.depends_on = deps
     onSubmit(payload)
   }
 
-  const canSubmit = Boolean(name && task.trim())
+  const canSubmit = mode === 'batch' ? Boolean(name && tasks.length > 0) : Boolean(name && task.trim())
 
   return (
     <Dialog
@@ -68,13 +86,13 @@ export function EnqueueDialog({
             Cancel
           </DialogButton>
           <DialogButton onClick={submit} disabled={!canSubmit || saving}>
-            Enqueue
+            {mode === 'batch' && tasks.length > 0 ? `Enqueue ${tasks.length}` : 'Enqueue'}
           </DialogButton>
         </>
       }
     >
       <div className="flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Field label="Kind">
             <Select
               value={kind}
@@ -92,20 +110,46 @@ export function EnqueueDialog({
               options={units.map((u) => ({ value: u.name, label: u.name }))}
             />
           </Field>
-        </div>
-
-        <Field label="Task">
-          <TextArea value={task} onChange={setTask} rows={5} placeholder="Describe the task…" />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Checkbox checked={isolate} onChange={setIsolate} label="Run in an isolated worktree" />
-          <Field label="Id (optional)">
-            <TextInput value={taskId} onChange={setTaskId} placeholder="slug" mono />
+          <Field label="Mode">
+            <Select
+              value={mode}
+              onChange={(v) => setMode(v as 'single' | 'batch')}
+              options={[
+                { value: 'single', label: 'One task' },
+                { value: 'batch', label: 'Batch' },
+              ]}
+            />
           </Field>
         </div>
 
-        {depOptions.length > 0 && (
+        {mode === 'single' ? (
+          <Field label="Task">
+            <TextArea value={task} onChange={setTask} rows={5} placeholder="Describe the task…" />
+          </Field>
+        ) : (
+          <Field
+            label="Tasks (one per line)"
+            hint={`${tasks.length} task(s) will be enqueued, sharing kind/unit/isolate above.`}
+          >
+            <TextArea
+              value={batchText}
+              onChange={setBatchText}
+              rows={6}
+              placeholder={'Describe each task on its own line…'}
+            />
+          </Field>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <Checkbox checked={isolate} onChange={setIsolate} label="Run in an isolated worktree" />
+          {mode === 'single' && (
+            <Field label="Id (optional)">
+              <TextInput value={taskId} onChange={setTaskId} placeholder="slug" mono />
+            </Field>
+          )}
+        </div>
+
+        {mode === 'single' && depOptions.length > 0 && (
           <Field label="Depends on">
             <div className="flex flex-col gap-1 rounded-panel border border-border bg-base p-2">
               {depOptions.map((d) => (

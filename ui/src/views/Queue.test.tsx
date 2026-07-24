@@ -109,6 +109,34 @@ describe('Queue actions', () => {
     expect(post?.body).toMatchObject({ kind: 'flow', name: 'ship', task: 'do the thing', isolate: true })
   })
 
+  it('enqueues a batch of tasks sharing kind/unit/isolate, one per line', async () => {
+    const mock = installFetch({
+      '/queue/batch': { stems: ['new-1', 'new-2'] },
+      '/queue/retry': { enqueued: [] },
+      '/queue': { pending: [], done: [] },
+      '/flows': [{ name: 'ship', mtime: 1 }],
+      '/specialists': [],
+      '/branches': { available: false, branches: [] },
+      '/signals': [],
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Enqueue task/ }))
+    await userEvent.selectOptions(screen.getByLabelText('Mode'), 'batch')
+    fireEvent.change(screen.getByLabelText(/Tasks \(one per line\)/), {
+      target: { value: 'first task\nsecond task' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /Enqueue 2/ }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/queue/batch'))
+    expect(post?.body).toEqual({
+      tasks: [
+        { kind: 'flow', name: 'ship', task: 'first task', isolate: true },
+        { kind: 'flow', name: 'ship', task: 'second task', isolate: true },
+      ],
+    })
+  })
+
   it('retries a single failure', async () => {
     const mock = installFetch({
       '/queue/retry': { enqueued: ['ship-x'] },
@@ -222,6 +250,35 @@ describe('Branches', () => {
 
     const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/branches/discard'))
     expect(post?.body).toEqual({ branches: ['alc/tick-aaaaaaaa'] })
+  })
+
+  it('discards with worktrees pruning and bundle GC when both are checked', async () => {
+    const mock = installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches/discard': {
+        deleted: ['alc/tick-aaaaaaaa'],
+        pruned_worktrees: 1,
+        deleted_bundles: ['old.jsonl'],
+      },
+      '/branches': { available: true, branches: [branch] },
+      '/signals': [],
+    })
+    renderWithProviders(<Queue />)
+
+    await screen.findByText('alc/tick-aaaaaaaa')
+    await userEvent.click(screen.getByRole('button', { name: 'Discard alc/tick-aaaaaaaa' }))
+
+    await userEvent.click(screen.getByLabelText('Also prune orphaned git worktrees'))
+    await userEvent.click(screen.getByLabelText(/Also delete bundle files older than/))
+    fireEvent.change(screen.getByPlaceholderText('30'), { target: { value: '45' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/branches/discard'))
+    expect(post?.body).toEqual({
+      branches: ['alc/tick-aaaaaaaa'],
+      worktrees: true,
+      bundles: { older_than_days: 45 },
+    })
   })
 
   it('shows a clear empty state outside a git repository', async () => {

@@ -321,6 +321,22 @@ def enqueue(root: Path, data: dict) -> str:
     return stem
 
 
+def enqueue_batch(root: Path, items: list[dict]) -> list[str]:
+    """Validate every item as a QueueTask BEFORE writing any of them; return their stems.
+
+    Mirrors `alc enqueue --from-file`'s own guarantee (cli.py's
+    `_enqueue_entries_from_file`/`cmd_enqueue` comment): a typo in one entry
+    never leaves a half-written batch behind. Each valid item is then written
+    through `enqueue` itself — there is no second write path.
+    """
+    for data in items:
+        try:
+            QueueTask.model_validate(data)
+        except ValidationError as exc:
+            raise ApiError(f"invalid queue task: {exc}", status=422) from exc
+    return [enqueue(root, data) for data in items]
+
+
 def delete_pending(root: Path, stem: str) -> None:
     """Delete a pending task file by stem; raise ApiError(404) when absent."""
     path = _queue_dir(root) / f"{stem}.yaml"

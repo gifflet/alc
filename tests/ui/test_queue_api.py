@@ -128,6 +128,63 @@ class TestEnqueue:
         assert resp.status_code == 422
 
 
+class TestBatchEnqueue:
+    def test_batch_enqueue_writes_n_pending_tasks(
+        self, client, registered: str, project: Path
+    ) -> None:
+        resp = client.post(
+            f"/api/projects/{registered}/queue/batch",
+            json={
+                "tasks": [
+                    {"flow": "ship", "task": "alpha", "isolate": False},
+                    {"flow": "ship", "task": "beta", "isolate": False},
+                    {"flow": "ship", "task": "gamma", "isolate": False},
+                ]
+            },
+        )
+        assert resp.status_code == 201
+        stems = resp.json()["stems"]
+        assert len(stems) == 3
+        for stem in stems:
+            assert (project / ".alc" / "queue" / f"{stem}.yaml").exists()
+
+        pending = client.get(f"/api/projects/{registered}/queue").json()["pending"]
+        assert len(pending) == 3
+        assert {p["task"]["task"] for p in pending} == {"alpha", "beta", "gamma"}
+
+    def test_batch_enqueue_invalid_entry_writes_none_of_the_batch(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # The second entry is missing 'task' -> the whole batch is rejected
+        # before anything is written (mirrors `alc enqueue --from-file`).
+        resp = client.post(
+            f"/api/projects/{registered}/queue/batch",
+            json={
+                "tasks": [
+                    {"flow": "ship", "task": "alpha", "isolate": False},
+                    {"flow": "ship"},
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        pending = client.get(f"/api/projects/{registered}/queue").json()["pending"]
+        assert pending == []
+
+    def test_single_enqueue_path_is_unchanged(self, client, registered: str, project: Path) -> None:
+        # The single-task endpoint keeps writing exactly one task, same as before
+        # batch enqueue existed.
+        resp = client.post(
+            f"/api/projects/{registered}/queue",
+            json={"flow": "ship", "task": "solo", "engine": "mock", "isolate": False},
+        )
+        assert resp.status_code == 201
+        assert "stem" in resp.json()
+        assert "stems" not in resp.json()
+        pending = client.get(f"/api/projects/{registered}/queue").json()["pending"]
+        assert len(pending) == 1
+        assert pending[0]["task"]["task"] == "solo"
+
+
 class TestDeletePending:
     def test_delete_pending(self, client, registered: str, project: Path) -> None:
         stem = client.post(
