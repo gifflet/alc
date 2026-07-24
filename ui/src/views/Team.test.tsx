@@ -93,6 +93,47 @@ describe('Team hire', () => {
   })
 })
 
+describe('Team retire', () => {
+  it('retires a member only after confirmation', async () => {
+    const mock = installFetch({
+      '/team': oneHiredMember,
+      '/team/retire': { moved: ['.alc/loops/retired/sweep.yaml'] },
+    })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire builder' }))
+
+    // The confirmation copy makes clear this archives loops, not deletes them.
+    expect(await screen.findByText(/archives/i)).toBeInTheDocument()
+
+    // The mutation must not fire before the confirm dialog is accepted.
+    expect(
+      mock.calls.some((c) => c.method === 'POST' && c.url.endsWith('/team/retire')),
+    ).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retire' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/team/retire'))
+    expect(post?.body).toEqual({ archetype: 'builder' })
+  })
+
+  it('cancelling the confirm dialog never fires the mutation', async () => {
+    const mock = installFetch({
+      '/team': oneHiredMember,
+      '/team/retire': { moved: [] },
+    })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire builder' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(
+      mock.calls.some((c) => c.method === 'POST' && c.url.endsWith('/team/retire')),
+    ).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Retire' })).not.toBeInTheDocument()
+  })
+})
+
 describe('Team Mix Health', () => {
   it('shows a clear "no data yet" when total_runs is 0', async () => {
     installFetch({ '/team': { members: [], mix_health: emptyHealth } })

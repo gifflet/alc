@@ -376,3 +376,18 @@ export function useHireArchetype(id: string) {
     },
   })
 }
+
+/** Retire archives a member's loop file(s) into `loops/retired/` (never
+ * deletes) — invalidates the roster and every collection, same as hire,
+ * since a retire moves loop files. Destructive by convention — the caller
+ * (Team) confirms before firing this. */
+export function useRetireMember(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (archetype: string) => api.retireMember(id, archetype),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.team(id) })
+      qc.invalidateQueries({ queryKey: keys.collections(id) })
+    },
+  })
+}

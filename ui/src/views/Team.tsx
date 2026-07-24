@@ -7,12 +7,13 @@
 // endpoint for them, so hard-coding the same five names here is the direct,
 // boring option instead of a new endpoint just to list them.
 import { useState } from 'react'
-import { UserPlus, Users } from 'lucide-react'
+import { UserMinus, UserPlus, Users } from 'lucide-react'
 import { ApiError } from '../api/client'
-import { useHireArchetype, useTeam } from '../api/hooks'
+import { useHireArchetype, useRetireMember, useTeam } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { formatCost } from '../lib/format'
 import { formatNetLines } from '../lib/scorecard'
+import { ConfirmDialog } from '../components/Dialog'
 import { Loading, Pill } from '../components/primitives'
 import { StatusDot } from '../components/StatusDot'
 import type { Tone } from '../components/StatusDot'
@@ -31,14 +32,31 @@ function apiMessage(error: unknown): string | null {
   return error ? 'Request failed.' : null
 }
 
-function MemberCard({ member }: { member: TeamMember }) {
+function MemberCard({
+  member,
+  onRetire,
+}: {
+  member: TeamMember
+  onRetire: (archetype: string) => void
+}) {
   return (
     <div className="rounded-panel border border-border bg-panel p-3">
-      <div className="flex items-baseline gap-2">
-        <span className="text-[12px] font-medium capitalize text-primary">{member.archetype}</span>
-        <span className="text-[11px] text-faint">
-          {member.files.length} file{member.files.length === 1 ? '' : 's'}
-        </span>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[12px] font-medium capitalize text-primary">{member.archetype}</span>
+          <span className="text-[11px] text-faint">
+            {member.files.length} file{member.files.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <button
+          type="button"
+          aria-label={`Retire ${member.archetype}`}
+          onClick={() => onRetire(member.archetype)}
+          className="flex shrink-0 items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[11px] text-muted hover:bg-hover hover:text-error"
+        >
+          <UserMinus className="h-3 w-3" />
+          Retire
+        </button>
       </div>
       <ul className="mt-1.5 flex flex-col gap-0.5">
         {member.files.map((f) => (
@@ -137,7 +155,9 @@ export function Team() {
   const id = useProjectId()
   const { data, isLoading } = useTeam(id)
   const hire = useHireArchetype(id)
+  const retire = useRetireMember(id)
   const [hiring, setHiring] = useState<string | null>(null)
+  const [retiring, setRetiring] = useState<string | null>(null)
 
   if (isLoading) return <Loading />
 
@@ -149,6 +169,11 @@ export function Team() {
   const doHire = (archetype: string) => {
     setHiring(archetype)
     hire.mutate({ archetype }, { onSettled: () => setHiring(null) })
+  }
+
+  const confirmRetire = () => {
+    if (!retiring) return
+    retire.mutate(retiring, { onSuccess: () => setRetiring(null) })
   }
 
   return (
@@ -165,9 +190,12 @@ export function Team() {
         ) : (
           <div className="flex flex-col gap-2">
             {members.map((m) => (
-              <MemberCard key={m.archetype} member={m} />
+              <MemberCard key={m.archetype} member={m} onRetire={setRetiring} />
             ))}
           </div>
+        )}
+        {apiMessage(retire.error) && (
+          <p className="mt-2 text-[11px] text-error">{apiMessage(retire.error)}</p>
         )}
       </section>
 
@@ -196,6 +224,16 @@ export function Team() {
         <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Mix Health</h2>
         {health && <MixHealthSection health={health} />}
       </section>
+
+      {retiring && (
+        <ConfirmDialog
+          title={`Retire ${retiring}?`}
+          message={`This archives ${retiring}'s loop(s) into loops/retired/ — it does not delete anything, and ${retiring} can be re-hired later.`}
+          confirmLabel="Retire"
+          onConfirm={confirmRetire}
+          onCancel={() => setRetiring(null)}
+        />
+      )}
     </div>
   )
 }

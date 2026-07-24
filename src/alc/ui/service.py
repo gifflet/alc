@@ -711,6 +711,43 @@ def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
     return {"written": written, "lint": lint_project(root)}
 
 
+def team_retire(root: Path, member: str) -> dict:
+    """Archive *member*'s loop file(s) into `retired/`, never delete; return {moved}.
+
+    Mirrors `_team_retire`'s contract exactly: only the member's LOOP files
+    (`pack_files`'s entries under `manifest.loops_dir/*.yaml`) move — its
+    blueprints, flows, and specialists are left untouched. A member with no
+    loop(s) on disk is a no-op (`{"moved": []}`), never an error, mirroring
+    `_team_retire`'s "has no loop(s) on disk to retire" case. An unknown
+    archetype is ApiError(404), naming the valid ones (`PACKS`'s keys).
+    """
+    if member not in PACKS:
+        available = ", ".join(sorted(PACKS)) or "none yet"
+        raise ApiError(f"no pack named '{member}' yet (available: {available})", status=404)
+
+    ol = operator_layer(root)
+    manifest = load_manifest(ol)
+    loops_prefix = f"{manifest.loops_dir}/"
+
+    files = pack_files(member, detect_stacks(root))
+    loop_files = sorted(
+        rel for rel in files if rel.startswith(loops_prefix) and rel.endswith(".yaml")
+    )
+
+    retired_dir = loops_dir(manifest, ol) / "retired"
+    moved: list[str] = []
+    for rel_path in loop_files:
+        src = root / rel_path
+        if not src.exists():
+            continue
+        retired_dir.mkdir(parents=True, exist_ok=True)
+        dest = retired_dir / src.name
+        src.rename(dest)
+        moved.append(str(dest.relative_to(root)))
+
+    return {"moved": moved}
+
+
 # ---------------------------------------------------------------------------
 # Branches (`alc land` / `alc discard` — thin over branches.py / merge.py)
 # ---------------------------------------------------------------------------

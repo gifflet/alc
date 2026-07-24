@@ -18,6 +18,16 @@ class HireBody(BaseModel):
     force: bool = False
 
 
+class RetireBody(BaseModel):
+    """Body for POST /team/retire: the archetype (member) to retire.
+
+    Named `archetype`, not `member`, matching `HireBody` — the two verbs act
+    on the same roster entry, so their bodies stay consistent.
+    """
+
+    archetype: str
+
+
 @router.get("/team")
 def get_team(ctx: ProjectContext = Depends(get_project)) -> dict:
     return service.team_roster(ctx.root)
@@ -32,18 +42,28 @@ def hire(
     return result
 
 
-def _notify_files_changed(request: Request, ctx: ProjectContext, written: list[str]) -> None:
-    """Publish the collection-changed WS event(s) a hire's writes produce.
+@router.post("/team/retire")
+def retire(
+    body: RetireBody, request: Request, ctx: ProjectContext = Depends(get_project)
+) -> dict:
+    result = service.team_retire(ctx.root, body.archetype)
+    _notify_files_changed(request, ctx, result["moved"])
+    return result
+
+
+def _notify_files_changed(request: Request, ctx: ProjectContext, paths: list[str]) -> None:
+    """Publish the collection-changed WS event(s) a hire's writes or a retire's
+    moves produce.
 
     Reuses `watch.classify_change` — the SAME classifier the file watcher runs
-    on disk changes — so a hire announces exactly the events the project tree
-    and the roster already know how to react to; no new WS message type. One
-    message per distinct (type, resource/name) pair, deduplicated, since a
-    pack commonly writes several files under the same collection.
+    on disk changes — so a hire/retire announces exactly the events the project
+    tree and the roster already know how to react to; no new WS message type.
+    One message per distinct (type, resource/name) pair, deduplicated, since a
+    pack commonly touches several files under the same collection.
     """
     bus = request.app.state.bus
     seen: set[tuple[tuple[str, object], ...]] = set()
-    for rel_path in written:
+    for rel_path in paths:
         message = classify_change(ctx.operator_layer, ctx.root / rel_path)
         if message is None:
             continue

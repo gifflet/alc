@@ -27,6 +27,7 @@ import type {
   Queue,
   QueueTask,
   RawParsed,
+  RetireResult,
   RunArtifacts,
   RunConfig,
   RunDetail,
@@ -193,6 +194,11 @@ export const api = {
     request<HireResult>(`${proj(id)}/team/hire`, {
       method: 'POST',
       body: JSON.stringify({ archetype, force }),
+    }),
+  retireMember: (id: string, archetype: string) =>
+    request<RetireResult>(`${proj(id)}/team/retire`, {
+      method: 'POST',
+      body: JSON.stringify({ archetype }),
     }),
 
   // Health / metrics

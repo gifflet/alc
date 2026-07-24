@@ -393,6 +393,11 @@ export interface HireResult {
   lint: LintResult
 }
 
+/** POST /team/retire's response: the loop file(s) archived into `loops/retired/`. */
+export interface RetireResult {
+  moved: string[]
+}
+
 // ---------------------------------------------------------------------------
 // Metrics (metrics.py MetricPoint) — one measurement in a check's time series.
 // ---------------------------------------------------------------------------

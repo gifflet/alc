@@ -126,6 +126,69 @@ class TestHire:
             assert ("config_changed", "flows") in kinds
 
 
+class TestRetire:
+    def test_retire_unknown_archetype_is_404(self, client, registered: str) -> None:
+        resp = client.post(
+            f"/api/projects/{registered}/team/retire", json={"archetype": "nosuchpack"}
+        )
+        assert resp.status_code == 404
+        assert "nosuchpack" in resp.json()["detail"]
+
+    def test_retire_a_member_with_no_loops_is_a_no_op(
+        self, client, registered: str
+    ) -> None:
+        client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "builder"})
+
+        resp = client.post(
+            f"/api/projects/{registered}/team/retire", json={"archetype": "builder"}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"moved": []}
+
+    def test_retire_archives_the_loop_and_it_leaves_the_rosters_live_files(
+        self, client, registered: str, project: Path
+    ) -> None:
+        hired = client.post(
+            f"/api/projects/{registered}/team/hire", json={"archetype": "sweeper"}
+        )
+        assert hired.status_code == 201
+
+        resp = client.post(
+            f"/api/projects/{registered}/team/retire", json={"archetype": "sweeper"}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"moved": [".alc/loops/retired/sweep.yaml"]}
+
+        assert not (project / ".alc" / "loops" / "sweep.yaml").exists()
+        assert (project / ".alc" / "loops" / "retired" / "sweep.yaml").is_file()
+
+        # Only the loop moved — the pack's other files (blueprints, specialist,
+        # flow) are untouched, so the member stays in the roster with fewer live
+        # files; ".alc/loops/sweep.yaml" itself no longer exists on disk.
+        roster = client.get(f"/api/projects/{registered}/team").json()
+        sweeper = next(m for m in roster["members"] if m["archetype"] == "sweeper")
+        assert ".alc/loops/sweep.yaml" not in sweeper["files"]
+        assert ".alc/specialists/janitor.yaml" in sweeper["files"]
+
+    def test_retire_publishes_a_loop_changed_ws_event(
+        self, client, registered: str
+    ) -> None:
+        client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "sweeper"})
+
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "subscribe", "project_id": registered})
+            assert ws.receive_json()["type"] == "subscribed"
+
+            resp = client.post(
+                f"/api/projects/{registered}/team/retire", json={"archetype": "sweeper"}
+            )
+            assert resp.status_code == 200
+
+            message = ws.receive_json()
+            assert message["type"] == "loop_changed"
+            assert message["name"] == "sweep"
+
+
 class TestMixHealth:
     def test_no_stage_declared_is_unjudged_breakdown(
         self, client, registered: str, project: Path
