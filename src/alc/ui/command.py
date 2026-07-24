@@ -51,6 +51,16 @@ _COMMANDS: dict[str, _Spec] = {
         positionals=("name", "task"),
         value_flags=("engine",),
     ),
+    "explore": _Spec(
+        # `cmd_explore`'s --engine/--tier are REPEATABLE (argparse action="append"),
+        # crossed as a cartesian product; _Spec has no notion of a repeated flag,
+        # so this whitelist only exposes a SINGLE engine and tier — the closest
+        # safe subset, not the full cartesian explore. --variants alone (no
+        # engine/tier) still covers the common case: N copies of the manifest's
+        # default engine/the Blueprint's own tier.
+        positionals=("blueprint", "task"),
+        value_flags=("variants", "engine", "tier"),
+    ),
     "tick": _Spec(value_flags=("concurrency",)),
     "conduct": _Spec(
         positionals=("goal",),

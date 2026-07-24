@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import time
 import uuid
@@ -19,11 +20,14 @@ from pydantic import ValidationError
 from alc import artifacts as artifacts_core
 from alc import metrics as metrics_core
 from alc import runs as runs_core
+from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
+from alc.branches import delete_branches, list_alc_branches, prune_worktrees
 from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
-from alc.models import FlowReport, QueueTask
+from alc.merge import auto_merge_branches
+from alc.models import FlowReport, QueueTask, Signal
 from alc.packs import PACKS, pack_files
 from alc.policy import lint as _lint
 from alc.policy import validate_provisions, validate_prompts
@@ -44,6 +48,8 @@ from alc.scaffold import detect_stacks
 from alc.stagepolicy import lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
+from alc.variants import read_variant, variant_row
+from alc.worktree import git_toplevel, is_git_repo
 
 
 def operator_layer(root: Path) -> Path:
@@ -703,3 +709,158 @@ def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
         target.write_text(files[rel_path])
 
     return {"written": written, "lint": lint_project(root)}
+
+
+# ---------------------------------------------------------------------------
+# Branches (`alc land` / `alc discard` — thin over branches.py / merge.py)
+# ---------------------------------------------------------------------------
+
+
+def list_branches(root: Path) -> dict:
+    """Return {available, branches}: the project's `alc/*` branches.
+
+    Outside a git repository (or with no `git` binary) this is a clear
+    ``{"available": False, "branches": []}`` — never a 500 — mirroring
+    ``branches.list_alc_branches``'s own no-git degrade.
+    """
+    if not is_git_repo(root):
+        return {"available": False, "branches": []}
+    repo_root = git_toplevel(root)
+    return {
+        "available": True,
+        "branches": [asdict(b) for b in list_alc_branches(repo_root)],
+    }
+
+
+def land_branches(root: Path, branches: list[str] | None) -> dict:
+    """Integrate *branches* (every unmerged `alc/*` branch when omitted); return the MergeReport.
+
+    Mirrors `alc land --all`'s branch selection when no explicit list is given.
+    """
+    if not is_git_repo(root):
+        raise ApiError("not inside a git repository", status=409)
+    repo_root = git_toplevel(root)
+    targets = (
+        branches
+        if branches is not None
+        else [b.name for b in list_alc_branches(repo_root) if not b.merged]
+    )
+    report = auto_merge_branches(repo_root, targets)
+    return {"merged": report.merged, "conflicted": report.conflicted}
+
+
+def discard_branches(
+    root: Path,
+    branches: list[str],
+    worktrees: bool = False,
+    older_than_days: int | None = None,
+) -> dict:
+    """Delete *branches*, optionally prune stale worktrees and old bundle files.
+
+    Mirrors `alc discard <branches> [--worktrees] [--bundles --older-than N]`
+    minus its interactive confirmation — a frontend concern (Wave 2), never a
+    backend gate. `delete_branches` already refuses a non-`alc/` ref and the
+    current branch; relied on here, not reimplemented.
+    """
+    result: dict = {"deleted": [], "pruned_worktrees": 0, "deleted_bundles": []}
+
+    if branches or worktrees:
+        if not is_git_repo(root):
+            raise ApiError("not inside a git repository", status=409)
+        repo_root = git_toplevel(root)
+        if branches:
+            result["deleted"] = delete_branches(repo_root, branches)
+        if worktrees:
+            result["pruned_worktrees"] = prune_worktrees(repo_root)
+
+    if older_than_days is not None:
+        manifest = load_manifest(operator_layer(root))
+        bundles_dir = root / manifest.bundles_dir
+        if bundles_dir.is_dir():
+            cutoff = time.time() - older_than_days * 86400
+            targets = [p for p in bundles_dir.glob("*.jsonl") if p.stat().st_mtime < cutoff]
+            for p in targets:
+                p.unlink()
+            result["deleted_bundles"] = [p.name for p in targets]
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Variants (`alc explore` / `alc compare` / `alc adopt`)
+# ---------------------------------------------------------------------------
+
+_VARIANT_BRANCH_RE = re.compile(r"^alc/variant-\d+-[0-9a-f]{8}$")
+
+
+def list_variants(root: Path) -> list[dict]:
+    """Return every archived explore variant as a comparable row (mirrors `alc compare`)."""
+    manifest = load_manifest(operator_layer(root))
+    variants_dir = root / manifest.variants_dir
+    if not variants_dir.is_dir():
+        return []
+    rows = []
+    for path in sorted(variants_dir.glob("*.json")):
+        found = read_variant(variants_dir, path.stem)
+        if found is None:
+            continue
+        unit, engine, tier = found
+        rows.append(variant_row(unit, engine, tier))
+    return rows
+
+
+def adopt_variant(root: Path, branch: str) -> dict:
+    """Integrate *branch* and discard its unmerged `alc/variant-*` siblings (mirrors `alc adopt`).
+
+    Destructive by design — the frontend owns confirmation (Wave 2), never a
+    backend gate.
+    """
+    if not branch.startswith("alc/"):
+        raise ApiError(f"not an alc/ branch: {branch}", status=422)
+    if not is_git_repo(root):
+        raise ApiError("not inside a git repository", status=409)
+    repo_root = git_toplevel(root)
+
+    losers = [
+        b.name
+        for b in list_alc_branches(repo_root)
+        if not b.merged and b.name != branch and _VARIANT_BRANCH_RE.match(b.name)
+    ]
+    merge_report = auto_merge_branches(repo_root, [branch])
+    discarded = delete_branches(repo_root, losers) if losers else []
+    return {
+        "merged": merge_report.merged,
+        "conflicted": merge_report.conflicted,
+        "discarded": discarded,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Signals (`alc signal ingest` / `alc signal list`)
+# ---------------------------------------------------------------------------
+
+
+def _signals_dir(root: Path) -> Path:
+    manifest = load_manifest(operator_layer(root))
+    return root / manifest.signals_dir
+
+
+def list_signals(root: Path) -> list[dict]:
+    """Return every pending (not yet archived) signal (mirrors `alc signal list`)."""
+    pending = signals_core.read_signals(_signals_dir(root))
+    return [{"path": str(p.path), **p.signal.model_dump()} for p in pending]
+
+
+def ingest_signal(root: Path, data: dict) -> dict:
+    """Validate *data* as a Signal and ingest it; return {path}.
+
+    ``Signal.ts`` defaults to now when *data* omits it — the model's own
+    default, not duplicated here (mirrors `alc signal ingest`/the `/signal`
+    webhook route, both of which validate straight through the same model).
+    """
+    try:
+        signal = Signal.model_validate(data)
+    except ValidationError as exc:
+        raise ApiError(f"invalid signal: {exc}", status=422) from exc
+    path = signals_core.ingest(_signals_dir(root), signal)
+    return {"path": str(path)}

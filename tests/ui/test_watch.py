@@ -66,6 +66,12 @@ class TestClassifyChange:
             "name": "deliver",
         }
 
+    def test_signal(self, tmp_path: Path) -> None:
+        alc = _alc(tmp_path)
+        assert classify_change(alc, alc / "signals" / "error-x-abc123.json") == {
+            "type": "signals_changed",
+        }
+
     def test_run_configs(self, tmp_path: Path) -> None:
         alc = _alc(tmp_path)
         assert classify_change(alc, alc / "ui" / "run-configs.json") == {

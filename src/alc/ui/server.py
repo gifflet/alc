@@ -14,13 +14,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from alc.ui import (
+    routes_branches,
     routes_config,
     routes_exec,
     routes_metrics,
     routes_projects,
     routes_queue,
     routes_run_configs,
+    routes_signals,
     routes_team,
+    routes_variants,
     ws,
 )
 from alc.ui.bus import EventBus
@@ -102,6 +105,9 @@ def create_app(
     app.include_router(routes_exec.project_router)
     app.include_router(routes_exec.router)
     app.include_router(routes_team.router)
+    app.include_router(routes_branches.router)
+    app.include_router(routes_variants.router)
+    app.include_router(routes_signals.router)
     app.include_router(routes_metrics.router)
     app.include_router(routes_config.router)
     # The WebSocket route is registered BEFORE the SPA catch-all so /ws always

@@ -30,6 +30,41 @@ class TestSpike:
         assert exc.value.status == 422
 
 
+class TestExplore:
+    def test_builds_argv_from_blueprint_and_task(self) -> None:
+        argv = build_argv("explore", {"blueprint": "chore", "task": "try a variant"})
+        assert argv == [
+            sys.executable, "-m", "alc", "explore", "chore", "try a variant",
+        ]
+
+    def test_accepts_variants_engine_and_tier(self) -> None:
+        argv = build_argv(
+            "explore",
+            {
+                "blueprint": "chore",
+                "task": "try a variant",
+                "variants": 3,
+                "engine": "mock",
+                "tier": "standard",
+            },
+        )
+        assert argv == [
+            sys.executable, "-m", "alc", "explore", "chore", "try a variant",
+            "--variants", "3", "--engine", "mock", "--tier", "standard",
+        ]
+
+    def test_missing_task_is_rejected(self) -> None:
+        with pytest.raises(ApiError) as exc:
+            build_argv("explore", {"blueprint": "chore"})
+        assert exc.value.status == 422
+
+    def test_unknown_flag_is_rejected(self) -> None:
+        # `explore` has no `isolate` flag (that belongs to `run`/`flow`).
+        with pytest.raises(ApiError) as exc:
+            build_argv("explore", {"blueprint": "chore", "task": "x", "isolate": True})
+        assert exc.value.status == 422
+
+
 class TestConductStrictStage:
     def test_accepts_strict_stage_flag(self) -> None:
         argv = build_argv("conduct", {"goal": "ship it", "strict-stage": True})

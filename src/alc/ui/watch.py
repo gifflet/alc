@@ -50,6 +50,9 @@ def classify_change(alc_dir: Path, changed: Path) -> dict | None:
     if top == "loops":
         return {"type": "loop_changed", "name": _strip_loop_suffix(changed.name)}
 
+    if top == "signals":
+        return {"type": "signals_changed"}
+
     if rel.name == "manifest.yaml" and len(parts) == 1:
         return {"type": "config_changed", "resource": "manifest"}
 
