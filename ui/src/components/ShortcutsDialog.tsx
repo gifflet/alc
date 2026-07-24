@@ -5,7 +5,7 @@ import { Dialog } from './Dialog'
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
 const SHORTCUTS: [string, string][] = [
-  [`${MOD} 1 – 6`, 'Dashboard / Queue / Runs / Loops / Conduct / Team'],
+  [`${MOD} 1 – 7`, 'Dashboard / Queue / Runs / Loops / Conduct / Team / Metrics'],
   [`${MOD} W`, 'Close the active tab'],
   [`${MOD} S`, 'Save the open editor'],
   [`${MOD} J`, 'Toggle the bottom panel'],

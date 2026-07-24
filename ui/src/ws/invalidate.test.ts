@@ -9,10 +9,12 @@ describe('wsInvalidations', () => {
     ])
   })
 
-  it('invalidates queue + scorecard when a report is archived', () => {
+  it('invalidates queue, scorecard, metrics and audit when a report is archived', () => {
     const out = wsInvalidations({ type: 'report_added', project_id: 'p', stem: 's' })
     expect(out).toContainEqual(keys.queue('p'))
     expect(out).toContainEqual(keys.scorecard('p'))
+    expect(out).toContainEqual(keys.metrics('p'))
+    expect(out).toContainEqual(keys.audit('p'))
   })
 
   it('invalidates queue on queue_changed', () => {

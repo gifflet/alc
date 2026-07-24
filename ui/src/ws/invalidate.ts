@@ -33,7 +33,14 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
     case 'queue_changed':
       return [keys.queue(msg.project_id)]
     case 'report_added':
-      return [keys.queue(msg.project_id), keys.scorecard(msg.project_id)]
+      // A run finished and archived: it may have appended a new measurement
+      // (metrics) and it always changes what an audit window aggregates.
+      return [
+        keys.queue(msg.project_id),
+        keys.scorecard(msg.project_id),
+        keys.metrics(msg.project_id),
+        keys.audit(msg.project_id),
+      ]
     case 'loop_changed':
       return [
         keys.loopState(msg.project_id, msg.name),

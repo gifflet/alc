@@ -3,6 +3,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Dashboard } from './Dashboard'
 import { installFetch, renderWithProviders } from '../test/utils'
+import type { FetchCall } from '../test/utils'
 import { uiStore } from '../app/uiStore'
 
 const dashboardStubs = {
@@ -203,5 +204,54 @@ describe('Mix Health card', () => {
     const card = (await screen.findByText('Mix Health')).closest('section') as HTMLElement
     await userEvent.click(within(card).getByText('open'))
     expect(uiStore.getState().activeTabId).toBe('view:team')
+  })
+})
+
+describe('Audit card', () => {
+  const auditWindow = (overrides: { tasks_total: number; cost_usd_total: number }) => ({
+    since_epoch: 0,
+    tasks_total: overrides.tasks_total,
+    tasks_ok: overrides.tasks_total,
+    tasks_failed: 0,
+    span_total: 0,
+    span_avg: 0,
+    passes_total: 0,
+    passes_avg: 0,
+    streak_total: 0,
+    streak_avg: 0,
+    touch_total: 0,
+    touch_avg: 0,
+    changed_files_total: 0,
+    input_tokens_total: 0,
+    output_tokens_total: 0,
+    cost_usd_total: overrides.cost_usd_total,
+  })
+
+  it('defaults to the 7d window, then refetches the newly selected window', async () => {
+    const mock = installFetch({
+      ...dashboardStubs,
+      '/audit': (call: FetchCall) =>
+        call.url.includes('since=24h')
+          ? auditWindow({ tasks_total: 2, cost_usd_total: 1 })
+          : auditWindow({ tasks_total: 5, cost_usd_total: 12.5 }),
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText('Audit')).toBeInTheDocument()
+    expect(await screen.findByText('$12.50')).toBeInTheDocument()
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Audit window' }), '24h')
+
+    expect(await screen.findByText('$1.00')).toBeInTheDocument()
+    expect(
+      mock.calls.some((c) => c.method === 'GET' && c.url.includes('/audit') && c.url.includes('since=24h')),
+    ).toBe(true)
+  })
+
+  it('shows a clear empty state when the window has no archived tasks', async () => {
+    installFetch({ ...dashboardStubs, '/audit': auditWindow({ tasks_total: 0, cost_usd_total: 0 }) })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText(/no archived tasks in this window/i)).toBeInTheDocument()
   })
 })

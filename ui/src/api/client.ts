@@ -5,6 +5,7 @@
 // project selector and live-test flow use. Errors surface as ApiError with the
 // backend's detail so the UI can show a clear message.
 import type {
+  AuditWindow,
   CollectionItem,
   CollectionName,
   CommandSchema,
@@ -14,12 +15,14 @@ import type {
   LintResult,
   LoopLedger,
   LoopState,
+  MetricSeries,
   ProjectSummary,
   PromptDetail,
   PromptEntry,
   Queue,
   QueueTask,
   RawParsed,
+  RunArtifacts,
   RunConfig,
   RunDetail,
   RunsPage,
@@ -66,6 +69,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const proj = (id: string) => `/api/projects/${encodeURIComponent(id)}`
+
+/** URL for an artifact's raw bytes, for an `<a href>` — not a fetch. The
+ * browser opens it directly, rendered with the content-type the backend
+ * infers from the extension. `path` is echoed back exactly as the artifacts
+ * list returned it — never rewritten. */
+export function artifactFileUrl(id: string, path: string): string {
+  return `${proj(id)}/artifacts/file?path=${encodeURIComponent(path)}`
+}
 
 export const api = {
   // Registry
@@ -151,6 +162,14 @@ export const api = {
   getLint: (id: string) => request<LintResult>(`${proj(id)}/lint`),
   getEngines: (id: string) => request<EngineInfo[]>(`${proj(id)}/engines`),
   getScorecard: (id: string) => request<ScorecardTotals>(`${proj(id)}/scorecard`),
+
+  // Measurement: metric series, run artifacts (e2e evidence), audit window
+  getMetrics: (id: string, check?: string) =>
+    request<MetricSeries>(`${proj(id)}/metrics${check ? `?check=${encodeURIComponent(check)}` : ''}`),
+  getRunArtifacts: (id: string, stem: string) =>
+    request<RunArtifacts>(`${proj(id)}/runs/${encodeURIComponent(stem)}/artifacts`),
+  getAudit: (id: string, since: string) =>
+    request<AuditWindow>(`${proj(id)}/audit?since=${encodeURIComponent(since)}`),
 
   // Run configurations
   getCommands: () => request<CommandSchema>('/api/commands'),

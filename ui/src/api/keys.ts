@@ -25,4 +25,10 @@ export const keys = {
   engines: (id: string) => ['project', id, 'engines'] as const,
   scorecard: (id: string) => ['project', id, 'scorecard'] as const,
   team: (id: string) => ['project', id, 'team'] as const,
+  metrics: (id: string) => ['project', id, 'metrics'] as const,
+  runArtifacts: (id: string, stem: string) => ['project', id, 'run-artifacts', stem] as const,
+  // The shared prefix over every windowed audit query — invalidating it
+  // (partial match) refreshes whichever window(s) a client has open.
+  audit: (id: string) => ['project', id, 'audit'] as const,
+  auditWindow: (id: string, since: string) => ['project', id, 'audit', since] as const,
 }

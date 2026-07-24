@@ -11,6 +11,7 @@ import { Conduct } from '../views/Conduct'
 import { RunConfigs } from '../views/RunConfigs'
 import { SourceEditor } from '../views/SourceEditor'
 import { Team } from '../views/Team'
+import { Metrics } from '../views/Metrics'
 import { useUiState } from './uiStore'
 import type { PrimaryView, Tab } from './uiStore'
 
@@ -22,6 +23,7 @@ const VIEWS: Record<PrimaryView, () => React.ReactElement> = {
   conduct: Conduct,
   'run-configs': RunConfigs,
   team: Team,
+  metrics: Metrics,
 }
 
 function renderTab(tab: Tab): React.ReactElement {

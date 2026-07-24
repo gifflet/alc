@@ -1,7 +1,9 @@
 // Dashboard.tsx — Project overview: scorecard, queue, recent runs, loops, engines.
 // Every card is backed by a live query invalidated over WS — no manual refresh.
-import { Activity, Cpu, Gauge, ListTodo, PieChart, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { Activity, ClipboardList, Cpu, Gauge, ListTodo, PieChart, RefreshCw } from 'lucide-react'
 import {
+  useAudit,
   useCollection,
   useEngines,
   useLoopState,
@@ -13,6 +15,7 @@ import {
 import { useProjectId } from '../app/ProjectContext'
 import { openView } from '../components/ActivityBar'
 import { uiStore } from '../app/uiStore'
+import { formatCost } from '../lib/format'
 import { formatNetLines, scorecardHistory } from '../lib/scorecard'
 import type { ScorecardPoint } from '../lib/scorecard'
 import { Card, Metric, Pill } from '../components/primitives'
@@ -247,6 +250,53 @@ function MixHealthCard() {
   )
 }
 
+const AUDIT_WINDOWS = ['7d', '24h', '30m'] as const
+type AuditWindowOption = (typeof AUDIT_WINDOWS)[number]
+
+/** Aggregate archived tasks over a trailing window; the selector refetches
+ * with the new `since` (each window caches separately, see keys.auditWindow). */
+function AuditCard() {
+  const id = useProjectId()
+  const [since, setSince] = useState<AuditWindowOption>('7d')
+  const { data } = useAudit(id, since)
+
+  return (
+    <Card
+      title="Audit"
+      icon={ClipboardList}
+      action={
+        <select
+          aria-label="Audit window"
+          value={since}
+          onChange={(e) => setSince(e.target.value as AuditWindowOption)}
+          className="rounded-panel border border-border bg-base px-1.5 py-0.5 text-[11px] text-primary outline-none focus:border-accent"
+        >
+          {AUDIT_WINDOWS.map((w) => (
+            <option key={w} value={w}>
+              {w}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      {data && data.tasks_total > 0 ? (
+        <div className="grid grid-cols-4 gap-3">
+          <Metric label="tasks" value={data.tasks_total} />
+          <Metric label="ok" value={data.tasks_ok} tone="live" />
+          <Metric
+            label="failed"
+            value={data.tasks_failed}
+            tone={data.tasks_failed > 0 ? 'error' : undefined}
+          />
+          <Metric label="cost" value={formatCost(data.cost_usd_total)} />
+        </div>
+      ) : (
+        <p className="text-[12px] text-faint">No archived tasks in this window.</p>
+      )}
+    </Card>
+  )
+}
+
 export function Dashboard() {
   const id = useProjectId()
   const { data: engines } = useEngines(id)
@@ -262,6 +312,7 @@ export function Dashboard() {
       <RunsCard />
       <LoopsCard />
       <MixHealthCard />
+      <AuditCard />
     </div>
   )
 }

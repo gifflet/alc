@@ -105,6 +105,30 @@ export function useTeam(id: string) {
   return useQuery({ queryKey: keys.team(id), queryFn: () => api.getTeam(id), enabled: enabled(id) })
 }
 
+export function useMetrics(id: string) {
+  return useQuery({
+    queryKey: keys.metrics(id),
+    queryFn: () => api.getMetrics(id),
+    enabled: enabled(id),
+  })
+}
+
+export function useRunArtifacts(id: string, stem: string) {
+  return useQuery({
+    queryKey: keys.runArtifacts(id, stem),
+    queryFn: () => api.getRunArtifacts(id, stem),
+    enabled: enabled(id) && Boolean(stem),
+  })
+}
+
+export function useAudit(id: string, since: string) {
+  return useQuery({
+    queryKey: keys.auditWindow(id, since),
+    queryFn: () => api.getAudit(id, since),
+    enabled: enabled(id) && Boolean(since),
+  })
+}
+
 export function useExecs() {
   return useQuery({ queryKey: keys.execs(), queryFn: api.listExecs })
 }

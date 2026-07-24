@@ -2,6 +2,7 @@
 import {
   Boxes,
   LayoutDashboard,
+  LineChart,
   ListTodo,
   Radio,
   RefreshCw,
@@ -28,6 +29,7 @@ const ITEMS: Item[] = [
   { view: 'loops', icon: RefreshCw, label: 'Loops' },
   { view: 'conduct', icon: Wand2, label: 'Conduct' },
   { view: 'team', icon: Users, label: 'Team' },
+  { view: 'metrics', icon: LineChart, label: 'Metrics' },
   { view: 'run-configs', icon: SlidersHorizontal, label: 'Run Configurations' },
 ]
 
@@ -39,6 +41,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   conduct: 'Conduct',
   'run-configs': 'Run Configurations',
   team: 'Team',
+  metrics: 'Metrics',
 }
 
 export function openView(view: PrimaryView): void {

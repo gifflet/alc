@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import { artifactFileUrl } from '../api/client'
 import { installFetch, renderWithProviders } from '../test/utils'
 
 // RunDetail tails via useWs; a stub client is enough (no live socket in jsdom).
@@ -46,5 +47,35 @@ describe('RunDetail', () => {
     renderWithProviders(<RunDetail stem="20260713T0215-unit-demand-fix" />)
     expect(await screen.findByText('stale')).toBeInTheDocument()
     expect(screen.queryByText('live')).not.toBeInTheDocument()
+  })
+})
+
+describe('RunDetail evidence panel', () => {
+  const stem = '20260712T0359-run-chore-x'
+
+  it('does not render when the run has no artifacts', async () => {
+    installFetch({
+      [`/runs/${stem}/artifacts`]: { stem, artifacts: [] },
+      '/runs/': { events, next_offset: 6 },
+    })
+    renderWithProviders(<RunDetail stem={stem} />)
+
+    expect(await screen.findByRole('heading', { name: 'chore' })).toBeInTheDocument()
+    expect(screen.queryByText('Evidence')).not.toBeInTheDocument()
+  })
+
+  it('lists each artifact with its type and a link to the exact path it was given', async () => {
+    const path = '.alc/artifacts/20260712T0359-run-chore-x/golden.html'
+    installFetch({
+      [`/runs/${stem}/artifacts`]: { stem, artifacts: [{ path, type: 'data' }] },
+      '/runs/': { events, next_offset: 6 },
+    })
+    renderWithProviders(<RunDetail stem={stem} />)
+
+    expect(await screen.findByText('Evidence')).toBeInTheDocument()
+    expect(screen.getByText('data')).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: path })
+    // The href round-trips the exact `path` string from the list — never rewritten.
+    expect(link).toHaveAttribute('href', artifactFileUrl('demo', path))
   })
 })

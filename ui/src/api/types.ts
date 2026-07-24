@@ -284,6 +284,63 @@ export interface HireResult {
 }
 
 // ---------------------------------------------------------------------------
+// Metrics (metrics.py MetricPoint) — one measurement in a check's time series.
+// ---------------------------------------------------------------------------
+
+export interface MetricPoint {
+  ts: number
+  value: number
+  run: string
+  // Raw numeric movement vs the point before it — null/"n/a" for a series'
+  // first point. Never "good"/"bad": the backend does not persist direction.
+  delta: number | null
+  trend: 'up' | 'down' | 'flat' | 'n/a'
+  // Whether the Verifier ACCEPTED this measurement at record time — the only
+  // judgment the UI shows for a point.
+  passed: boolean
+}
+
+/** GET /metrics's shape: every check's series, keyed by check name. */
+export type MetricSeries = Record<string, MetricPoint[]>
+
+// ---------------------------------------------------------------------------
+// Artifacts (artifacts.py RunArtifacts) — e2e evidence a run captured.
+// ---------------------------------------------------------------------------
+
+export interface Artifact {
+  path: string
+  type: string
+}
+
+export interface RunArtifacts {
+  stem: string
+  artifacts: Artifact[]
+}
+
+// ---------------------------------------------------------------------------
+// Audit (audit.py AuditWindow) — the aggregate over a trailing time window.
+// ---------------------------------------------------------------------------
+
+export interface AuditWindow {
+  since_epoch: number
+  tasks_total: number
+  tasks_ok: number
+  tasks_failed: number
+  span_total: number
+  span_avg: number
+  passes_total: number
+  passes_avg: number
+  streak_total: number
+  streak_avg: number
+  touch_total: number
+  touch_avg: number
+  changed_files_total: number
+  input_tokens_total: number
+  output_tokens_total: number
+  cost_usd_total: number
+}
+
+// ---------------------------------------------------------------------------
 // Run configurations (command schema + saved presets)
 // ---------------------------------------------------------------------------
 

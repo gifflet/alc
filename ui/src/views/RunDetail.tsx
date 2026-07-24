@@ -6,8 +6,9 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Radio } from 'lucide-react'
-import { api } from '../api/client'
+import { api, artifactFileUrl } from '../api/client'
 import { keys } from '../api/keys'
+import { useRunArtifacts } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useWs } from '../ws/WsProvider'
 import { buildTimeline, describeEvent } from '../lib/runEvents'
@@ -28,6 +29,8 @@ export function RunDetail({ stem }: { stem: string }) {
     queryKey: keys.run(id, stem),
     queryFn: () => api.getRun(id, stem),
   })
+  const artifacts = useRunArtifacts(id, stem)
+  const evidence = artifacts.data?.artifacts ?? []
 
   // Seed local events from the fetched snapshot.
   useEffect(() => {
@@ -98,6 +101,32 @@ export function RunDetail({ stem }: { stem: string }) {
                 </div>
               )}
             </div>
+          )}
+
+          {evidence.length > 0 && (
+            <section className="mt-4">
+              <h2 className="mb-1 text-[11px] uppercase tracking-wide text-faint">Evidence</h2>
+              <ul className="rounded-panel border border-border bg-base text-[12px]">
+                {evidence.map((a) => (
+                  <li
+                    key={a.path}
+                    className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 last:border-b-0"
+                  >
+                    <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-wide text-faint">
+                      {a.type}
+                    </span>
+                    <a
+                      href={artifactFileUrl(id, a.path)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="min-w-0 flex-1 truncate font-mono text-[11px] text-accent hover:underline"
+                    >
+                      {a.path}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
 
           <section className="mt-4">

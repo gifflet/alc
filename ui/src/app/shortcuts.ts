@@ -18,6 +18,7 @@ const NUMBER_VIEW: Record<string, PrimaryView> = {
   '4': 'loops',
   '5': 'conduct',
   '6': 'team',
+  '7': 'metrics',
 }
 
 /** The action a keydown maps to, or null. mod = Cmd (mac) or Ctrl. */

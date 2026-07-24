@@ -5,11 +5,12 @@ const key = (over: Partial<KeyboardEvent>): KeyboardEvent =>
   ({ key: '', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...over }) as KeyboardEvent
 
 describe('resolveShortcut', () => {
-  it('maps mod+1..6 to the primary views', () => {
+  it('maps mod+1..7 to the primary views', () => {
     expect(resolveShortcut(key({ key: '1', metaKey: true }))).toEqual({ type: 'view', view: 'dashboard' })
     expect(resolveShortcut(key({ key: '3', ctrlKey: true }))).toEqual({ type: 'view', view: 'runs' })
     expect(resolveShortcut(key({ key: '5', metaKey: true }))).toEqual({ type: 'view', view: 'conduct' })
     expect(resolveShortcut(key({ key: '6', metaKey: true }))).toEqual({ type: 'view', view: 'team' })
+    expect(resolveShortcut(key({ key: '7', metaKey: true }))).toEqual({ type: 'view', view: 'metrics' })
   })
 
   it('maps mod+w/j/b to tab + panel actions', () => {
