@@ -112,8 +112,18 @@ function SmokeOnlySection({ blueprints }: { blueprints: SmokeOnlyBlueprint[] }) 
       <ul className="flex flex-col gap-1">
         {blueprints.map((b) => (
           <li key={b.blueprint} className="text-[12px] text-muted">
-            <span className="font-mono text-primary">{b.blueprint}</span> resolves to only the
-            smoke placeholder while {b.stacks.join(', ')} is detected.
+            <span className="font-mono text-primary">{b.blueprint}</span>{' '}
+            {b.stacks.length === 0 ? (
+              <>
+                resolves to only the smoke placeholder because no stack was detected — add real
+                checks to the manifest <span className="font-mono">check_sets</span> (also editable
+                in the Manifest/Checks UI).
+              </>
+            ) : (
+              <>
+                resolves to only the smoke placeholder while {b.stacks.join(', ')} is detected.
+              </>
+            )}
           </li>
         ))}
       </ul>

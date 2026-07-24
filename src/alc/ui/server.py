@@ -91,6 +91,17 @@ def create_app(
     app.state.run_manager = run_manager
     app.state.watcher = watcher
 
+    @app.middleware("http")
+    async def _no_store_api(request: Request, call_next):
+        # API responses are live project state — the control room must reflect
+        # the actual project, never a browser-cached snapshot (a stale audit or
+        # roster would misrepresent the truth). Static SPA assets (hashed,
+        # immutable) are untouched and keep their default caching.
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.exception_handler(ApiError)
     async def _handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         body: dict = {"detail": exc.message}

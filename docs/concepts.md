@@ -175,7 +175,7 @@ only verb an operator sees.
 |---|---|---|
 | **Prototyper** | Churns out new ideas; most don't ship | a `spike` Blueprint (`mode: spike`) fencing the checks gate; `alc spike "<task>"` is the entry point |
 | **Builder** | Turns a prototype into production-quality product/infra | `test` (test authoring) and `qa` (live e2e) Blueprints, a hardened `ship-hardened` Flow |
-| **Sweeper** | Cleans the UI, simplifies code, removes features (*unship*) | a `janitor` Specialist naming the real dead-code command per detected stack, a `refactor` Blueprint, a `sweep` Loop, an `unship` Flow whose gate stage derives its checks from what an earlier stage mapped — proving each discovered symbol is actually gone, not just declaring it removed |
+| **Sweeper** | Cleans the UI, simplifies code, removes features (*unship*) | a `janitor` Specialist naming the real dead-code command per detected stack, a `refactor` Blueprint, a `sweep` Loop, an `unship` Flow whose gate verifies the removal against the project's **real** `check_set` — the codebase must still hold together without the feature, not merely be declared gone (see [The Sweeper's `unship` gate](#the-sweepers-unship-gate--verify-a-removal-dont-just-declare-it) below) |
 | **Grower** | Iterates a built product to improve Product-Market Fit | **partial**: a DIY issue/error-sweep Specialist (`listen`) only — real signal intake and a `regression` replenish kind are later-phase work; metric checks (above) are a general control-plane primitive already available to any Blueprint |
 | **Maintainer** | Keeps a mature system safe, reliable, fast, and efficient at scale | a `patrol` Flow gated by the `security` check_set, a `deps` Specialist, a `deps-refresh` Loop |
 
@@ -186,6 +186,38 @@ installs a stage's pack combo in one shot and has no effect beyond that selectio
 is a **descriptive label with zero runtime effect**. It exists for reporting and as
 the input Mix Health (below) aggregates by; behavior always lives in a named field
 (`check_set`, `needs_service`, …), never behind this string.
+
+### The Sweeper's `unship` gate — verify a removal, don't just declare it
+Removing a feature is only *done* when the codebase still holds together without it,
+so the `unship` Flow ends in a pure verification gate. The `remove` stage does the
+deletion; the `gate` stage (`verify_only: true`) then re-runs the project's **real**
+`check_set` and passes only if it still goes green. Checks are law here as everywhere —
+a removal is judged by the same build/test/lint that guards every other change, not by
+a bespoke rule the Sweeper invents.
+
+- **`expect: shrink` is advisory.** The `refactor` Blueprint declares it to state that
+  this mandate should reduce the codebase, and Mix Health reports when a shrink run
+  finishes net-positive — but it **never fails a run**. It is a signal, not a gate.
+- **Prove-absence by text search is an opt-in, off by default.** An earlier design
+  proved each removed symbol gone by grepping for it: a `map` stage lists the symbols
+  and the gate's `derive_checks` turns each into a `! grep …` check. Text search is only
+  a heuristic — a name that is not unique can never be proven absent — so real checks are
+  preferred and this is no longer the default. The scaffolded `unship.yaml` carries the
+  `map` + `derive_checks` recipe as a commented block you can uncomment, and the `map`
+  Blueprint still ships for that purpose.
+- **A project with only placeholder checks is reported INCONCLUSIVE.** When the only
+  resolvable check is the `["true"]` smoke placeholder, the gate has nothing real to
+  verify against, so `require_real_checks` reports the removal as *inconclusive*
+  (honestly unverified) rather than fabricating a green pass or a red fail. The fix is
+  the one the Checks view nudges you toward: give the project a real `check_set` in the
+  Manifest's `check_sets`.
+
+**Migration.** Existing projects keep their current `.alc/flows/unship.yaml` untouched —
+`alc team hire` never overwrites a file you already have. To adopt the real-checks gate,
+re-scaffold with `alc team hire sweeper --force`, which rewrites the Sweeper pack's files
+(`unship.yaml`, `refactor.md`, `map.md`, the `janitor` Specialist, the `sweep` Loop) with
+the new versions. A Specialist's Knowledge File is not a pack file and is never touched by
+hiring — only the scaffolded pack content is.
 
 ### Stage & Mix Health — the mix as a measure of the team's health
 `Manifest.stage` (`pre-pmf` / `growth` / `strong-pmf`) declares which phase of

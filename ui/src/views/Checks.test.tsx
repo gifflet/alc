@@ -22,6 +22,16 @@ const populatedAudit: ChecksAudit = {
   smoke_only_blueprints: [{ blueprint: 'chore', stacks: ['Python'] }],
 }
 
+// One smoke-only entry with a detected stack and one with none (stacks: []),
+// so a single render exercises both branches of the honest phrasing.
+const smokeOnlyMixedAudit: ChecksAudit = {
+  check_sets: [],
+  smoke_only_blueprints: [
+    { blueprint: 'refactor', stacks: ['Python'] },
+    { blueprint: 'chore', stacks: [] },
+  ],
+}
+
 describe('Checks', () => {
   it('renders the history table with pass-rate/duration/flake-score', async () => {
     installFetch({ '/checks/history': history, '/checks/audit': emptyAudit })
@@ -52,6 +62,19 @@ describe('Checks', () => {
     expect(screen.getByText('pytest -q')).toBeInTheDocument()
     expect(screen.getByText(/chore/)).toBeInTheDocument()
     expect(screen.getByText(/resolves to only the/)).toBeInTheDocument()
+  })
+
+  it('phrases smoke-only blueprints honestly for detected-stack and stackless cases', async () => {
+    installFetch({ '/checks/history': [], '/checks/audit': smokeOnlyMixedAudit })
+    renderWithProviders(<Checks />)
+
+    // Detected stack: keep the "while <stacks> is detected" wording.
+    expect(await screen.findByText(/while Python is detected/i)).toBeInTheDocument()
+
+    // No stack detected: an honest message pointing at the manifest check_sets,
+    // never the misleading "while <stack> is detected" phrasing.
+    expect(screen.getByText(/no stack was detected/i)).toBeInTheDocument()
+    expect(screen.getByText('check_sets')).toBeInTheDocument()
   })
 
   it('shows a clean empty state when the audit has no proposals', async () => {
