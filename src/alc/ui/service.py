@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -15,7 +16,10 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from alc import artifacts as artifacts_core
+from alc import metrics as metrics_core
 from alc import runs as runs_core
+from alc.audit import audit_window, parse_since
 from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
@@ -390,6 +394,112 @@ def read_run(root: Path, stem: str, offset: int = 0) -> dict:
         )
     except FileNotFoundError as exc:
         raise ApiError(f"no run '{stem}'", status=404) from exc
+
+
+# ---------------------------------------------------------------------------
+# Metrics (the metric-check ledger read back as a time series)
+# ---------------------------------------------------------------------------
+
+
+def metric_series(root: Path, check: str | None = None) -> dict:
+    """Return the metric ledger's time series, keyed by check name.
+
+    A missing/empty ledger yields an empty series (``metrics_core.metric_series``
+    already treats an absent path that way), never an error.
+    """
+    manifest = load_manifest(operator_layer(root))
+    path = metrics_core.ledger_path(root / manifest.metrics_dir)
+    series = metrics_core.metric_series(path, check=check)
+    return {name: [asdict(point) for point in points] for name, points in series.items()}
+
+
+# ---------------------------------------------------------------------------
+# Artifacts (e2e evidence a `capture:` command produced)
+# ---------------------------------------------------------------------------
+
+
+def _artifacts_dir(root: Path) -> Path:
+    manifest = load_manifest(operator_layer(root))
+    return root / manifest.artifacts_dir
+
+
+def _artifacts_response(result: artifacts_core.RunArtifacts) -> dict:
+    return {
+        "stem": result.stem,
+        "artifacts": [
+            {"path": p, "type": artifacts_core.artifact_type(p)} for p in result.artifacts
+        ],
+    }
+
+
+def run_artifacts(root: Path, stem: str) -> dict:
+    """Return {stem, artifacts: [{path, type}]} for one run's captured evidence.
+
+    Raises ApiError(404) when no such run log exists (mirrors ``read_run``).
+    """
+    try:
+        result = artifacts_core.run_artifacts(_runs_dir(root), stem)
+    except FileNotFoundError as exc:
+        raise ApiError(f"no run '{stem}'", status=404) from exc
+    return _artifacts_response(result)
+
+
+def latest_artifacts(root: Path) -> dict:
+    """Return the most recently modified run with captured evidence.
+
+    ``{"stem": None, "artifacts": []}`` when no run has captured any yet — an
+    explicit empty result, never a 404 (mirrors ``cmd_artifacts``' no-stem case).
+    """
+    result = artifacts_core.latest_run_with_artifacts(_runs_dir(root))
+    if result is None:
+        return {"stem": None, "artifacts": []}
+    return _artifacts_response(result)
+
+
+def artifact_file_path(root: Path, rel_path: str) -> Path:
+    """Resolve *rel_path* to a real file confined inside the project's ``artifacts_dir``.
+
+    *rel_path* is joined against the PROJECT ROOT, not ``artifacts_dir`` — the
+    same base ``RunReport.artifacts`` paths are relative to, and so the same
+    shape ``run_artifacts``/``latest_artifacts`` echo back (e.g.
+    ``.alc/artifacts/<stem>/golden.html``). This keeps the list and bytes
+    routes in agreement: the exact ``path`` one returns is what the other
+    accepts.
+
+    *rel_path* ultimately came from a model's report, so it is untrusted:
+    resolved (symlinks included) and checked to still sit inside
+    ``artifacts_dir`` — anything that escapes (a ``..`` component, an absolute
+    path, a symlink pointing out, or a project-relative path that simply isn't
+    under ``artifacts_dir``, e.g. ``.alc/manifest.yaml``) is ApiError(403). A
+    path that resolves inside the directory but names no file is ApiError(404).
+    """
+    artifacts_root = _artifacts_dir(root).resolve()
+    candidate = (root.resolve() / rel_path).resolve()
+    if not candidate.is_relative_to(artifacts_root):
+        raise ApiError(f"artifact path '{rel_path}' is outside artifacts_dir", status=403)
+    if not candidate.is_file():
+        raise ApiError(f"no artifact at '{rel_path}'", status=404)
+    return candidate
+
+
+# ---------------------------------------------------------------------------
+# Audit (aggregate window over the archived queue reports)
+# ---------------------------------------------------------------------------
+
+
+def audit(root: Path, since: str) -> dict:
+    """Return the aggregate window audit for the trailing *since* period.
+
+    *since* is a relative window like "7d"/"24h"/"30m" (``audit.parse_since``);
+    raises ApiError(422) with a clear message for anything else — never a
+    traceback.
+    """
+    try:
+        seconds = parse_since(since)
+    except ValueError as exc:
+        raise ApiError(str(exc), status=422) from exc
+    done_dir = _queue_dir(root) / "done"
+    return asdict(audit_window(done_dir, time.time() - seconds))
 
 
 # ---------------------------------------------------------------------------
