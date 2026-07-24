@@ -1,5 +1,6 @@
 // utils.tsx — Shared helpers for component tests: providers + a fetch stub.
 import { render } from '@testing-library/react'
+import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProjectProvider } from '../app/ProjectContext'
@@ -14,6 +15,28 @@ export function renderWithProviders(ui: ReactElement, projectId = 'demo') {
       <ProjectProvider value={projectId}>{ui}</ProjectProvider>
     </QueryClientProvider>,
   )
+}
+
+/**
+ * Render a `value`/`onChange`-controlled structured form (ManifestForm,
+ * BlueprintForm, FlowForm, LoopForm, …), feeding each `onChange` result back in
+ * as the next `value` so sequential field edits accumulate exactly as they do
+ * inside SourceEditor's EditorShell (a form never owns its own draft state).
+ * `onDoc` additionally observes every emitted raw string, most recent last.
+ */
+export function renderControlledForm(
+  initial: string,
+  renderForm: (value: string, onChange: (v: string) => void) => ReactElement,
+  onDoc: (raw: string) => void,
+) {
+  function Controlled() {
+    const [value, setValue] = useState(initial)
+    return renderForm(value, (v) => {
+      setValue(v)
+      onDoc(v)
+    })
+  }
+  return render(<Controlled />)
 }
 
 /** A minimal Response-like object for the fetch stub. */

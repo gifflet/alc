@@ -4,32 +4,15 @@
 // replaceFrontMatter. Unknown header keys and comments survive the round-trip.
 import { parseDocument } from 'yaml'
 import type { Document } from 'yaml'
-import { Info, Plus, Trash2 } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { getFrontMatter, replaceFrontMatter } from '../../lib/frontmatter'
+import { seqStrings } from '../../lib/yamlDoc'
 import { Field, NumberInput, Select, TextArea, TextInput } from '../../components/fields'
+import { CheckListEditor } from './CheckListEditor'
+import { StringListEditor } from './StringListEditor'
 
 const PERMISSION_MODES = ['', 'default', 'acceptEdits', 'plan', 'bypassPermissions']
-
-interface CheckRow {
-  name: string
-  mode: 'command' | 'shell'
-  value: string
-}
-
-function readChecks(doc: Document): CheckRow[] {
-  const seq = doc.getIn(['checks']) as { items?: unknown[] } | null
-  if (!seq?.items) return []
-  return seq.items.map((_, i) => {
-    const name = String(doc.getIn(['checks', i, 'name']) ?? '')
-    const command = doc.getIn(['checks', i, 'command']) as { toJSON?: () => string[] } | null
-    if (command) {
-      const argv = typeof command.toJSON === 'function' ? command.toJSON() : []
-      return { name, mode: 'command' as const, value: argv.join(' ') }
-    }
-    const shell = doc.getIn(['checks', i, 'shell'])
-    return { name, mode: 'shell' as const, value: shell == null ? '' : String(shell) }
-  })
-}
+const ARCHETYPES = ['', 'prototyper', 'builder', 'sweeper', 'grower', 'maintainer']
 
 export function BlueprintForm({
   value,
@@ -77,33 +60,11 @@ export function BlueprintForm({
     const v = doc.get(key)
     return v == null ? '' : Number(v)
   }
+  const setOrClear = (key: string, v: string) =>
+    update((d) => (v === '' ? d.deleteIn([key]) : d.setIn([key], v)))
 
   const tierOptions = Array.from(new Set([str('compute_tier') || 'standard', ...tiers]))
-  const checks = readChecks(doc)
-
-  const setCheck = (i: number, row: CheckRow) => {
-    update((d) => {
-      d.setIn(['checks', i, 'name'], row.name)
-      if (row.mode === 'command') {
-        d.deleteIn(['checks', i, 'shell'])
-        const argv = row.value.trim() ? row.value.trim().split(/\s+/) : ['true']
-        d.setIn(['checks', i, 'command'], argv)
-      } else {
-        d.deleteIn(['checks', i, 'command'])
-        d.setIn(['checks', i, 'shell'], row.value)
-      }
-    })
-  }
-
-  const addCheck = () =>
-    update((d) => {
-      const seq = d.getIn(['checks']) as { add?: (v: unknown) => void } | null
-      const item = { name: 'check', command: ['true'] }
-      if (seq?.add) seq.add(item)
-      else d.setIn(['checks'], [item])
-    })
-
-  const removeCheck = (i: number) => update((d) => d.deleteIn(['checks', i]))
+  const protect = seqStrings(doc.get('protect'))
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
@@ -168,57 +129,62 @@ export function BlueprintForm({
       </Field>
 
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[11px] uppercase tracking-wide text-faint">Checks</h3>
-          <button
-            type="button"
-            onClick={addCheck}
-            className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[11px] text-muted hover:bg-hover hover:text-primary"
-          >
-            <Plus className="h-3 w-3" />
-            Add check
-          </button>
+        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Team-metaphor / lifecycle</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Archetype">
+            <Select
+              value={str('archetype')}
+              onChange={(v) => setOrClear('archetype', v)}
+              options={ARCHETYPES.map((a) => ({ value: a, label: a || '(none)' }))}
+            />
+          </Field>
+          <Field label="Mode">
+            <Select
+              value={str('mode')}
+              onChange={(v) => setOrClear('mode', v)}
+              options={[
+                { value: '', label: '(none)' },
+                { value: 'spike', label: 'spike' },
+              ]}
+            />
+          </Field>
+          <Field label="Expect">
+            <Select
+              value={str('expect')}
+              onChange={(v) => setOrClear('expect', v)}
+              options={[
+                { value: '', label: '(none)' },
+                { value: 'shrink', label: 'shrink' },
+              ]}
+            />
+          </Field>
         </div>
-        {checks.length === 0 ? (
-          <p className="text-[12px] text-faint">No checks.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {checks.map((row, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  value={row.name}
-                  onChange={(e) => setCheck(i, { ...row, name: e.target.value })}
-                  placeholder="name"
-                  spellCheck={false}
-                  className="w-28 rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
-                />
-                <select
-                  value={row.mode}
-                  onChange={(e) => setCheck(i, { ...row, mode: e.target.value as CheckRow['mode'] })}
-                  className="rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
-                >
-                  <option value="command">command</option>
-                  <option value="shell">shell</option>
-                </select>
-                <input
-                  value={row.value}
-                  onChange={(e) => setCheck(i, { ...row, value: e.target.value })}
-                  placeholder={row.mode === 'command' ? 'pytest -q' : 'test -z "$(git diff)"'}
-                  spellCheck={false}
-                  className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[12px] text-primary outline-none focus:border-accent"
-                />
-                <button
-                  type="button"
-                  aria-label={`Remove ${row.name}`}
-                  onClick={() => removeCheck(i)}
-                  className="flex h-6 w-6 items-center justify-center text-faint hover:text-error"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      </section>
+
+      <Field label="Capture">
+        <TextInput
+          value={str('capture')}
+          onChange={(v) => setOrClear('capture', v)}
+          placeholder="scripts/capture.sh"
+          mono
+        />
+      </Field>
+
+      <section>
+        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Protected paths</h3>
+        <StringListEditor
+          values={protect}
+          onChange={(next) =>
+            update((d) => (next.length ? d.setIn(['protect'], next) : d.deleteIn(['protect'])))
+          }
+          placeholder="src/**/*.py"
+          emptyLabel="No protected globs."
+        />
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Checks</h3>
+        <CheckListEditor doc={doc} path={['checks']} update={update} />
       </section>
     </div>
   )

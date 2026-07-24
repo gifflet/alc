@@ -45,6 +45,8 @@ const ManifestForm = lazy(() =>
 const BlueprintForm = lazy(() =>
   import('./forms/BlueprintForm').then((m) => ({ default: m.BlueprintForm })),
 )
+const FlowForm = lazy(() => import('./forms/FlowForm').then((m) => ({ default: m.FlowForm })))
+const LoopForm = lazy(() => import('./forms/LoopForm').then((m) => ({ default: m.LoopForm })))
 
 const MD_RESOURCES = new Set<SourceResource>(['blueprints', 'primers', 'prompts'])
 
@@ -297,7 +299,11 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
       ? (value: string, onChange: (v: string) => void) => (
           <BlueprintForm value={value} onChange={onChange} tiers={tiers} checkSets={checkSets} />
         )
-      : undefined
+      : collection === 'flows'
+        ? (value: string, onChange: (v: string) => void) => <FlowForm value={value} onChange={onChange} />
+        : collection === 'loops'
+          ? (value: string, onChange: (v: string) => void) => <LoopForm value={value} onChange={onChange} />
+          : undefined
 
   const runCommand = RUN_COMMANDS[collection]
   const runButton = runCommand ? (
