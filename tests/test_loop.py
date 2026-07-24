@@ -471,6 +471,32 @@ class TestMergedLeftMetric:
 
 
 # ---------------------------------------------------------------------------
+# A failed replenish must be visible in the cycle summary
+# ---------------------------------------------------------------------------
+
+
+class TestReplenishFailedSummary:
+    def test_summary_marks_a_failed_replenish(self) -> None:
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=0, succeeded=0, failed=0,
+            replenish_failed=True, progress=False, budget_delta={},
+        )
+        assert "replenish=failed" in format_cycle_summary(rec)
+
+    def test_summary_byte_identical_when_replenish_did_not_fail(self) -> None:
+        # replenish_failed=False (the default) must not change the summary at all.
+        rec = CycleRecord(
+            cycle=1, replenished=0, drained=1, succeeded=1, failed=0,
+            progress=True, budget_delta={},
+        )
+        summary = format_cycle_summary(rec)
+        assert "replenish=" not in summary
+        assert summary == (
+            "cycle 1: replenished=0 drained=1 succeeded=1 failed=0"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Budget-unit-unmeasurable WARN
 # ---------------------------------------------------------------------------
 

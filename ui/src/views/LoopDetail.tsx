@@ -98,7 +98,12 @@ export function LoopDetail({ name }: { name: string }) {
                 {records.map((r) => (
                   <tr key={r.cycle} className="h-[28px] border-b border-border/60">
                     <td className="px-2 text-muted">{r.cycle}</td>
-                    <td className="px-2 text-muted">{r.replenished}</td>
+                    <td className="px-2 text-muted">
+                      <span className="flex items-center gap-2">
+                        {r.replenished}
+                        {r.replenish_failed && <Pill tone="warn">replenish failed</Pill>}
+                      </span>
+                    </td>
                     <td className="px-2 text-muted">{r.drained}</td>
                     <td className="px-2 text-live">{r.succeeded}</td>
                     <td className="px-2 text-error">{r.failed}</td>

@@ -733,6 +733,10 @@ def format_cycle_summary(record: CycleRecord) -> str:
     # merged or left this cycle; otherwise stay byte-identical to the old summary.
     if record.merged + record.left > 0:
         line += f" merged={record.merged} left={record.left}"
+    # A failed replenish is soft by design (it must not stop the loop or change the
+    # exit code) but must never read as a fully successful cycle — surface it.
+    if record.replenish_failed:
+        line += " replenish=failed"
     if record.stopped_reason is not None:
         line += f" [stopped: {record.stopped_reason}]"
     return line
