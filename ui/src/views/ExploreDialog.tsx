@@ -7,7 +7,13 @@ import { useCollection, useEngines } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
 import { Dialog, DialogButton } from '../components/Dialog'
-import { Field, NumberInput, Select, TextArea } from '../components/fields'
+import { Checkbox, Field, NumberInput, Select, TextArea } from '../components/fields'
+
+// Toggle membership of `value` in a string list — the same pattern
+// EnqueueDialog uses for its "Depends on" checkbox group.
+function toggle(list: string[], value: string): string[] {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+}
 
 export function ExploreDialog({ onClose }: { onClose: () => void }) {
   const id = useProjectId()
@@ -19,8 +25,10 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
   const [blueprint, setBlueprint] = useState('')
   const [task, setTask] = useState('')
   const [variants, setVariants] = useState<number | ''>(2)
-  const [engine, setEngine] = useState('')
-  const [tier, setTier] = useState('')
+  // Cartesian product: `alc explore` crosses every picked engine with every
+  // picked tier (and with --variants). Empty means "use the CLI's default".
+  const [selectedEngines, setSelectedEngines] = useState<string[]>([])
+  const [selectedTiers, setSelectedTiers] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -38,8 +46,8 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
       task,
       variants: variants === '' ? 1 : variants,
     }
-    if (engine) args.engine = engine
-    if (tier) args.tier = tier
+    if (selectedEngines.length) args.engine = selectedEngines
+    if (selectedTiers.length) args.tier = selectedTiers
     setSaving(true)
     setError(null)
     try {
@@ -50,12 +58,6 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
       setSaving(false)
     }
   }
-
-  const engineOptions = [
-    { value: '', label: 'default' },
-    ...engines.map((e) => ({ value: e.name, label: e.default ? `${e.name} (default)` : e.name })),
-  ]
-  const tierOptions = [{ value: '', label: 'default' }, ...tiers.map((t) => ({ value: t, label: t }))]
 
   const canSubmit = Boolean(blueprint && task.trim() && (variants === '' || variants >= 1))
 
@@ -93,16 +95,42 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
           <TextArea value={task} onChange={setTask} rows={4} placeholder="Describe the task…" />
         </Field>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Variants">
-            <NumberInput value={variants} onChange={setVariants} placeholder="2" />
-          </Field>
-          <Field label="Engine">
-            <Select value={engine} onChange={setEngine} options={engineOptions} />
-          </Field>
-          <Field label="Tier">
-            <Select value={tier} onChange={setTier} options={tierOptions} />
-          </Field>
+        <Field label="Variants">
+          <NumberInput value={variants} onChange={setVariants} placeholder="2" />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] uppercase tracking-wide text-faint">Engines</span>
+            <div className="flex flex-col gap-1 rounded-panel border border-border bg-base p-2">
+              {engines.length === 0 && <p className="text-[11px] text-faint">No engines configured.</p>}
+              {engines.map((e) => (
+                <Checkbox
+                  key={e.name}
+                  checked={selectedEngines.includes(e.name)}
+                  onChange={() => setSelectedEngines((cur) => toggle(cur, e.name))}
+                  label={e.default ? `${e.name} (default)` : e.name}
+                />
+              ))}
+            </div>
+            <span className="text-[11px] text-faint">none selected = manifest default</span>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] uppercase tracking-wide text-faint">Tiers</span>
+            <div className="flex flex-col gap-1 rounded-panel border border-border bg-base p-2">
+              {tiers.length === 0 && <p className="text-[11px] text-faint">No tiers configured.</p>}
+              {tiers.map((t) => (
+                <Checkbox
+                  key={t}
+                  checked={selectedTiers.includes(t)}
+                  onChange={() => setSelectedTiers((cur) => toggle(cur, t))}
+                  label={t}
+                />
+              ))}
+            </div>
+            <span className="text-[11px] text-faint">none selected = blueprint default</span>
+          </div>
         </div>
 
         {error && <p className="text-[11px] text-error">{error}</p>}

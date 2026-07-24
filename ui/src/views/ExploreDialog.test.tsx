@@ -16,6 +16,23 @@ const engines = [
   },
 ]
 
+const multiEngines = [
+  {
+    name: 'mock',
+    type: 'mock',
+    default: true,
+    tiers: { standard: 'mock-small', deep: 'mock-large' },
+    healthy: true,
+  },
+  {
+    name: 'gpt',
+    type: 'gpt',
+    default: false,
+    tiers: { standard: 'gpt-small' },
+    healthy: true,
+  },
+]
+
 const blueprints = [{ name: 'chore', mtime: 1 }]
 
 beforeEach(() => {
@@ -25,7 +42,7 @@ beforeEach(() => {
 })
 
 describe('ExploreDialog', () => {
-  it('dispatches an explore exec with the blueprint, task and variants count', async () => {
+  it('dispatches an explore exec with the blueprint, task and variants count, omitting engine/tier when none picked', async () => {
     const mock = installFetch({
       '/blueprints': blueprints,
       '/engines': engines,
@@ -47,7 +64,7 @@ describe('ExploreDialog', () => {
     expect(execStore.getState().execs[0]?.id).toBe('x1')
   })
 
-  it('forwards a chosen engine and tier', async () => {
+  it('forwards a single checked engine and tier as one-item arrays', async () => {
     const mock = installFetch({
       '/blueprints': blueprints,
       '/engines': engines,
@@ -57,15 +74,65 @@ describe('ExploreDialog', () => {
 
     await screen.findByDisplayValue('chore')
     fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'poke at it' } })
-    await screen.findByRole('option', { name: 'mock (default)' })
-    fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'mock' } })
-    fireEvent.change(screen.getByLabelText('Tier'), { target: { value: 'deep' } })
+    await userEvent.click(await screen.findByLabelText('mock (default)'))
+    await userEvent.click(screen.getByLabelText('deep'))
     await userEvent.click(screen.getByRole('button', { name: 'Explore' }))
 
     const post = mock.calls.find((c) => c.method === 'POST' && c.url.includes('/exec'))
     expect(post?.body).toEqual({
       command: 'explore',
-      args: { blueprint: 'chore', task: 'poke at it', variants: 2, engine: 'mock', tier: 'deep' },
+      args: { blueprint: 'chore', task: 'poke at it', variants: 2, engine: ['mock'], tier: ['deep'] },
+    })
+  })
+
+  it('composes multiple checked engines and a tier into the explore args, crossed by the CLI', async () => {
+    const mock = installFetch({
+      '/blueprints': blueprints,
+      '/engines': multiEngines,
+      '/exec': { exec_id: 'x5' },
+    })
+    renderWithProviders(<ExploreDialog onClose={() => {}} />)
+
+    await screen.findByDisplayValue('chore')
+    fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'try many' } })
+    await userEvent.click(await screen.findByLabelText('mock (default)'))
+    await userEvent.click(screen.getByLabelText('gpt'))
+    await userEvent.click(screen.getByLabelText('standard'))
+    await userEvent.click(screen.getByRole('button', { name: 'Explore' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.includes('/exec'))
+    expect(post?.body).toEqual({
+      command: 'explore',
+      args: {
+        blueprint: 'chore',
+        task: 'try many',
+        variants: 2,
+        engine: ['mock', 'gpt'],
+        tier: ['standard'],
+      },
+    })
+  })
+
+  it('unchecking a previously picked engine drops it from the array', async () => {
+    const mock = installFetch({
+      '/blueprints': blueprints,
+      '/engines': multiEngines,
+      '/exec': { exec_id: 'x6' },
+    })
+    renderWithProviders(<ExploreDialog onClose={() => {}} />)
+
+    await screen.findByDisplayValue('chore')
+    fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'try again' } })
+    const mockCheckbox = await screen.findByLabelText('mock (default)')
+    await userEvent.click(mockCheckbox)
+    await userEvent.click(screen.getByLabelText('gpt'))
+    await userEvent.click(mockCheckbox) // uncheck mock again
+    await userEvent.click(screen.getByRole('button', { name: 'Explore' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.includes('/exec'))
+    expect(post?.body).toEqual({
+      command: 'explore',
+      args: { blueprint: 'chore', task: 'try again', variants: 2, engine: ['gpt'] },
     })
   })
 

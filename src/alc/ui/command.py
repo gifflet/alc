@@ -20,6 +20,10 @@ class _Spec:
     positionals: tuple[str, ...] = ()
     opt_positionals: tuple[str, ...] = ()
     value_flags: tuple[str, ...] = ()
+    # A repeatable flag: the arg value must be a list, emitted as `--name item`
+    # once per item (e.g. engine=["A", "B"] -> --engine A --engine B). Mirrors
+    # argparse's action="append" on the CLI side (see cmd_explore).
+    list_flags: tuple[str, ...] = ()
     bool_flags: tuple[str, ...] = ()
 
     def allowed(self) -> set[str]:
@@ -27,6 +31,7 @@ class _Spec:
             *self.positionals,
             *self.opt_positionals,
             *self.value_flags,
+            *self.list_flags,
             *self.bool_flags,
         }
 
@@ -53,13 +58,14 @@ _COMMANDS: dict[str, _Spec] = {
     ),
     "explore": _Spec(
         # `cmd_explore`'s --engine/--tier are REPEATABLE (argparse action="append"),
-        # crossed as a cartesian product; _Spec has no notion of a repeated flag,
-        # so this whitelist only exposes a SINGLE engine and tier — the closest
-        # safe subset, not the full cartesian explore. --variants alone (no
-        # engine/tier) still covers the common case: N copies of the manifest's
-        # default engine/the Blueprint's own tier.
+        # crossed as a cartesian product; list_flags mirrors that: engine/tier
+        # take a list and are emitted as one `--engine`/`--tier` per item, in
+        # order (engines before tiers). An absent or empty list omits the flag
+        # entirely, which the CLI treats as "use the default" (the manifest's
+        # default engine / the Blueprint's own tier).
         positionals=("blueprint", "task"),
-        value_flags=("variants", "engine", "tier"),
+        value_flags=("variants",),
+        list_flags=("engine", "tier"),
     ),
     "tick": _Spec(value_flags=("concurrency",)),
     "conduct": _Spec(
@@ -88,6 +94,11 @@ def command_schema() -> dict[str, dict[str, list[str]]]:
     The single source of truth the frontend reads to render a config form and
     the backend reuses (via build_argv) to validate — one entry per command with
     its accepted positionals, optional positionals and value/bool flags.
+
+    Deliberately omits `list_flags` (e.g. explore's repeatable engine/tier):
+    the generic Run Configuration form only renders positionals/value/bool
+    flags. `ExploreDialog` is a bespoke form and builds its own list args
+    without reading this schema.
     """
     return {
         command: {
@@ -136,6 +147,18 @@ def build_argv(command: str, args: dict | None) -> list[str]:
         value = args.get(name)
         if value not in (None, ""):
             argv.extend([f"--{name}", str(value)])
+
+    for name in spec.list_flags:
+        value = args.get(name)
+        if value is None:
+            continue  # absent -> omit the flag entirely (CLI falls back to its default)
+        if not isinstance(value, list):
+            raise ApiError(
+                f"'{name}' must be a list for '{command}', got {type(value).__name__}",
+                status=422,
+            )
+        for item in value:
+            argv.extend([f"--{name}", str(item)])
 
     for name in spec.bool_flags:
         if args.get(name):
