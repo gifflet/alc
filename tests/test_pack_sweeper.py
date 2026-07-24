@@ -104,6 +104,15 @@ class TestPackFilesSweeper:
         assert "name: map" in content
         assert "symbols: list" in content
 
+    def test_map_blueprint_maps_only_unique_symbols_or_empty(self) -> None:
+        # The gate proves absence by searching for each name literally, so a
+        # generic token (e.g. `font-size`) can never be proven absent. The map
+        # must list only UNIQUE identifiers, and return an EMPTY list when the
+        # removal has none — routing the gate to inconclusive, not a false fail.
+        content = pack_files("sweeper", stacks=[])[".alc/blueprints/map.md"]
+        assert "unique" in content.lower()
+        assert "empty" in content.lower()
+
 
 # ---------------------------------------------------------------------------
 # Loading is strict: flows, specialists, and loops are pydantic-validated
