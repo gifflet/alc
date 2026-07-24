@@ -88,6 +88,17 @@ class TestPackFilesSweeper:
         assert "field: symbols" in content
         assert "{value}" in content
 
+    def test_unship_gate_proof_is_layout_agnostic(self) -> None:
+        # The absence proof must search the whole tracked codebase, not a
+        # hardcoded `src/` dir that does not exist in every project (static
+        # sites, non-`src/` layouts) — else the grep vacuously passes and proves
+        # nothing. `git grep` searches tracked files regardless of layout.
+        content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
+        # Searches the whole repo from its root (no hardcoded `src/` that would
+        # not exist in every layout), skipping ALC's own dir and VCS/deps noise.
+        assert "src/" not in content
+        assert "--exclude-dir=.alc" in content
+
     def test_map_blueprint_reports_a_symbols_list(self) -> None:
         content = pack_files("sweeper", stacks=[])[".alc/blueprints/map.md"]
         assert "name: map" in content

@@ -231,7 +231,7 @@ stages:
     derive_checks:
       from_stage: map
       field: symbols
-      shell_template: '! grep -rn {value} src/'
+      shell_template: '! grep -rn {value} . --exclude-dir=.git --exclude-dir=.alc --exclude-dir=node_modules'
 """
 
 
