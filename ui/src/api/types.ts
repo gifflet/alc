@@ -428,6 +428,51 @@ export interface MetricPoint {
 export type MetricSeries = Record<string, MetricPoint[]>
 
 // ---------------------------------------------------------------------------
+// Checks (checks.py CheckHistory / ChecksAudit) — `alc checks history` /
+// `alc checks audit`: two read-only Maintainer reads, dataclasses.asdict-
+// serialised as-is; field names match exactly.
+// ---------------------------------------------------------------------------
+
+/** One check's aggregate history (check_history), computed from every
+ * `check_finished` event across the run logs. */
+export interface CheckHistoryEntry {
+  name: string
+  runs: number
+  passes: number
+  pass_rate: number
+  mean_duration_s: number
+  flake_score: number
+}
+
+/** [check name, command] — CheckSetAudit.add/unavailable's tuple entries,
+ * serialised as a 2-element JSON array. */
+export type CheckProposal = [string, string[]]
+
+/** One check_set's proposed state (CheckSetAudit): `add` is available on
+ * PATH today but not yet live in the Manifest; `unavailable` still lacks a
+ * binary — informational only. */
+export interface CheckSetAudit {
+  set_name: string
+  is_new: boolean
+  add: CheckProposal[]
+  unavailable: CheckProposal[]
+}
+
+/** A Blueprint whose resolved checks are nothing but the smoke placeholder,
+ * even though a stack is detected today (SmokeOnlyBlueprint). */
+export interface SmokeOnlyBlueprint {
+  blueprint: string
+  stacks: string[]
+}
+
+/** GET /checks/audit's shape (ChecksAudit) — every field is a PROPOSAL;
+ * nothing here was written to disk. */
+export interface ChecksAudit {
+  check_sets: CheckSetAudit[]
+  smoke_only_blueprints: SmokeOnlyBlueprint[]
+}
+
+// ---------------------------------------------------------------------------
 // Artifacts (artifacts.py RunArtifacts) — e2e evidence a run captured.
 // ---------------------------------------------------------------------------
 

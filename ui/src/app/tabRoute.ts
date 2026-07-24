@@ -22,6 +22,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   team: 'Team',
   metrics: 'Metrics',
   compare: 'Compare',
+  checks: 'Checks',
 }
 
 const PRIMARY_VIEWS = new Set<PrimaryView>([
@@ -34,6 +35,7 @@ const PRIMARY_VIEWS = new Set<PrimaryView>([
   'team',
   'metrics',
   'compare',
+  'checks',
 ])
 
 /** File-extension suffixes per config resource (mirrors the tool window). */

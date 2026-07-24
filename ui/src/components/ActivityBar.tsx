@@ -8,6 +8,7 @@ import {
   Radio,
   RefreshCw,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   Users,
   Wand2,
@@ -32,6 +33,7 @@ const ITEMS: Item[] = [
   { view: 'team', icon: Users, label: 'Team' },
   { view: 'metrics', icon: LineChart, label: 'Metrics' },
   { view: 'compare', icon: GitCompare, label: 'Compare' },
+  { view: 'checks', icon: ShieldCheck, label: 'Checks' },
   { view: 'run-configs', icon: SlidersHorizontal, label: 'Run Configurations' },
 ]
 
@@ -45,6 +47,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   team: 'Team',
   metrics: 'Metrics',
   compare: 'Compare',
+  checks: 'Checks',
 }
 
 export function openView(view: PrimaryView): void {

@@ -143,6 +143,22 @@ export function useMetrics(id: string) {
   })
 }
 
+export function useChecksHistory(id: string) {
+  return useQuery({
+    queryKey: keys.checksHistory(id),
+    queryFn: () => api.getChecksHistory(id),
+    enabled: enabled(id),
+  })
+}
+
+export function useChecksAudit(id: string) {
+  return useQuery({
+    queryKey: keys.checksAudit(id),
+    queryFn: () => api.getChecksAudit(id),
+    enabled: enabled(id),
+  })
+}
+
 export function useRunArtifacts(id: string, stem: string) {
   return useQuery({
     queryKey: keys.runArtifacts(id, stem),

@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from alc.ui import (
     routes_branches,
+    routes_checks,
     routes_config,
     routes_exec,
     routes_metrics,
@@ -109,6 +110,7 @@ def create_app(
     app.include_router(routes_variants.router)
     app.include_router(routes_signals.router)
     app.include_router(routes_metrics.router)
+    app.include_router(routes_checks.router)
     app.include_router(routes_config.router)
     # The WebSocket route is registered BEFORE the SPA catch-all so /ws always
     # resolves to the WS handler.

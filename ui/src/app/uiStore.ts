@@ -17,6 +17,7 @@ export type PrimaryView =
   | 'team'
   | 'metrics'
   | 'compare'
+  | 'checks'
 
 /** A config file that can be opened as a read-only source viewer. */
 export type SourceResource = 'manifest' | CollectionName | 'prompts'

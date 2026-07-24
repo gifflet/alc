@@ -23,6 +23,7 @@ from alc import runs as runs_core
 from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
 from alc.branches import delete_branches, list_alc_branches, prune_worktrees
+from alc.checks import audit_checks, check_history
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
@@ -401,6 +402,34 @@ def read_run(root: Path, stem: str, offset: int = 0) -> dict:
         )
     except FileNotFoundError as exc:
         raise ApiError(f"no run '{stem}'", status=404) from exc
+
+
+# ---------------------------------------------------------------------------
+# Checks (`alc checks history` / `alc checks audit`) — two read-only Maintainer
+# reads over checks.py; neither ever writes.
+# ---------------------------------------------------------------------------
+
+
+def checks_history(root: Path) -> list[dict]:
+    """Return per-check pass-rate/mean-duration/flake-score (mirrors `alc checks history`).
+
+    An absent or empty runs_dir yields an empty list, never an error — the
+    same contract `check_history` itself already guarantees.
+    """
+    return [asdict(h) for h in check_history(_runs_dir(root))]
+
+
+def checks_audit(root: Path) -> dict:
+    """Return proposed check-set upgrades + smoke-only Blueprints (mirrors `alc checks audit`).
+
+    Re-detects the project's stack(s) against *root* and diffs them against
+    the Manifest's check_sets and each Blueprint's resolved checks — never
+    writes (mirrors `cmd_checks`'s `_checks_audit`).
+    """
+    ol = operator_layer(root)
+    manifest = load_manifest(ol)
+    blueprints = load_all_blueprints(manifest, ol)
+    return asdict(audit_checks(manifest, root, blueprints))
 
 
 # ---------------------------------------------------------------------------

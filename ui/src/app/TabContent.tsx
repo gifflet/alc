@@ -13,6 +13,7 @@ import { SourceEditor } from '../views/SourceEditor'
 import { Team } from '../views/Team'
 import { Metrics } from '../views/Metrics'
 import { Compare } from '../views/Compare'
+import { Checks } from '../views/Checks'
 import { useUiState } from './uiStore'
 import type { PrimaryView, Tab } from './uiStore'
 
@@ -26,6 +27,7 @@ const VIEWS: Record<PrimaryView, () => React.ReactElement> = {
   team: Team,
   metrics: Metrics,
   compare: Compare,
+  checks: Checks,
 }
 
 function renderTab(tab: Tab): React.ReactElement {

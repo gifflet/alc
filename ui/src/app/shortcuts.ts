@@ -20,6 +20,7 @@ const NUMBER_VIEW: Record<string, PrimaryView> = {
   '6': 'team',
   '7': 'metrics',
   '8': 'compare',
+  '9': 'checks',
 }
 
 /** The action a keydown maps to, or null. mod = Cmd (mac) or Ctrl. */

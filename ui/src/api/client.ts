@@ -8,6 +8,8 @@ import type {
   AdoptResult,
   AuditWindow,
   BranchList,
+  CheckHistoryEntry,
+  ChecksAudit,
   CollectionItem,
   CollectionName,
   CommandSchema,
@@ -219,6 +221,11 @@ export const api = {
     request<RunArtifacts>(`${proj(id)}/runs/${encodeURIComponent(stem)}/artifacts`),
   getAudit: (id: string, since: string) =>
     request<AuditWindow>(`${proj(id)}/audit?since=${encodeURIComponent(since)}`),
+
+  // Checks (`alc checks history` / `alc checks audit`)
+  getChecksHistory: (id: string) =>
+    request<CheckHistoryEntry[]>(`${proj(id)}/checks/history`),
+  getChecksAudit: (id: string) => request<ChecksAudit>(`${proj(id)}/checks/audit`),
 
   // Run configurations
   getCommands: () => request<CommandSchema>('/api/commands'),
