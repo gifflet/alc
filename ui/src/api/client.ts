@@ -32,6 +32,8 @@ import type {
   RunDetail,
   RunsPage,
   ScorecardTotals,
+  Signal,
+  SignalIngestPayload,
   TeamRoster,
   VariantRow,
   Violation,
@@ -175,6 +177,14 @@ export const api = {
     request<AdoptResult>(`${proj(id)}/variants/adopt`, {
       method: 'POST',
       body: JSON.stringify({ branch }),
+    }),
+
+  // Signals (`alc signal ingest` / `signal list`)
+  getSignals: (id: string) => request<Signal[]>(`${proj(id)}/signals`),
+  ingestSignal: (id: string, payload: SignalIngestPayload) =>
+    request<{ path: string }>(`${proj(id)}/signals`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   // Team (Archetype Packs + Mix Health)

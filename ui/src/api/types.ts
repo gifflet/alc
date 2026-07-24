@@ -244,6 +244,35 @@ export interface AdoptResult {
 }
 
 // ---------------------------------------------------------------------------
+// Signals (models.py Signal) — `alc signal ingest`/`signal list`: typed,
+// external events (an error tracker alert, operator feedback, an issue, a
+// review comment) a loop's `signals` replenish later drains into demands.
+// ---------------------------------------------------------------------------
+
+/** One GET /signals row: service.list_signals prepends `path` to the Signal's
+ * own fields (mirrors `alc signal list`). `weight` is reporting-only — no
+ * replenish policy reads it today. */
+export interface Signal {
+  path: string
+  kind: 'error' | 'feedback' | 'issue' | 'review'
+  source: string
+  title: string
+  body: string
+  ts: number
+  weight: number | null
+}
+
+/** Body for POST /signals — the ingest form's fields. `ts`/`weight` are left
+ * out on purpose: `ts` defaults to now server-side (Signal.ts), and `weight`
+ * has zero runtime effect today (reporting-only, no control here). */
+export interface SignalIngestPayload {
+  kind: Signal['kind']
+  source: string
+  title: string
+  body: string
+}
+
+// ---------------------------------------------------------------------------
 // Lint / engines / aggregate scorecard
 // ---------------------------------------------------------------------------
 
@@ -512,6 +541,10 @@ export interface WsRunConfigsChanged {
   type: 'run_configs_changed'
   project_id: string
 }
+export interface WsSignalsChanged {
+  type: 'signals_changed'
+  project_id: string
+}
 
 export type WsMessage =
   | WsSubscribed
@@ -524,3 +557,4 @@ export type WsMessage =
   | WsExecFinished
   | WsProjectListChanged
   | WsRunConfigsChanged
+  | WsSignalsChanged

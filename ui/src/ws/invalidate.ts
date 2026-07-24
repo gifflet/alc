@@ -66,6 +66,8 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
     }
     case 'run_configs_changed':
       return [keys.runConfigs(msg.project_id)]
+    case 'signals_changed':
+      return [keys.signals(msg.project_id)]
     case 'run_event':
       return RUN_LIST_EVENTS.has(msg.event.event) ? [keys.runs(msg.project_id)] : []
     case 'exec_output':

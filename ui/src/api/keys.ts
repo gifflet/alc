@@ -19,6 +19,7 @@ export const keys = {
   queue: (id: string) => ['project', id, 'queue'] as const,
   branches: (id: string) => ['project', id, 'branches'] as const,
   variants: (id: string) => ['project', id, 'variants'] as const,
+  signals: (id: string) => ['project', id, 'signals'] as const,
   runs: (id: string) => ['project', id, 'runs'] as const,
   run: (id: string, stem: string) => ['project', id, 'run', stem] as const,
   loopState: (id: string, name: string) => ['project', id, 'loop', name, 'state'] as const,

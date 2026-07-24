@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { Queue } from './Queue'
 import { installFetch, renderWithProviders, res } from '../test/utils'
 import type { FetchCall } from '../test/utils'
-import type { Branch, FlowReport, QueueTask } from '../api/types'
+import type { Branch, FlowReport, QueueTask, Signal } from '../api/types'
 
 const task: QueueTask = {
   flow: 'ship',
@@ -40,6 +40,7 @@ describe('Queue', () => {
         done: [{ stem: 'd1', mtime: 1783828700, task, report }],
       },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
     // The task first line shows in both the pending and the done row.
@@ -58,6 +59,7 @@ describe('Queue', () => {
     installFetch({
       '/queue': { pending: [{ stem: 'p1', mtime: 1, task: retried }], done: [] },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
     // The attempt number is surfaced as a badge.
@@ -74,6 +76,7 @@ describe('Queue', () => {
         done: [{ stem: 'd1', mtime: 1783828700, task, report }],
       },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
     const row = await screen.findByText('add a login page')
@@ -94,6 +97,7 @@ describe('Queue actions', () => {
       '/flows': [{ name: 'ship', mtime: 1 }],
       '/specialists': [],
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -113,6 +117,7 @@ describe('Queue actions', () => {
         done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: true }],
       },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -129,6 +134,7 @@ describe('Queue actions', () => {
         done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: true }],
       },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -148,6 +154,7 @@ describe('Queue actions', () => {
         done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: false }],
       },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
     expect(await screen.findByText('failed')).toBeInTheDocument()
@@ -163,6 +170,7 @@ describe('Queue actions', () => {
           ? res(204, {})
           : { pending: [{ stem: 'p1', mtime: 1, task }], done: [] },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -182,6 +190,7 @@ describe('Branches', () => {
       '/queue': { pending: [], done: [] },
       '/branches/land': { merged: ['alc/tick-aaaaaaaa'], conflicted: [] },
       '/branches': { available: true, branches: [branch] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -197,6 +206,7 @@ describe('Branches', () => {
       '/queue': { pending: [], done: [] },
       '/branches/discard': { deleted: ['alc/tick-aaaaaaaa'], pruned_worktrees: 0, deleted_bundles: [] },
       '/branches': { available: true, branches: [branch] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -218,6 +228,7 @@ describe('Branches', () => {
     installFetch({
       '/queue': { pending: [], done: [] },
       '/branches': { available: false, branches: [] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -229,6 +240,7 @@ describe('Branches', () => {
       '/queue': { pending: [], done: [] },
       '/branches/land': { merged: [], conflicted: ['alc/tick-aaaaaaaa'] },
       '/branches': { available: true, branches: [branch] },
+      '/signals': [],
     })
     renderWithProviders(<Queue />)
 
@@ -236,5 +248,65 @@ describe('Branches', () => {
 
     const note = await screen.findByText(/left for manual resolution/i)
     expect(note.textContent).toContain('alc/tick-aaaaaaaa')
+  })
+})
+
+const signal: Signal = {
+  path: '/proj/.alc/signals/s1.json',
+  kind: 'error',
+  source: 'sentry',
+  title: 'NPE in checkout',
+  body: '',
+  ts: 1783828795,
+  weight: null,
+}
+
+describe('Signals', () => {
+  it('lists pending signals (kind, source, title, age)', async () => {
+    installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches': { available: false, branches: [] },
+      '/signals': [signal],
+    })
+    renderWithProviders(<Queue />)
+
+    expect(await screen.findByText('NPE in checkout')).toBeInTheDocument()
+    expect(screen.getByText('sentry')).toBeInTheDocument()
+    expect(screen.getByText('error')).toBeInTheDocument()
+  })
+
+  it('shows a clear empty state with no pending signals', async () => {
+    installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches': { available: false, branches: [] },
+      '/signals': [],
+    })
+    renderWithProviders(<Queue />)
+
+    expect(await screen.findByText(/no pending signals/i)).toBeInTheDocument()
+  })
+
+  it('ingests a signal from the dialog with the exact payload', async () => {
+    const mock = installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches': { available: false, branches: [] },
+      '/signals': (call: FetchCall) => (call.method === 'POST' ? { path: '/proj/.alc/signals/s2.json' } : []),
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Ingest signal' }))
+    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'feedback' } })
+    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'operator' } })
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'slow onboarding' } })
+    fireEvent.change(screen.getByLabelText('Body'), { target: { value: 'users drop off at step 2' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Ingest' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/signals'))
+    expect(post?.body).toEqual({
+      kind: 'feedback',
+      source: 'operator',
+      title: 'slow onboarding',
+      body: 'users drop off at step 2',
+    })
   })
 })

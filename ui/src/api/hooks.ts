@@ -6,7 +6,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { keys } from './keys'
-import type { CollectionName, DiscardBranchesBody, QueueTask, RunConfig } from './types'
+import type {
+  CollectionName,
+  DiscardBranchesBody,
+  QueueTask,
+  RunConfig,
+  SignalIngestPayload,
+} from './types'
 
 const enabled = (id: string | undefined): boolean => Boolean(id)
 
@@ -74,6 +80,14 @@ export function useVariants(id: string) {
   return useQuery({
     queryKey: keys.variants(id),
     queryFn: () => api.getVariants(id),
+    enabled: enabled(id),
+  })
+}
+
+export function useSignals(id: string) {
+  return useQuery({
+    queryKey: keys.signals(id),
+    queryFn: () => api.getSignals(id),
     enabled: enabled(id),
   })
 }
@@ -310,6 +324,16 @@ export function useAdoptVariant(id: string) {
       qc.invalidateQueries({ queryKey: keys.variants(id) })
       qc.invalidateQueries({ queryKey: keys.branches(id) })
     },
+  })
+}
+
+/** Ingest a signal (mirrors `alc signal ingest`) — invalidates the pending
+ * list so it refreshes without waiting on the WS `signals_changed` event. */
+export function useIngestSignal(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: SignalIngestPayload) => api.ingestSignal(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.signals(id) }),
   })
 }
 

@@ -16,9 +16,11 @@ import {
   useDeletePending,
   useDiscardBranches,
   useEnqueueTask,
+  useIngestSignal,
   useLandBranches,
   useQueue,
   useRetryQueue,
+  useSignals,
 } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
@@ -29,9 +31,20 @@ import { EmptyState } from '../components/EmptyState'
 import { Field, NumberInput } from '../components/fields'
 import { Loading, Pill } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
+import type { Tone } from '../components/StatusDot'
 import { EnqueueDialog } from './EnqueueDialog'
+import { SignalIngestDialog } from './SignalIngestDialog'
 import { ApiError } from '../api/client'
-import type { Branch, DoneTask, FlowReport, MergeReport, PendingTask, QueueTask } from '../api/types'
+import type {
+  Branch,
+  DoneTask,
+  FlowReport,
+  MergeReport,
+  PendingTask,
+  QueueTask,
+  Signal,
+  SignalIngestPayload,
+} from '../api/types'
 
 function firstLine(text: string): string {
   return text.split('\n')[0]
@@ -205,6 +218,88 @@ function BranchesSection() {
           confirmLabel="Discard"
           onConfirm={confirmDiscard}
           onCancel={() => setDiscarding(null)}
+        />
+      )}
+    </section>
+  )
+}
+
+const SIGNAL_KIND_TONE: Record<Signal['kind'], Tone> = {
+  error: 'error',
+  feedback: 'accent',
+  issue: 'warn',
+  review: 'idle',
+}
+
+/** Pending signals (`alc signal ingest`/`signal list`) — typed external events
+ * (an error tracker alert, operator feedback, an issue, a review comment) a
+ * loop's `signals` replenish later drains into demands. Lives on Queue next to
+ * Branches: both are queue-adjacent panels for material that feeds (or is
+ * produced alongside) queue tasks, not full views of their own — the list is
+ * four columns wide, the same scale as Branches. */
+function SignalsSection() {
+  const id = useProjectId()
+  const { data, isLoading } = useSignals(id)
+  const ingest = useIngestSignal(id)
+  const [ingesting, setIngesting] = useState(false)
+
+  if (isLoading) return null
+  const signals = data ?? []
+
+  const closeIngest = () => {
+    setIngesting(false)
+    ingest.reset()
+  }
+
+  const submitIngest = (payload: SignalIngestPayload) =>
+    ingest.mutate(payload, { onSuccess: closeIngest })
+
+  const columns: Column<Signal>[] = [
+    {
+      key: 'kind',
+      header: 'Kind',
+      className: 'w-20',
+      render: (s) => <Pill tone={SIGNAL_KIND_TONE[s.kind]}>{s.kind}</Pill>,
+    },
+    { key: 'source', header: 'Source', className: 'w-28 font-mono text-faint', render: (s) => s.source },
+    { key: 'title', header: 'Title', className: 'text-muted', render: (s) => s.title },
+    {
+      key: 'age',
+      header: 'Age',
+      className: 'w-20',
+      render: (s) => <RelativeTime value={s.ts} />,
+    },
+  ]
+
+  return (
+    <section>
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="text-[11px] uppercase tracking-wide text-faint">
+          Signals <span className="tabular">({signals.length})</span>
+        </h3>
+        <button
+          type="button"
+          onClick={() => setIngesting(true)}
+          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+        >
+          <Plus className="h-3 w-3" />
+          Ingest signal
+        </button>
+      </div>
+      {signals.length === 0 ? (
+        <p className="text-[12px] text-faint">No pending signals.</p>
+      ) : (
+        <DataTable columns={columns} rows={signals} rowKey={(s) => s.path} />
+      )}
+      {apiMessage(ingest.error) && (
+        <p className="mt-1 text-[11px] text-error">{apiMessage(ingest.error)}</p>
+      )}
+      {ingesting && (
+        <SignalIngestDialog
+          onClose={closeIngest}
+          onSubmit={submitIngest}
+          saving={ingest.isPending}
+          error={ingest.error instanceof ApiError ? ingest.error.message : null}
         />
       )}
     </section>
@@ -505,8 +600,9 @@ export function Queue() {
         </div>
       )}
 
-      <div className="border-t border-border p-4">
+      <div className="flex flex-col gap-4 border-t border-border p-4">
         <BranchesSection />
+        <SignalsSection />
       </div>
 
       {enqueuing && (

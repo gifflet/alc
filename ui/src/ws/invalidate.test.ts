@@ -83,6 +83,12 @@ describe('wsInvalidations', () => {
     ).toEqual([keys.execs()])
   })
 
+  it('invalidates signals on signals_changed', () => {
+    expect(wsInvalidations({ type: 'signals_changed', project_id: 'p' })).toEqual([
+      keys.signals('p'),
+    ])
+  })
+
   it('invalidates execs, variants and branches when an exec finishes', () => {
     const out = wsInvalidations({
       type: 'exec_finished',
