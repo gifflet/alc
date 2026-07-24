@@ -48,11 +48,13 @@ class CheckSetAudit:
 
 @dataclass
 class SmokeOnlyBlueprint:
-    """A Blueprint whose resolved checks are nothing but the smoke placeholder,
-    even though a stack is detected today — a candidate to wire real checks."""
+    """A Blueprint whose resolved checks are nothing but the smoke placeholder —
+    a candidate to wire real checks. Always reported, whether or not a stack was
+    detected: ``stacks`` are the detected stack labels, and ``stacks == []`` means
+    NO stack was detected (the case that needs real checks the most)."""
 
     blueprint: str
-    stacks: list[str]  # detected stack labels, e.g. ["Python"]
+    stacks: list[str]  # detected stack labels, e.g. ["Python"]; [] when none detected
 
 
 @dataclass
@@ -103,11 +105,14 @@ def audit_checks(
                 CheckSetAudit(set_name=set_name, is_new=is_new, add=add, unavailable=unavailable)
             )
 
+    # A smoke-only Blueprint is ALWAYS reported — a stackless project (stacks == [])
+    # is exactly where the "no real checks" gap is most dangerous, so it must not be
+    # silenced. `plan` stays exempt via is_smoke_only().
     stack_labels = [label for label, _set_name, _checks in stacks]
     smoke_only_blueprints = [
         SmokeOnlyBlueprint(blueprint=bp.name, stacks=stack_labels)
         for bp in blueprints
-        if stack_labels and is_smoke_only(manifest, bp)
+        if is_smoke_only(manifest, bp)
     ]
 
     return ChecksAudit(check_sets=check_sets, smoke_only_blueprints=smoke_only_blueprints)

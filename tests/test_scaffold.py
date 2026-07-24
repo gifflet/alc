@@ -233,6 +233,97 @@ class TestDetectStackPrecedence:
         assert label == "Go"
 
 
+class TestDetectStackMoreEcosystems:
+    def test_ruby_gemfile_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n")
+        label, checks = detect_stack(tmp_path)
+        assert label == "Ruby"
+        assert "rspec" in checks
+        assert "rubocop" in checks
+
+    def test_php_composer_json_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "composer.json").write_text('{"name": "vendor/pkg"}\n')
+        label, checks = detect_stack(tmp_path)
+        assert label == "PHP"
+        assert "composer" in checks
+        assert "phpstan" in checks
+
+    def test_maven_pom_xml_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "pom.xml").write_text("<project></project>\n")
+        label, checks = detect_stack(tmp_path)
+        assert label == "Maven"
+        assert "mvn" in checks
+        assert "verify" in checks
+
+    def test_gradle_groovy_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "build.gradle").write_text("plugins {}\n")
+        label, checks = detect_stack(tmp_path)
+        assert label == "Gradle"
+        assert "gradlew" in checks
+
+    def test_gradle_kotlin_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "build.gradle.kts").write_text("plugins {}\n")
+        label, _checks = detect_stack(tmp_path)
+        assert label == "Gradle"
+
+    def test_elixir_mix_exs_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "mix.exs").write_text("defmodule X.MixProject do\nend\n")
+        label, checks = detect_stack(tmp_path)
+        assert label == "Elixir"
+        assert "mix" in checks
+        assert "credo" in checks
+
+    def test_dotnet_csproj_glob_detected(self, tmp_path: Path) -> None:
+        """detect_stack() matches a *.csproj file by glob, not exact name."""
+        (tmp_path / "App.csproj").write_text("<Project></Project>\n")
+        label, checks = detect_stack(tmp_path)
+        assert label == ".NET"
+        assert "dotnet" in checks
+
+    def test_dotnet_sln_only_detected(self, tmp_path: Path) -> None:
+        (tmp_path / "MyApp.sln").write_text("Microsoft Visual Studio Solution File\n")
+        label, _checks = detect_stack(tmp_path)
+        assert label == ".NET"
+
+    def test_empty_dir_still_returns_default_block(self, tmp_path: Path) -> None:
+        from alc.scaffold import _DEFAULT_CHECKS_BLOCK
+
+        assert detect_stack(tmp_path) == (None, _DEFAULT_CHECKS_BLOCK)
+
+
+class TestScaffoldRubyCheckSet:
+    def test_ruby_only_project_writes_a_ruby_check_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A Gemfile-only project scaffolds a `ruby` check_set alongside `security`."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n")
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert set(manifest.check_sets) == {"ruby", "security"}
+        assert [c.name for c in manifest.check_sets["ruby"]] == ["test", "lint"]
+        assert [c.name for c in manifest.check_sets["security"]] == ["bundler-audit", "gitleaks"]
+
+    def test_ruby_check_set_entries_commented_when_binaries_absent(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """No binary on PATH -> the ruby set renders every entry commented out."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'\n")
+        scaffold(tmp_path)
+
+        manifest_text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert "ruby:" in manifest_text
+        assert "# - name: test" in manifest_text
+        assert "# - name: lint" in manifest_text
+        assert "# - name: bundler-audit" in manifest_text
+
+        # A fully-commented set still parses as a valid (empty) list.
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.check_sets["ruby"] == []
+
+
 # ---------------------------------------------------------------------------
 # check_sets — alc init writes one named set per detected stack + `security`
 # ---------------------------------------------------------------------------

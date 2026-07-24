@@ -87,7 +87,11 @@ class TestChecksAudit:
         assert resp.status_code == 200
         body = resp.json()
         assert any(cs["set_name"] == "security" for cs in body["check_sets"])
-        assert body["smoke_only_blueprints"] == []
+        # With no stack, the scaffold's smoke-only blueprints are now flagged too
+        # (stacks == [] means "no stack detected") — the gap that needs it most.
+        names = {b["blueprint"] for b in body["smoke_only_blueprints"]}
+        assert names == {"bug", "chore", "feature"}
+        assert all(b["stacks"] == [] for b in body["smoke_only_blueprints"])
 
     def test_detected_stack_proposes_a_new_check_set(
         self, client, registered: str, project: Path, monkeypatch: pytest.MonkeyPatch

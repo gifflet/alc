@@ -149,10 +149,18 @@ class TestAuditChecksSmokeOnlyBlueprints:
             SmokeOnlyBlueprint(blueprint="chore", stacks=["Python"])
         ]
 
-    def test_no_stack_detected_nothing_flagged(self, tmp_path: Path) -> None:
+    def test_stackless_smoke_only_blueprint_is_flagged(self, tmp_path: Path) -> None:
+        """No stack detected is the case that needs the warning MOST — flag it,
+        with ``stacks=[]`` marking the stackless variant."""
         bp = _blueprint("chore")
         report = audit_checks(_manifest(), tmp_path, [bp])
-        assert report.smoke_only_blueprints == []
+        assert report.smoke_only_blueprints == [
+            SmokeOnlyBlueprint(blueprint="chore", stacks=[])
+        ]
+
+    def test_plan_is_exempt_even_with_no_stack(self, tmp_path: Path) -> None:
+        report = audit_checks(_manifest(), tmp_path, [_blueprint("plan"), _blueprint("chore")])
+        assert [s.blueprint for s in report.smoke_only_blueprints] == ["chore"]
 
     def test_blueprint_with_real_checks_not_flagged(self, tmp_path: Path) -> None:
         (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
@@ -206,6 +214,28 @@ class TestChecksAuditCli:
         data = json.loads(capsys.readouterr().out)
         assert "check_sets" in data
         assert "smoke_only_blueprints" in data
+
+    def test_stackless_smoke_only_blueprint_prints_honest_message(
+        self, operator_layer: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # The operator_layer fixture has a smoke-only `chore` and no stack markers.
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_checks(_ns()) == 0
+        out = capsys.readouterr().out
+        assert "chore" in out
+        assert "no stack was detected" in out
+
+    def test_add_proposal_prints_a_pasteable_snippet(
+        self, operator_layer: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # Every binary "available" -> gitleaks (in the always-present security set)
+        # is an add proposal, and the audit prints a manifest-ready YAML fragment.
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_checks(_ns()) == 0
+        out = capsys.readouterr().out
+        assert "- name: gitleaks" in out
+        assert 'command: ["gitleaks", "detect"]' in out
 
 
 # ---------------------------------------------------------------------------

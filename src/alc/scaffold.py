@@ -195,6 +195,12 @@ def detect_stack(project_root: Path) -> tuple[str | None, str]:
       pyproject.toml or setup.py -> Python
       package.json -> Node
       Cargo.toml -> Rust
+      Gemfile -> Ruby
+      composer.json -> PHP
+      pom.xml -> Maven
+      build.gradle or build.gradle.kts -> Gradle
+      mix.exs -> Elixir
+      any *.csproj or *.sln -> .NET
 
     Args:
         project_root: Directory to inspect for marker files.
@@ -227,6 +233,42 @@ def detect_stack(project_root: Path) -> tuple[str | None, str]:
         return (
             "Rust",
             "  - name: check\n    command: [\"cargo\", \"check\"]",
+        )
+    if (project_root / "Gemfile").exists():
+        return (
+            "Ruby",
+            "  - name: test\n    command: [\"bundle\", \"exec\", \"rspec\"]\n"
+            "  - name: lint\n    command: [\"bundle\", \"exec\", \"rubocop\"]",
+        )
+    if (project_root / "composer.json").exists():
+        return (
+            "PHP",
+            "  - name: test\n    command: [\"composer\", \"test\"]\n"
+            "  - name: analyse\n    command: [\"vendor/bin/phpstan\", \"analyse\"]",
+        )
+    if (project_root / "pom.xml").exists():
+        return (
+            "Maven",
+            "  - name: test\n    command: [\"mvn\", \"-q\", \"test\"]\n"
+            "  - name: verify\n    command: [\"mvn\", \"-q\", \"verify\"]",
+        )
+    if (project_root / "build.gradle").exists() or (project_root / "build.gradle.kts").exists():
+        return (
+            "Gradle",
+            "  - name: test\n    command: [\"./gradlew\", \"test\"]\n"
+            "  - name: check\n    command: [\"./gradlew\", \"check\"]",
+        )
+    if (project_root / "mix.exs").exists():
+        return (
+            "Elixir",
+            "  - name: test\n    command: [\"mix\", \"test\"]\n"
+            "  - name: credo\n    command: [\"mix\", \"credo\"]",
+        )
+    if any(project_root.glob("*.csproj")) or any(project_root.glob("*.sln")):
+        return (
+            ".NET",
+            "  - name: build\n    command: [\"dotnet\", \"build\"]\n"
+            "  - name: test\n    command: [\"dotnet\", \"test\"]",
         )
     return (None, _DEFAULT_CHECKS_BLOCK)
 
@@ -275,6 +317,62 @@ _STACK_DEFS: list[tuple[tuple[str, ...], str, str, list[tuple[str, list[str]]]]]
             ("clippy", ["cargo", "clippy"]),
         ],
     ),
+    (
+        ("Gemfile",),
+        "Ruby",
+        "ruby",
+        [
+            ("test", ["bundle", "exec", "rspec"]),
+            ("lint", ["bundle", "exec", "rubocop"]),
+        ],
+    ),
+    (
+        ("composer.json",),
+        "PHP",
+        "php",
+        [
+            ("test", ["composer", "test"]),
+            ("analyse", ["vendor/bin/phpstan", "analyse"]),
+        ],
+    ),
+    (
+        ("pom.xml",),
+        "Maven",
+        "maven",
+        [
+            ("test", ["mvn", "-q", "test"]),
+            ("verify", ["mvn", "-q", "verify"]),
+        ],
+    ),
+    (
+        ("build.gradle", "build.gradle.kts"),
+        "Gradle",
+        "gradle",
+        [
+            ("test", ["./gradlew", "test"]),
+            ("check", ["./gradlew", "check"]),
+        ],
+    ),
+    (
+        ("mix.exs",),
+        "Elixir",
+        "elixir",
+        [
+            ("test", ["mix", "test"]),
+            ("credo", ["mix", "credo"]),
+        ],
+    ),
+    # The .NET markers are GLOBS (any *.csproj / *.sln file), not exact names —
+    # _marker_present() dispatches on the '*' to project_root.glob().
+    (
+        ("*.csproj", "*.sln"),
+        ".NET",
+        "dotnet",
+        [
+            ("build", ["dotnet", "build"]),
+            ("test", ["dotnet", "test"]),
+        ],
+    ),
 ]
 
 # Stack-specific security scanner, keyed by the stack's check_set name.
@@ -283,9 +381,24 @@ _SECURITY_SCANNERS: dict[str, tuple[str, list[str]]] = {
     "python": ("pip-audit", ["pip-audit"]),
     "node": ("npm-audit", ["npm", "audit"]),
     "rust": ("cargo-audit", ["cargo", "audit"]),
+    "ruby": ("bundler-audit", ["bundle", "exec", "bundler-audit", "check"]),
+    "php": ("composer-audit", ["composer", "audit"]),
 }
 # Secret scanning is not stack-specific, so it is always part of `security`.
 _GITLEAKS_CHECK: tuple[str, list[str]] = ("gitleaks", ["gitleaks", "detect"])
+
+
+def _marker_present(project_root: Path, marker: str) -> bool:
+    """True when *marker* is present in *project_root*.
+
+    A marker containing '*' is a glob (any matching file counts, e.g. a *.csproj);
+    every other marker is an exact filename matched with .exists(). KISS: this is
+    the only extension needed to support the .NET glob markers alongside the
+    exact-name markers every other stack uses.
+    """
+    if "*" in marker:
+        return any(project_root.glob(marker))
+    return (project_root / marker).exists()
 
 
 def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, list[str]]]]]:
@@ -300,13 +413,14 @@ def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, li
 
     Returns:
         A list of (stack_label, check_set_name, checks) tuples, one per detected
-        stack, in marker precedence order (Go, Python, Node, Rust). `checks` is
-        the full [(check_name, command), ...] battery for that stack.
+        stack, in marker precedence order (Go, Python, Node, Rust, Ruby, PHP,
+        Maven, Gradle, Elixir, .NET). `checks` is the full
+        [(check_name, command), ...] battery for that stack.
     """
     return [
         (label, set_name, checks)
         for markers, label, set_name, checks in _STACK_DEFS
-        if any((project_root / marker).exists() for marker in markers)
+        if any(_marker_present(project_root, marker) for marker in markers)
     ]
 
 

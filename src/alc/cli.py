@@ -255,9 +255,23 @@ def cmd_init(args: argparse.Namespace) -> int:
             "Python": "pytest",
             "Node": "npm test",
             "Rust": "cargo check",
+            "Ruby": "bundle exec rspec",
+            "PHP": "composer test",
+            "Maven": "mvn -q test",
+            "Gradle": "./gradlew test",
+            "Elixir": "mix test",
+            ".NET": "dotnet build, dotnet test",
         }
         checks_desc = _stack_checks.get(stack_label, "real checks")
         print(f"Detected {stack_label} — scaffolded real checks ({checks_desc}).")
+    else:
+        # No stack detected: the scaffold left only the ["true"] smoke placeholder.
+        # Say so loudly — ALC's guarantees are only as strong as the checks wired in.
+        print(
+            "No known stack detected — scaffolded a placeholder smoke check. "
+            "ALC verifies only what your checks verify: add real checks to "
+            ".alc/manifest.yaml check_sets, then run `alc checks audit`."
+        )
 
     if args.stage:
         _install_stage_packs(project_root, args.stage, args.force)
@@ -2269,6 +2283,8 @@ def _checks_audit(args: argparse.Namespace) -> int:
     including live binary availability, and prints the diff for the operator
     to apply by hand (or reconcile via `alc team hire --force`).
     """
+    import json
+
     from alc.checks import audit_checks
     from alc.intake import load_all_blueprints, load_manifest
 
@@ -2295,15 +2311,27 @@ def _checks_audit(args: argparse.Namespace) -> int:
         print(f"check_set '{cs.set_name}' ({status}):")
         for name, command in cs.add:
             print(f"  + {name}: {' '.join(command)}  (binary available — propose adding)")
+            # A ready-to-paste manifest fragment: the `- name:` / `command:` lines
+            # indented exactly as they sit under `check_sets: <set>:` in the Manifest.
+            print(f"      - name: {name}")
+            print(f"        command: {json.dumps(command)}")
         for name, command in cs.unavailable:
             print(f"  - {name}: {' '.join(command)}  (binary not on PATH — stays commented out)")
 
     for bp in report.smoke_only_blueprints:
-        stacks_desc = ", ".join(bp.stacks)
-        print(
-            f"Blueprint '{bp.blueprint}' resolves to only the smoke placeholder while "
-            f"{stacks_desc} is detected — consider wiring real checks."
-        )
+        if bp.stacks:
+            stacks_desc = ", ".join(bp.stacks)
+            print(
+                f"Blueprint '{bp.blueprint}' resolves to only the smoke placeholder while "
+                f"{stacks_desc} is detected — consider wiring real checks."
+            )
+        else:
+            print(
+                f"Blueprint '{bp.blueprint}' verifies nothing but the smoke placeholder "
+                "and no stack was detected — ALC's guarantees are only as strong as your "
+                "checks. Add real ones to your manifest check_sets (also editable in the "
+                "UI: Checks / Manifest)."
+            )
 
     return 0
 

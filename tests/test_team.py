@@ -325,3 +325,30 @@ class TestInitStage:
         blueprints = load_all_blueprints(manifest, operator_layer)
         errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
         assert not errors, errors
+
+
+# ---------------------------------------------------------------------------
+# `alc init` — honest guidance when no stack is detected.
+# ---------------------------------------------------------------------------
+
+
+class TestInitStacklessNudge:
+    def test_stackless_init_prints_an_honest_nudge(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # Empty dir -> no stack detected -> the nudge fires.
+        monkeypatch.chdir(tmp_path)
+        assert cmd_init(_init_ns()) == 0
+        out = capsys.readouterr().out
+        assert "No known stack detected" in out
+        assert "alc checks audit" in out
+
+    def test_detected_stack_init_does_not_print_the_nudge(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        (tmp_path / "go.mod").write_text("module example\n")
+        monkeypatch.chdir(tmp_path)
+        assert cmd_init(_init_ns()) == 0
+        out = capsys.readouterr().out
+        assert "No known stack detected" not in out
+        assert "Detected Go" in out
