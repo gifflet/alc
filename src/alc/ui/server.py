@@ -22,6 +22,7 @@ from alc.ui import (
     routes_projects,
     routes_queue,
     routes_run_configs,
+    routes_schedule,
     routes_signals,
     routes_team,
     routes_variants,
@@ -111,6 +112,7 @@ def create_app(
     app.include_router(routes_signals.router)
     app.include_router(routes_metrics.router)
     app.include_router(routes_checks.router)
+    app.include_router(routes_schedule.router)
     app.include_router(routes_config.router)
     # The WebSocket route is registered BEFORE the SPA catch-all so /ws always
     # resolves to the WS handler.

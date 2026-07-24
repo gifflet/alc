@@ -5,6 +5,7 @@ export const keys = {
   projects: () => ['projects'] as const,
   execs: () => ['execs'] as const,
   commands: () => ['commands'] as const,
+  schedule: () => ['schedule'] as const,
   runConfigs: (id: string) => ['project', id, 'run-configs'] as const,
   manifest: (id: string) => ['project', id, 'manifest'] as const,
   // The shared prefix over every per-collection key — invalidating it (partial

@@ -207,6 +207,39 @@ describe('Mix Health card', () => {
   })
 })
 
+describe('Schedule card', () => {
+  it('shows the "no crontab" state when the host has none', async () => {
+    installFetch({ ...dashboardStubs, '/schedule': { available: false, entries: [] } })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText('Schedule')).toBeInTheDocument()
+    expect(await screen.findByText('No crontab on this host.')).toBeInTheDocument()
+  })
+
+  it('shows an empty state when the crontab has no ALC-scheduled entries', async () => {
+    installFetch({ ...dashboardStubs, '/schedule': { available: true, entries: [] } })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText('Schedule')).toBeInTheDocument()
+    expect(await screen.findByText('No ALC-scheduled entries.')).toBeInTheDocument()
+  })
+
+  it('lists the alc-schedule entries the backend returns', async () => {
+    const tickEntry = '*/15 * * * * cd /proj && /usr/bin/alc tick # alc-schedule:tick'
+    const cycleEntry =
+      '0 */2 * * * cd /proj && /usr/bin/alc cycle deliver # alc-schedule:cycle:deliver'
+    installFetch({
+      ...dashboardStubs,
+      '/schedule': { available: true, entries: [tickEntry, cycleEntry] },
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText(tickEntry)).toBeInTheDocument()
+    expect(screen.getByText(cycleEntry)).toBeInTheDocument()
+    expect(screen.getByText(/install or remove a schedule with/i)).toBeInTheDocument()
+  })
+})
+
 describe('Audit card', () => {
   const auditWindow = (overrides: { tasks_total: number; cost_usd_total: number }) => ({
     since_epoch: 0,

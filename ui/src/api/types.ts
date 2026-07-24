@@ -547,6 +547,17 @@ export interface ExecView {
 }
 
 // ---------------------------------------------------------------------------
+// Schedule (schedule.py) — `alc schedule list`, read-only. The crontab is
+// host-level, not per-project: `available` is false when the host has no
+// `crontab` binary at all (schedule.has_crontab), never an error.
+// ---------------------------------------------------------------------------
+
+export interface ScheduleStatus {
+  available: boolean
+  entries: string[]
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket messages (ws.py + watch.py + execs.py)
 // ---------------------------------------------------------------------------
 

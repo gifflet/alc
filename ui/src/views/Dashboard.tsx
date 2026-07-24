@@ -1,7 +1,7 @@
 // Dashboard.tsx — Project overview: scorecard, queue, recent runs, loops, engines.
 // Every card is backed by a live query invalidated over WS — no manual refresh.
 import { useState } from 'react'
-import { Activity, ClipboardList, Cpu, Gauge, ListTodo, PieChart, RefreshCw } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, ListTodo, PieChart, RefreshCw } from 'lucide-react'
 import {
   useAudit,
   useCollection,
@@ -9,6 +9,7 @@ import {
   useLoopState,
   useQueue,
   useRuns,
+  useSchedule,
   useScorecard,
   useTeam,
 } from '../api/hooks'
@@ -297,6 +298,35 @@ function AuditCard() {
   )
 }
 
+/** Read-only view of the host crontab's ALC-scheduled entries (ui-phase-5.md
+ * T12). Installing/removing a schedule stays a CLI-only operation — the card
+ * only ever reads, never offers a mutating control. */
+function ScheduleCard() {
+  const { data } = useSchedule()
+  const entries = data?.entries ?? []
+  return (
+    <Card title="Schedule" icon={CalendarClock}>
+      {!data || !data.available ? (
+        <p className="text-[12px] text-faint">No crontab on this host.</p>
+      ) : entries.length === 0 ? (
+        <p className="text-[12px] text-faint">No ALC-scheduled entries.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {entries.map((line) => (
+            <li key={line} title={line} className="truncate font-mono text-[11px] text-muted">
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] text-faint">
+        Read-only — install or remove a schedule with <code className="font-mono">alc schedule</code> on
+        the CLI.
+      </p>
+    </Card>
+  )
+}
+
 export function Dashboard() {
   const id = useProjectId()
   const { data: engines } = useEngines(id)
@@ -313,6 +343,7 @@ export function Dashboard() {
       <LoopsCard />
       <MixHealthCard />
       <AuditCard />
+      <ScheduleCard />
     </div>
   )
 }

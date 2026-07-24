@@ -47,6 +47,7 @@ from alc.queue import (
     write_retry_task,
 )
 from alc.scaffold import detect_stacks
+from alc.schedule import has_crontab, list_entries, read_crontab
 from alc.stagepolicy import lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
@@ -1017,3 +1018,22 @@ def ingest_signal(root: Path, data: dict) -> dict:
         raise ApiError(f"invalid signal: {exc}", status=422) from exc
     path = signals_core.ingest(_signals_dir(root), signal)
     return {"path": str(path)}
+
+
+# ---------------------------------------------------------------------------
+# Schedule (`alc schedule list`) — read-only; install/remove stay CLI-only
+# ---------------------------------------------------------------------------
+
+
+def schedule_status() -> dict:
+    """Return the host crontab's ALC-scheduled entries (mirrors `alc schedule list`).
+
+    Project-independent — the crontab lives on the host, not inside a project
+    (ui-phase-5.md T12). Never writes: only `has_crontab`/`read_crontab` are
+    called. No `crontab` binary on this host degrades to
+    ``{"available": False, "entries": []}``, the same explicit-empty contract
+    `_schedule_list` itself already prints as "No `crontab` on this platform.".
+    """
+    if not has_crontab():
+        return {"available": False, "entries": []}
+    return {"available": True, "entries": list_entries(read_crontab())}

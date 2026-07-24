@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import { AlertTriangle, Check, FileWarning, Lock, Play, RotateCcw, Save } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
+  useCollection,
   useCollectionItem,
   useManifest,
   usePrompt,
@@ -47,6 +48,10 @@ const BlueprintForm = lazy(() =>
 )
 const FlowForm = lazy(() => import('./forms/FlowForm').then((m) => ({ default: m.FlowForm })))
 const LoopForm = lazy(() => import('./forms/LoopForm').then((m) => ({ default: m.LoopForm })))
+const SpecialistForm = lazy(() =>
+  import('./forms/SpecialistForm').then((m) => ({ default: m.SpecialistForm })),
+)
+const PrimerForm = lazy(() => import('./forms/PrimerForm').then((m) => ({ default: m.PrimerForm })))
 
 const MD_RESOURCES = new Set<SourceResource>(['blueprints', 'primers', 'prompts'])
 
@@ -285,6 +290,10 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
   const id = useProjectId()
   const { data, isLoading, isError } = useCollectionItem(id, collection, name)
   const manifest = useManifest(id)
+  // Feeds SpecialistForm's blueprint Select; harmless to fetch for every other
+  // collection too — the same query other panels (e.g. ExploreDialog) already
+  // keep warm, so this is a cache hit more often than not.
+  const blueprints = useCollection(id, 'blueprints')
   const save = useSaveCollectionItem(id, collection, name)
   const [running, setRunning] = useState(false)
 
@@ -293,6 +302,7 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
     | undefined
   const tiers = parsed?.compute_tiers ? Object.keys(parsed.compute_tiers) : []
   const checkSets = parsed?.check_sets ? Object.keys(parsed.check_sets) : []
+  const blueprintNames = (blueprints.data ?? []).map((b) => b.name)
 
   const renderForm =
     collection === 'blueprints'
@@ -303,7 +313,15 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
         ? (value: string, onChange: (v: string) => void) => <FlowForm value={value} onChange={onChange} />
         : collection === 'loops'
           ? (value: string, onChange: (v: string) => void) => <LoopForm value={value} onChange={onChange} />
-          : undefined
+          : collection === 'specialists'
+            ? (value: string, onChange: (v: string) => void) => (
+                <SpecialistForm value={value} onChange={onChange} blueprintNames={blueprintNames} />
+              )
+            : collection === 'primers'
+              ? (value: string, onChange: (v: string) => void) => (
+                  <PrimerForm value={value} onChange={onChange} />
+                )
+              : undefined
 
   const runCommand = RUN_COMMANDS[collection]
   const runButton = runCommand ? (

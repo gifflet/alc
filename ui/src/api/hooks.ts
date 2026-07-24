@@ -184,6 +184,13 @@ export function useCommands() {
   return useQuery({ queryKey: keys.commands(), queryFn: api.getCommands, staleTime: Infinity })
 }
 
+/** Host crontab's ALC-scheduled entries (`alc schedule list`) — read-only,
+ * project-independent (the crontab lives on the host, not inside any one
+ * project; ui-phase-5.md T12). Installing/removing a schedule stays CLI-only. */
+export function useSchedule() {
+  return useQuery({ queryKey: keys.schedule(), queryFn: api.getSchedule })
+}
+
 export function useRunConfigs(id: string) {
   return useQuery({
     queryKey: keys.runConfigs(id),

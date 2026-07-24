@@ -34,6 +34,7 @@ import type {
   RunConfig,
   RunDetail,
   RunsPage,
+  ScheduleStatus,
   ScorecardTotals,
   Signal,
   SignalIngestPayload,
@@ -266,4 +267,8 @@ export const api = {
       `/api/execs/${encodeURIComponent(execId)}/cancel`,
       { method: 'POST' },
     ),
+
+  // Schedule (`alc schedule list`) — read-only, project-independent; install/
+  // remove stays a CLI-only operation.
+  getSchedule: () => request<ScheduleStatus>('/api/schedule'),
 }
