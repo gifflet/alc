@@ -1,6 +1,7 @@
 // ActivityBar.tsx — The 40px icon rail: primary views + the projects action.
 import {
   Boxes,
+  GitCompare,
   LayoutDashboard,
   LineChart,
   ListTodo,
@@ -30,6 +31,7 @@ const ITEMS: Item[] = [
   { view: 'conduct', icon: Wand2, label: 'Conduct' },
   { view: 'team', icon: Users, label: 'Team' },
   { view: 'metrics', icon: LineChart, label: 'Metrics' },
+  { view: 'compare', icon: GitCompare, label: 'Compare' },
   { view: 'run-configs', icon: SlidersHorizontal, label: 'Run Configurations' },
 ]
 
@@ -42,6 +44,7 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
   'run-configs': 'Run Configurations',
   team: 'Team',
   metrics: 'Metrics',
+  compare: 'Compare',
 }
 
 export function openView(view: PrimaryView): void {

@@ -34,12 +34,14 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
       return [keys.queue(msg.project_id)]
     case 'report_added':
       // A run finished and archived: it may have appended a new measurement
-      // (metrics) and it always changes what an audit window aggregates.
+      // (metrics), it always changes what an audit window aggregates, and its
+      // worktree exit-commit may have just minted a new alc/* demand branch.
       return [
         keys.queue(msg.project_id),
         keys.scorecard(msg.project_id),
         keys.metrics(msg.project_id),
         keys.audit(msg.project_id),
+        keys.branches(msg.project_id),
       ]
     case 'loop_changed':
       return [
@@ -67,8 +69,12 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
     case 'run_event':
       return RUN_LIST_EVENTS.has(msg.event.event) ? [keys.runs(msg.project_id)] : []
     case 'exec_output':
-    case 'exec_finished':
       return [keys.execs()]
+    case 'exec_finished':
+      // An exec (e.g. `explore`) may have just archived new variants and/or
+      // minted new alc/* branches — no WS event watches the variants dir
+      // directly, so a finished exec is the only live signal for it.
+      return [keys.execs(), keys.variants(msg.project_id), keys.branches(msg.project_id)]
     case 'subscribed':
       return []
   }

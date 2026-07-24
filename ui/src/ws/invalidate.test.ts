@@ -9,12 +9,13 @@ describe('wsInvalidations', () => {
     ])
   })
 
-  it('invalidates queue, scorecard, metrics and audit when a report is archived', () => {
+  it('invalidates queue, scorecard, metrics, audit and branches when a report is archived', () => {
     const out = wsInvalidations({ type: 'report_added', project_id: 'p', stem: 's' })
     expect(out).toContainEqual(keys.queue('p'))
     expect(out).toContainEqual(keys.scorecard('p'))
     expect(out).toContainEqual(keys.metrics('p'))
     expect(out).toContainEqual(keys.audit('p'))
+    expect(out).toContainEqual(keys.branches('p'))
   })
 
   it('invalidates queue on queue_changed', () => {
@@ -80,5 +81,17 @@ describe('wsInvalidations', () => {
         line: 'x',
       }),
     ).toEqual([keys.execs()])
+  })
+
+  it('invalidates execs, variants and branches when an exec finishes', () => {
+    const out = wsInvalidations({
+      type: 'exec_finished',
+      project_id: 'p',
+      exec_id: 'e',
+      exit_code: 0,
+    })
+    expect(out).toContainEqual(keys.execs())
+    expect(out).toContainEqual(keys.variants('p'))
+    expect(out).toContainEqual(keys.branches('p'))
   })
 })

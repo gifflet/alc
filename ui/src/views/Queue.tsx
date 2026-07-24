@@ -1,17 +1,37 @@
-// Queue.tsx — Pending tasks + archived (done) tasks with enqueue/retry/delete.
+// Queue.tsx — Pending tasks + archived (done) tasks with enqueue/retry/delete,
+// plus the unmerged alc/* branches those drains produce (land/discard).
 import { Fragment, useState } from 'react'
-import { ChevronDown, ChevronRight, ListTodo, Play, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { useDeletePending, useEnqueueTask, useQueue, useRetryQueue } from '../api/hooks'
+import {
+  ChevronDown,
+  ChevronRight,
+  GitMerge,
+  ListTodo,
+  Play,
+  Plus,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react'
+import {
+  useBranches,
+  useDeletePending,
+  useDiscardBranches,
+  useEnqueueTask,
+  useLandBranches,
+  useQueue,
+  useRetryQueue,
+} from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
 import { ConfirmDialog, Dialog, DialogButton } from '../components/Dialog'
+import { DataTable } from '../components/DataTable'
+import type { Column } from '../components/DataTable'
 import { EmptyState } from '../components/EmptyState'
 import { Field, NumberInput } from '../components/fields'
 import { Loading, Pill } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
 import { EnqueueDialog } from './EnqueueDialog'
 import { ApiError } from '../api/client'
-import type { DoneTask, FlowReport, PendingTask, QueueTask } from '../api/types'
+import type { Branch, DoneTask, FlowReport, MergeReport, PendingTask, QueueTask } from '../api/types'
 
 function firstLine(text: string): string {
   return text.split('\n')[0]
@@ -82,6 +102,112 @@ function DrainDialog({ onClose }: { onClose: () => void }) {
         {error && <p className="text-[11px] text-error">{error}</p>}
       </div>
     </Dialog>
+  )
+}
+
+function apiMessage(error: unknown): string | null {
+  if (error instanceof ApiError) return error.message
+  return error ? 'Request failed.' : null
+}
+
+/** The unmerged `alc/*` branches a drain leaves behind (each demand's own
+ * worktree exit-commit), with Land/Discard actions. Lives on Queue rather
+ * than a dedicated view: these branches are exactly what draining the queue
+ * produces, and Queue already owns the house destructive-action pattern
+ * (see the pending-task delete confirm below) that Discard reuses. */
+function BranchesSection() {
+  const id = useProjectId()
+  const { data, isLoading } = useBranches(id)
+  const land = useLandBranches(id)
+  const discard = useDiscardBranches(id)
+  const [landReport, setLandReport] = useState<MergeReport | null>(null)
+  const [discarding, setDiscarding] = useState<string | null>(null)
+
+  if (isLoading) return null
+
+  if (!data?.available) {
+    return (
+      <section>
+        <h3 className="mb-1 text-[11px] uppercase tracking-wide text-faint">Branches</h3>
+        <p className="text-[12px] text-faint">Not inside a git repository — branch actions are unavailable.</p>
+      </section>
+    )
+  }
+
+  const unmerged = data.branches.filter((b) => !b.merged)
+
+  const doLand = (name: string) => {
+    setLandReport(null)
+    land.mutate([name], { onSuccess: (report) => setLandReport(report) })
+  }
+
+  const confirmDiscard = () => {
+    if (!discarding) return
+    discard.mutate({ branches: [discarding] }, { onSuccess: () => setDiscarding(null) })
+  }
+
+  const columns: Column<Branch>[] = [
+    { key: 'name', header: 'Branch', className: 'font-mono text-muted', render: (b) => b.name },
+    { key: 'label', header: 'Label', className: 'w-24 font-mono text-faint', render: (b) => b.label },
+    {
+      key: 'actions',
+      header: '',
+      className: 'w-36',
+      render: (b) => (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label={`Land ${b.name}`}
+            onClick={() => doLand(b.name)}
+            disabled={land.isPending}
+            className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-1.5 py-0.5 text-[11px] text-live hover:bg-live/20 disabled:opacity-40"
+          >
+            <GitMerge className="h-3 w-3" />
+            Land
+          </button>
+          <button
+            type="button"
+            aria-label={`Discard ${b.name}`}
+            onClick={() => setDiscarding(b.name)}
+            className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[11px] text-muted hover:bg-hover hover:text-error"
+          >
+            <Trash2 className="h-3 w-3" />
+            Discard
+          </button>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <section>
+      <h3 className="mb-1 text-[11px] uppercase tracking-wide text-faint">
+        Branches <span className="tabular">({unmerged.length})</span>
+      </h3>
+      {unmerged.length === 0 ? (
+        <p className="text-[12px] text-faint">No unmerged alc/* branches.</p>
+      ) : (
+        <DataTable columns={columns} rows={unmerged} rowKey={(b) => b.name} />
+      )}
+      {landReport && landReport.conflicted.length > 0 && (
+        <p className="mt-1 text-[11px] text-warn">
+          Left for manual resolution: {landReport.conflicted.join(', ')}
+        </p>
+      )}
+      {apiMessage(land.error) && <p className="mt-1 text-[11px] text-error">{apiMessage(land.error)}</p>}
+      {apiMessage(discard.error) && (
+        <p className="mt-1 text-[11px] text-error">{apiMessage(discard.error)}</p>
+      )}
+      {discarding && (
+        <ConfirmDialog
+          title="Discard branch?"
+          message={`This permanently deletes ${discarding}. This cannot be undone.`}
+          confirmLabel="Discard"
+          onConfirm={confirmDiscard}
+          onCancel={() => setDiscarding(null)}
+        />
+      )}
+    </section>
   )
 }
 
@@ -378,6 +504,10 @@ export function Queue() {
           </section>
         </div>
       )}
+
+      <div className="border-t border-border p-4">
+        <BranchesSection />
+      </div>
 
       {enqueuing && (
         <EnqueueDialog

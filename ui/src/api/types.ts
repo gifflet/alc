@@ -163,6 +163,87 @@ export interface RunDetail {
 }
 
 // ---------------------------------------------------------------------------
+// Branches (branches.py AlcBranch / merge.py MergeReport) — `alc land`/`alc
+// discard` thin wrappers, mirrored 1:1 by routes_branches.py.
+// ---------------------------------------------------------------------------
+
+export interface Branch {
+  name: string
+  label: string
+  committed_at: number
+  merged: boolean
+}
+
+/** GET /branches's shape: outside a git repo, `available` is false and
+ * `branches` is empty — never an error. */
+export interface BranchList {
+  available: boolean
+  branches: Branch[]
+}
+
+/** Outcome of POST /branches/land (and the `land` half of /variants/adopt):
+ * a branch is either integrated (and its ref deleted) or left conflicted for
+ * manual resolution — never silently dropped. */
+export interface MergeReport {
+  merged: string[]
+  conflicted: string[]
+}
+
+/** Outcome of POST /branches/discard. */
+export interface DiscardResult {
+  deleted: string[]
+  pruned_worktrees: number
+  deleted_bundles: string[]
+}
+
+/** Body for POST /branches/discard (mirrors routes_branches.DiscardBody). */
+export interface DiscardBranchesBody {
+  branches: string[]
+  worktrees?: boolean
+  bundles?: { older_than_days: number }
+}
+
+// ---------------------------------------------------------------------------
+// Variants (variants.py variant_row) — `alc explore`/`compare`/`adopt`.
+// ---------------------------------------------------------------------------
+
+export interface Diffstat {
+  adds: number
+  dels: number
+  files_deleted: number
+}
+
+/** engine.Usage, asdict()'d — every field best-effort/optional. */
+export interface VariantUsage {
+  input_tokens: number | null
+  output_tokens: number | null
+  cost_usd: number | null
+}
+
+/** One GET /variants row (variant_row): flattened straight off a UnitResult,
+ * plus the variant's requested engine/tier. `branch` mirrors UnitResult.branch
+ * (null only for a unit that never committed — practically always set for an
+ * archived variant, which is keyed by its branch name). */
+export interface VariantRow {
+  branch: string | null
+  engine: string | null
+  tier: string | null
+  success: boolean
+  checks: string
+  scorecard: Scorecard | null
+  usage: VariantUsage | null
+  diffstat: Diffstat | null
+}
+
+/** Outcome of POST /variants/adopt: the winner's MergeReport plus the
+ * unmerged `alc/variant-*` siblings it discarded. */
+export interface AdoptResult {
+  merged: string[]
+  conflicted: string[]
+  discarded: string[]
+}
+
+// ---------------------------------------------------------------------------
 // Lint / engines / aggregate scorecard
 // ---------------------------------------------------------------------------
 

@@ -6,7 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import { keys } from './keys'
-import type { CollectionName, QueueTask, RunConfig } from './types'
+import type { CollectionName, DiscardBranchesBody, QueueTask, RunConfig } from './types'
 
 const enabled = (id: string | undefined): boolean => Boolean(id)
 
@@ -60,6 +60,22 @@ export function useQueue(id: string) {
 
 export function useRuns(id: string) {
   return useQuery({ queryKey: keys.runs(id), queryFn: () => api.listRuns(id), enabled: enabled(id) })
+}
+
+export function useBranches(id: string) {
+  return useQuery({
+    queryKey: keys.branches(id),
+    queryFn: () => api.getBranches(id),
+    enabled: enabled(id),
+  })
+}
+
+export function useVariants(id: string) {
+  return useQuery({
+    queryKey: keys.variants(id),
+    queryFn: () => api.getVariants(id),
+    enabled: enabled(id),
+  })
 }
 
 export function useLoopState(id: string, name: string) {
@@ -260,6 +276,40 @@ export function useRetryQueue(id: string) {
   return useMutation({
     mutationFn: (body: { stem?: string; all?: boolean }) => api.retryQueue(id, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.queue(id) }),
+  })
+}
+
+/** Integrate `branches` (every unmerged one when omitted, mirrors `alc land --all`). */
+export function useLandBranches(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (branches?: string[]) => api.landBranches(id, branches),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.branches(id) }),
+  })
+}
+
+/** Delete branches, and optionally prune stale worktrees / old bundles. Destructive —
+ * the caller (BranchesSection) confirms before firing this. */
+export function useDiscardBranches(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: DiscardBranchesBody) => api.discardBranches(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.branches(id) }),
+  })
+}
+
+/** Integrate the winning variant branch and discard its unmerged siblings —
+ * destructive, the caller (Compare) confirms first. Invalidates both variants
+ * (the archive itself is untouched, but its branches' merge status changed)
+ * and branches (the winner's ref and every discarded sibling are gone). */
+export function useAdoptVariant(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (branch: string) => api.adoptVariant(id, branch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.variants(id) })
+      qc.invalidateQueries({ queryKey: keys.branches(id) })
+    },
   })
 }
 

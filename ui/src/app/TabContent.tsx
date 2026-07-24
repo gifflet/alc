@@ -12,6 +12,7 @@ import { RunConfigs } from '../views/RunConfigs'
 import { SourceEditor } from '../views/SourceEditor'
 import { Team } from '../views/Team'
 import { Metrics } from '../views/Metrics'
+import { Compare } from '../views/Compare'
 import { useUiState } from './uiStore'
 import type { PrimaryView, Tab } from './uiStore'
 
@@ -24,6 +25,7 @@ const VIEWS: Record<PrimaryView, () => React.ReactElement> = {
   'run-configs': RunConfigs,
   team: Team,
   metrics: Metrics,
+  compare: Compare,
 }
 
 function renderTab(tab: Tab): React.ReactElement {

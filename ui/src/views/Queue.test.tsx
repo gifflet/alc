@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { Queue } from './Queue'
 import { installFetch, renderWithProviders, res } from '../test/utils'
 import type { FetchCall } from '../test/utils'
-import type { FlowReport, QueueTask } from '../api/types'
+import type { Branch, FlowReport, QueueTask } from '../api/types'
 
 const task: QueueTask = {
   flow: 'ship',
@@ -39,6 +39,7 @@ describe('Queue', () => {
         pending: [{ stem: 'p1', mtime: 1783828795, task }],
         done: [{ stem: 'd1', mtime: 1783828700, task, report }],
       },
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
     // The task first line shows in both the pending and the done row.
@@ -54,7 +55,10 @@ describe('Queue', () => {
       retries: 2,
       retry_of: 'ship-root',
     }
-    installFetch({ '/queue': { pending: [{ stem: 'p1', mtime: 1, task: retried }], done: [] } })
+    installFetch({
+      '/queue': { pending: [{ stem: 'p1', mtime: 1, task: retried }], done: [] },
+      '/branches': { available: false, branches: [] },
+    })
     renderWithProviders(<Queue />)
     // The attempt number is surfaced as a badge.
     expect(await screen.findByText('retry #2')).toBeInTheDocument()
@@ -69,6 +73,7 @@ describe('Queue', () => {
         pending: [],
         done: [{ stem: 'd1', mtime: 1783828700, task, report }],
       },
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
     const row = await screen.findByText('add a login page')
@@ -88,6 +93,7 @@ describe('Queue actions', () => {
         call.method === 'POST' ? { stem: 'new' } : { pending: [], done: [] },
       '/flows': [{ name: 'ship', mtime: 1 }],
       '/specialists': [],
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
 
@@ -106,6 +112,7 @@ describe('Queue actions', () => {
         pending: [],
         done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: true }],
       },
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
 
@@ -121,6 +128,7 @@ describe('Queue actions', () => {
         pending: [],
         done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: true }],
       },
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
 
@@ -139,6 +147,7 @@ describe('Queue actions', () => {
         pending: [],
         done: [{ stem: 'd1', mtime: 1, task, report: failed, outstanding: false }],
       },
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
     expect(await screen.findByText('failed')).toBeInTheDocument()
@@ -153,6 +162,7 @@ describe('Queue actions', () => {
         call.method === 'DELETE'
           ? res(204, {})
           : { pending: [{ stem: 'p1', mtime: 1, task }], done: [] },
+      '/branches': { available: false, branches: [] },
     })
     renderWithProviders(<Queue />)
 
@@ -161,5 +171,70 @@ describe('Queue actions', () => {
 
     const del = mock.calls.find((c) => c.method === 'DELETE')
     expect(del?.url).toContain('/queue/p1')
+  })
+})
+
+const branch: Branch = { name: 'alc/tick-aaaaaaaa', label: 'tick', committed_at: 1, merged: false }
+
+describe('Branches', () => {
+  it('lists unmerged alc/* branches and lands one', async () => {
+    const mock = installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches/land': { merged: ['alc/tick-aaaaaaaa'], conflicted: [] },
+      '/branches': { available: true, branches: [branch] },
+    })
+    renderWithProviders(<Queue />)
+
+    expect(await screen.findByText('alc/tick-aaaaaaaa')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Land alc/tick-aaaaaaaa' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/branches/land'))
+    expect(post?.body).toEqual({ branches: ['alc/tick-aaaaaaaa'] })
+  })
+
+  it('discards a branch only after confirmation', async () => {
+    const mock = installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches/discard': { deleted: ['alc/tick-aaaaaaaa'], pruned_worktrees: 0, deleted_bundles: [] },
+      '/branches': { available: true, branches: [branch] },
+    })
+    renderWithProviders(<Queue />)
+
+    await screen.findByText('alc/tick-aaaaaaaa')
+    await userEvent.click(screen.getByRole('button', { name: 'Discard alc/tick-aaaaaaaa' }))
+
+    // The mutation must not fire before the confirm dialog is accepted.
+    expect(
+      mock.calls.some((c) => c.method === 'POST' && c.url.endsWith('/branches/discard')),
+    ).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+    const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/branches/discard'))
+    expect(post?.body).toEqual({ branches: ['alc/tick-aaaaaaaa'] })
+  })
+
+  it('shows a clear empty state outside a git repository', async () => {
+    installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches': { available: false, branches: [] },
+    })
+    renderWithProviders(<Queue />)
+
+    expect(await screen.findByText(/not inside a git repository/i)).toBeInTheDocument()
+  })
+
+  it('surfaces a conflicted branch left by a partial land', async () => {
+    installFetch({
+      '/queue': { pending: [], done: [] },
+      '/branches/land': { merged: [], conflicted: ['alc/tick-aaaaaaaa'] },
+      '/branches': { available: true, branches: [branch] },
+    })
+    renderWithProviders(<Queue />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Land alc/tick-aaaaaaaa' }))
+
+    const note = await screen.findByText(/left for manual resolution/i)
+    expect(note.textContent).toContain('alc/tick-aaaaaaaa')
   })
 })

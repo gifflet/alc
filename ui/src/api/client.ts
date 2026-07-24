@@ -5,16 +5,21 @@
 // project selector and live-test flow use. Errors surface as ApiError with the
 // backend's detail so the UI can show a clear message.
 import type {
+  AdoptResult,
   AuditWindow,
+  BranchList,
   CollectionItem,
   CollectionName,
   CommandSchema,
+  DiscardBranchesBody,
+  DiscardResult,
   EngineInfo,
   ExecView,
   HireResult,
   LintResult,
   LoopLedger,
   LoopState,
+  MergeReport,
   MetricSeries,
   ProjectSummary,
   PromptDetail,
@@ -28,6 +33,7 @@ import type {
   RunsPage,
   ScorecardTotals,
   TeamRoster,
+  VariantRow,
   Violation,
 } from './types'
 
@@ -149,6 +155,27 @@ export const api = {
     request<LoopState>(`${proj(id)}/loops/${encodeURIComponent(name)}/state`),
   getLoopLedger: (id: string, name: string) =>
     request<LoopLedger>(`${proj(id)}/loops/${encodeURIComponent(name)}/ledger`),
+
+  // Branches (`alc land` / `alc discard`)
+  getBranches: (id: string) => request<BranchList>(`${proj(id)}/branches`),
+  landBranches: (id: string, branches?: string[]) =>
+    request<MergeReport>(`${proj(id)}/branches/land`, {
+      method: 'POST',
+      body: JSON.stringify(branches !== undefined ? { branches } : {}),
+    }),
+  discardBranches: (id: string, body: DiscardBranchesBody) =>
+    request<DiscardResult>(`${proj(id)}/branches/discard`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  // Variants (`alc compare` / `alc adopt`)
+  getVariants: (id: string) => request<VariantRow[]>(`${proj(id)}/variants`),
+  adoptVariant: (id: string, branch: string) =>
+    request<AdoptResult>(`${proj(id)}/variants/adopt`, {
+      method: 'POST',
+      body: JSON.stringify({ branch }),
+    }),
 
   // Team (Archetype Packs + Mix Health)
   getTeam: (id: string) => request<TeamRoster>(`${proj(id)}/team`),
