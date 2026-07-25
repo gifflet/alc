@@ -16,14 +16,35 @@ from pathlib import Path
 import pytest
 
 from alc.cli import cmd_onboard
+from alc.engine import Capabilities, EngineResult
 from alc.intake import load_blueprint, load_manifest
 from alc.scaffold import scaffold
 
 
 def _ns(**overrides) -> argparse.Namespace:
-    defaults = {"dry_run": False, "yes": False, "json": False, "stage": None}
+    defaults = {"dry_run": False, "yes": False, "json": False, "stage": None, "assist": False}
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
+
+
+class _ScriptedEngine:
+    """A fake engine returning one canned output_text — never a real engine."""
+
+    name = "mock"
+
+    def __init__(self, output: str) -> None:
+        self._output = output
+        self.calls = 0
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities()
+
+    def health_check(self) -> bool:
+        return True
+
+    def run(self, request) -> EngineResult:
+        self.calls += 1
+        return EngineResult(ok=True, output_text=self._output)
 
 
 @pytest.fixture
@@ -185,6 +206,72 @@ class TestInteractive:
 # ---------------------------------------------------------------------------
 # Precondition: an existing `.alc/` operator layer
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# --assist: the opt-in engine layer (scripted engine — never a real engine)
+# ---------------------------------------------------------------------------
+
+
+_ASSIST_JSON = (
+    "```json\n"
+    '{"checks": [{"name": "typecheck", "command": ["mypy", "."], '
+    '"rationale": "python sources present", "confidence": "high"}], '
+    '"blueprint_opt_ins": {}, "unknowns": []}\n'
+    "```"
+)
+
+
+class TestAssist:
+    def test_assist_includes_engine_checks_labeled_inferred(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        engine = _ScriptedEngine(_ASSIST_JSON)
+        # Drive the REAL engine_assist through a scripted engine (no cost).
+        monkeypatch.setattr("alc.onboard.resolve_engine", lambda name, engines: engine)
+
+        assert cmd_onboard(_ns(assist=True, dry_run=True)) == 0
+
+        out = capsys.readouterr().out
+        assert engine.calls == 1  # the assist turn actually ran
+        assert "typecheck" in out  # the engine check merged into the proposal
+        assert "inferred — review before trusting" in out
+
+    def test_assist_none_result_degrades_to_harvest_only_with_note(
+        self, project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # engine_assist returns None (unavailable/timeout/unparseable) -> the CLI
+        # prints an honest note and continues with the harvested checks only.
+        monkeypatch.setattr("alc.onboard.engine_assist", lambda *a, **k: None)
+
+        assert cmd_onboard(_ns(assist=True, dry_run=True)) == 0
+
+        out = capsys.readouterr().out
+        assert "engine assist unavailable or produced nothing" in out
+        # The harvested checks (make test / make lint) still show — harvest-only.
+        assert "make" in out
+
+    def test_thin_harvest_without_assist_suggests_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # A scaffolded project with NO harvestable declarations -> a thin harvest.
+        scaffold(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_onboard(_ns(dry_run=True)) == 0
+
+        out = capsys.readouterr().out
+        assert "`alc onboard --assist` can analyze the tree" in out
+
+    def test_rich_harvest_without_assist_does_not_suggest_it(
+        self, project: Path, capsys
+    ) -> None:
+        # The `project` fixture harvests two checks (make test / make lint) — not
+        # thin, so the suggestion is NOT printed.
+        assert cmd_onboard(_ns(dry_run=True)) == 0
+
+        out = capsys.readouterr().out
+        assert "alc onboard --assist" not in out
 
 
 class TestRequiresOperatorLayer:

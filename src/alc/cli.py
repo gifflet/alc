@@ -402,6 +402,16 @@ def cmd_onboard(args: argparse.Namespace) -> int:
     hired = _hired_archetypes(project_root)
     harvest_report = harvest(project_root)
 
+    # --assist (opt-in): spend ONE bounded engine turn to propose the checks the
+    # deterministic harvest missed. Never automatic — cost is the operator's choice.
+    # A None result (engine unavailable/timeout/unparseable) degrades to harvest-only.
+    assist = getattr(args, "assist", False)
+    engine_proposal = None
+    if assist:
+        from alc.onboard import engine_assist
+
+        engine_proposal = engine_assist(project_root, harvest_report, operator_layer)
+
     proposal = build_proposal(
         manifest,
         project_root,
@@ -409,6 +419,7 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         harvest_report,
         stage=args.stage,
         hired_archetypes=hired,
+        engine_proposal=engine_proposal,
     )
 
     # --json: the UI's machine-readable feed. Print the proposal, write nothing.
@@ -417,6 +428,20 @@ def cmd_onboard(args: argparse.Namespace) -> int:
 
         emit_json(asdict(proposal))
         return 0
+
+    # Honest, one-line note about the engine layer. When assist ran but produced
+    # nothing, say so and continue harvest-only. When it was NOT used and the
+    # harvest came up thin, suggest it — the cost stays opt-in, never automatic.
+    if assist and engine_proposal is None:
+        print(
+            "engine assist unavailable or produced nothing — using harvested "
+            "checks only"
+        )
+    elif not assist and len(harvest_report.checks) < 2:
+        print(
+            "harvest found little — `alc onboard --assist` can analyze the tree "
+            "(spends one engine turn)"
+        )
 
     # Every human mode opens with the same honest preview (diffs + summary +
     # notes/unknowns). render_preview is pure and already phrases everything as
@@ -483,6 +508,7 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         harvest_report,
         stage=chosen_stage,
         hired_archetypes=hired,
+        engine_proposal=engine_proposal,
     )
     final = replace(
         final,
@@ -3041,6 +3067,16 @@ def main() -> None:
         help=(
             "Record this product stage (advisory — never changes execution). "
             "Omit to be asked interactively."
+        ),
+    )
+    onboard_parser.add_argument(
+        "--assist",
+        action="store_true",
+        default=False,
+        help=(
+            "Spend ONE bounded engine turn to propose checks the deterministic "
+            "harvest missed (analyzes the file tree). Opt-in — costs one engine "
+            "turn; the proposal is still yours to approve."
         ),
     )
 

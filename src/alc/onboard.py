@@ -14,16 +14,25 @@
 from __future__ import annotations
 
 import difflib
+import shlex
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel, ValidationError
+
+from alc.engine import EngineRequest
+from alc.engines.registry import resolve_engine
 from alc.harvest import HarvestReport
 from alc.intake import is_smoke_only, load_manifest
 from alc.manifestedit import validate_manifest_text
 from alc.models import Blueprint, Manifest
 from alc.policy import Violation
+from alc.prompts import resolve_prompt
 from alc.scaffold import render_check_set
 from alc.stagepolicy import STAGE_MIX
+from alc.textutil import extract_json
 
 # The name of the check_set the harvested checks are proposed under. A project
 # ALC does not yet recognize adopts its own declared checks as one named set,
@@ -87,6 +96,202 @@ class ApplyResult:
     notes: list[str]                 # honest, non-fatal remarks
 
 
+# ---------------------------------------------------------------------------
+# engine assist — the OPT-IN layer. When the deterministic harvest comes up thin,
+# ONE bounded engine turn reads the harvested signals + the file tree and proposes
+# the checks harvest MISSED. Harvest-first, engine-only-for-the-gaps. This mirrors
+# commitmsg.py's bounded one-shot shape EXACTLY and NEVER raises: any failure
+# returns None and the caller degrades to harvest-only.
+# ---------------------------------------------------------------------------
+
+
+class EngineCheckProposal(BaseModel):
+    """One check the engine proposes ALC adopt. Exactly one of ``command`` (argv
+    token list) or ``shell`` (a shell one-liner) carries the invocation; the
+    others are advisory metadata the operator sees before trusting anything."""
+
+    name: str
+    command: list[str] | None = None
+    shell: str | None = None
+    rationale: str
+    confidence: str
+
+
+class EngineOnboardOutput(BaseModel):
+    """The parsed JSON contract of the ``onboard`` prompt — the engine's proposal
+    for the gaps harvest missed. Every field defaults empty so a partial output
+    still validates (the engine may legitimately have nothing for a given key)."""
+
+    checks: list[EngineCheckProposal] = []
+    blueprint_opt_ins: dict[str, str] = {}
+    unknowns: list[str] = []
+
+
+# Mutation/exec tools the assist turn is forbidden from using. permission_mode
+# "plan" is the primary guard (a planning turn cannot write); this denylist is
+# defence in depth so an engine that ignores plan mode still cannot mutate.
+_ASSIST_DENIED_TOOLS: tuple[str, ...] = (
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "Bash",
+)
+
+# A TIGHT budget for the single assist turn — not the 1800s engine default.
+_ASSIST_TIMEOUT_S = 300
+
+# Cap the harvested-signals summary forwarded to the engine (prompt budget).
+_SIGNALS_CAP = 4000
+
+# Cap the file tree forwarded to the engine (~400 paths / ~8 KB, same cap
+# discipline as commitmsg's diff cap).
+_TREE_MAX_PATHS = 400
+_TREE_CAP = 8000
+
+
+def _check_available(command: list[str] | None, shell: str | None) -> bool:
+    """True when the check's tool (argv[0], or the first shell token) is on PATH.
+
+    A ``shutil.which`` LOOKUP — never an execution, mirroring harvest's own
+    availability test — so an engine-proposed check is written commented-out when
+    its binary is absent, exactly like a harvested one.
+    """
+    token: str | None = None
+    if command:
+        token = command[0]
+    elif shell:
+        parts = shlex.split(shell)
+        token = parts[0] if parts else None
+    return token is not None and shutil.which(token) is not None
+
+
+def _summarize_signals(harvest_report: HarvestReport) -> str:
+    """A compact, capped text summary of what harvest already found — the engine's
+    'here is what ALC already has, fill the gaps' context."""
+    lines: list[str] = []
+    if harvest_report.checks:
+        lines.append("Harvested checks:")
+        for check in harvest_report.checks:
+            form = " ".join(check.command) if check.command else (check.shell or "")
+            lines.append(f"- {check.name}: {form}  (source: {check.source} @ {check.source_path})")
+    else:
+        lines.append("Harvested checks: none")
+    if harvest_report.scanned:
+        lines.append("Scanned files: " + ", ".join(harvest_report.scanned))
+    if harvest_report.skipped:
+        lines.append("Skipped (unparseable): " + ", ".join(harvest_report.skipped))
+    return "\n".join(lines)[:_SIGNALS_CAP]
+
+
+def _project_tree(project_root: Path) -> str:
+    """The project's tracked file paths (`git ls-files`), capped. Degrades to a
+    shallow directory listing when *project_root* is not a git repo — never raises."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            paths = result.stdout.splitlines()
+            return "\n".join(paths[:_TREE_MAX_PATHS])[:_TREE_CAP]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # Not a git repo (or git unavailable): a shallow listing of the top level.
+    try:
+        entries = sorted(
+            p.name + ("/" if p.is_dir() else "") for p in project_root.iterdir()
+        )
+        return "\n".join(entries[:_TREE_MAX_PATHS])[:_TREE_CAP]
+    except OSError:
+        return ""
+
+
+def engine_assist(
+    project_root: Path,
+    harvest_report: HarvestReport,
+    operator_layer: Path,
+    engine_override: str | None = None,
+) -> EngineOnboardOutput | None:
+    """Run ONE bounded engine turn to propose the checks harvest missed.
+
+    Copies commitmsg.py's bounded one-shot shape: resolve the standard-tier engine,
+    render the reserved ``onboard`` prompt with a capped signals summary + file
+    tree (injected via str.replace, not .format, so literal braces never crash the
+    injection), and issue a SINGLE plan-mode EngineRequest that denies every
+    write/exec tool with a tight timeout. The response is parsed via
+    ``extract_json`` (which already recovers fenced/prose JSON) into an
+    :class:`EngineOnboardOutput`; on malformed output the turn is retried ONCE,
+    then it gives up.
+
+    NEVER raises: any failure — an unresolvable/missing engine, a timeout, a crash,
+    or output that is still unparseable after the retry — returns ``None`` so the
+    caller degrades cleanly to harvest-only. This is the same never-raise contract
+    as commit-message generation.
+
+    Args:
+        project_root: The project directory (the engine's workdir and tree source).
+        harvest_report: The deterministic harvest result — the 'what ALC already
+            has' signals the engine is told to build on, not repeat.
+        operator_layer: Path to the ``.alc/`` directory (manifest + prompt store).
+        engine_override: If set, use this engine name instead of the manifest default.
+
+    Returns:
+        The parsed engine proposal, or ``None`` when assist is unavailable or
+        produced nothing usable.
+    """
+    try:
+        manifest = load_manifest(operator_layer)
+    except Exception:  # noqa: BLE001 — a broken manifest degrades to harvest-only
+        return None
+
+    engine_name = engine_override or manifest.default_engine
+    try:
+        engine = resolve_engine(engine_name, manifest.engines)
+    except Exception:  # noqa: BLE001 — unresolvable engine -> degrade
+        return None
+
+    # Prefer the standard-tier model; fall back to None (the engine's own default).
+    model: str | None = manifest.compute_tiers.get("standard", {}).get(engine_name)
+
+    try:
+        template = resolve_prompt("onboard", operator_layer, manifest)
+    except Exception:  # noqa: BLE001 — a missing/odd prompt store -> degrade
+        return None
+
+    # Inject with str.replace, not .format(): the signals/tree may contain literal
+    # braces that would crash a .format() call.
+    directive = template.replace(
+        "{signals}", _summarize_signals(harvest_report)
+    ).replace("{tree}", _project_tree(project_root))
+
+    request = EngineRequest(
+        directive=directive,
+        workdir=project_root,
+        model=model,
+        permission_mode="plan",
+        denied_tools=_ASSIST_DENIED_TOOLS,
+        timeout_s=_ASSIST_TIMEOUT_S,
+    )
+
+    # One turn, then ONE retry on malformed output; then give up.
+    for _ in range(2):
+        try:
+            result = engine.run(request)
+        except Exception:  # noqa: BLE001 — a crash/timeout degrades, never raises
+            return None
+        parsed = extract_json(result.output_text)
+        if parsed is not None:
+            try:
+                return EngineOnboardOutput.model_validate(parsed)
+            except ValidationError:
+                pass  # malformed shape -> retry (or give up on the second pass)
+    return None
+
+
 def build_proposal(
     manifest: Manifest,
     project_root: Path,  # noqa: ARG001 — reserved for a future engine-origin harvest
@@ -94,6 +299,7 @@ def build_proposal(
     harvest_report: HarvestReport,
     stage: str | None = None,
     hired_archetypes: list[str] | None = None,
+    engine_proposal: "EngineOnboardOutput | None" = None,
 ) -> OnboardProposal:
     """Build the OnboardProposal for a project — PURE, writes nothing.
 
@@ -114,6 +320,13 @@ def build_proposal(
         harvest_report: The deterministic harvest result to adopt.
         stage: The operator's answered product stage, or None. NEVER inferred.
         hired_archetypes: Archetypes already hired, or None (treated as empty).
+        engine_proposal: An optional :class:`EngineOnboardOutput` from
+            :func:`engine_assist`. When present, its checks are MERGED into the
+            "project" set with ``origin="engine"`` — but HARVEST WINS: an engine
+            check whose name collides with a harvested one is dropped (the engine
+            may only ADD, never replace). Its blueprint opt-ins are merged without
+            overriding the smoke-only rule, and its unknowns are appended. It NEVER
+            changes the stage (stage stays operator-only).
 
     Returns:
         An OnboardProposal describing what would be written. Nothing is written.
@@ -133,6 +346,28 @@ def build_proposal(
         )
         for hc in harvest_report.checks
     ]
+
+    # 1b. Merge engine-assist checks — engine only ADDS to the gaps. HARVEST WINS:
+    #     an engine check whose name collides with a harvested (or already-merged
+    #     engine) check is dropped. availability is a `shutil.which` lookup so an
+    #     off-PATH engine check is written commented-out, like a harvested one.
+    if engine_proposal is not None:
+        used_names = {c.name for c in proposed}
+        for ec in engine_proposal.checks:
+            if ec.name in used_names:
+                continue
+            used_names.add(ec.name)
+            proposed.append(
+                ProposedCheck(
+                    name=ec.name,
+                    command=ec.command,
+                    shell=ec.shell,
+                    available=_check_available(ec.command, ec.shell),
+                    origin="engine",
+                    source_path=None,
+                )
+            )
+
     check_sets: dict[str, list[ProposedCheck]] = {}
     if proposed:
         check_sets[_PROJECT_SET] = proposed
@@ -148,6 +383,13 @@ def build_proposal(
             if is_smoke_only(manifest, bp):
                 blueprint_opt_ins[bp.name] = _PROJECT_SET
 
+    # 2b. Merge engine-assist opt-ins — only for blueprints the smoke-only rule did
+    #     not already opt in (the deterministic rule wins; the engine only adds).
+    if engine_proposal is not None:
+        for bp_name, set_name in engine_proposal.blueprint_opt_ins.items():
+            if bp_name not in blueprint_opt_ins:
+                blueprint_opt_ins[bp_name] = set_name
+
     # 3. Stage is EXACTLY the operator's answer — never inferred from the code or
     #    the manifest. team_hints are this stage's core archetypes not yet hired.
     hired = set(hired_archetypes or [])
@@ -160,6 +402,11 @@ def build_proposal(
             )
         else:
             team_hints = [a for a in mix.get("core", []) if a not in hired]
+
+    # 4. Append the engine's honest gaps last — they are the engine's own account
+    #    of what it could not determine, kept distinct from the harvest notes above.
+    if engine_proposal is not None:
+        unknowns.extend(engine_proposal.unknowns)
 
     return OnboardProposal(
         check_sets=check_sets,
@@ -275,6 +522,10 @@ def render_preview(
     for checks in proposal.check_sets.values():
         for check in checks:
             status = "available" if check.available else "commented — binary off PATH"
+            # An engine-inferred check is flagged so the operator reviews it before
+            # trusting it — harvest is deterministic, the engine's proposal is not.
+            if check.origin == "engine":
+                status += " (inferred — review before trusting)"
             lines.append(
                 f"| {check.name} | {_check_form(check)} | "
                 f"{check.source_path or ''} | {status} |"

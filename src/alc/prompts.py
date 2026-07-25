@@ -225,6 +225,52 @@ Staged diff:
 {diff}"""
 
 
+# The `onboard` prompt — ALC uses this for the OPT-IN `alc onboard --assist` layer.
+# Given the checks the deterministic harvest already found plus the project's file
+# tree, the engine proposes the checks the harvest MISSED. Harvest-first: the engine
+# only ADDS to the gaps, it never replaces a harvested check, and it never proposes a
+# product stage (stage stays operator-only). Core-owned default; an operator override
+# in the prompt store transparently replaces it.
+# NOTE: {signals} and {tree} are injected via str.replace, NOT .format(), so their
+# content (which may contain literal braces) never crashes the injection. The output
+# is described in prose (no literal-brace JSON example) so the template keeps ONLY the
+# two placeholders and stays cleanly `.format()`-able if it is ever ejected/linted.
+# The frozenset still declares both so the lint (validate_prompt_override) can verify
+# an override preserves them.
+_ONBOARD_TEMPLATE = """\
+You are helping ALC adopt an unfamiliar project. ALC has already run a deterministic
+HARVEST of the checks this project declares (package.json scripts, Makefile/justfile/
+Taskfile targets, pre-commit, tox/nox). Your job is to fill ONLY the gaps that harvest
+missed — never to repeat or replace what harvest already found.
+
+Harvested check signals (what ALC already has):
+{signals}
+
+Project file tree:
+{tree}
+
+Output ONLY a JSON object — no prose, no explanation, no markdown code fences. The
+object has exactly these three keys:
+
+- "checks": a JSON array of the build/test/lint checks the harvest MISSED. Include a
+  check ONLY when the tree gives real evidence for it and it is not already in the
+  signals above. Each element is a JSON object with:
+    "name": a short slug for the check (e.g. "test", "lint", "typecheck", "build")
+    "command": a JSON array of argv tokens (e.g. the tokens of "cargo test") — OR
+    "shell": a single shell one-liner string — set EXACTLY ONE of "command"/"shell"
+    "rationale": one sentence on why this check applies, citing tree evidence
+    "confidence": one of "high", "medium", "low"
+
+- "blueprint_opt_ins": a JSON object mapping a blueprint name to the check_set name it
+  should use. Use an empty object when you have nothing to add.
+
+- "unknowns": a JSON array of short strings naming what you could NOT determine.
+
+Do NOT propose, infer, or include a product stage anywhere in the output — the product
+stage is the operator's decision alone.
+"""
+
+
 _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     "plan-contract": (_PLAN_CONTRACT_TEMPLATE, frozenset({"catalog"})),
     "conductor": (_CONDUCTOR_DIRECTIVE_TEMPLATE, frozenset({"goal", "catalog_text"})),
@@ -239,6 +285,9 @@ _DEFAULT_PROMPTS: dict[str, tuple[str, frozenset[str]]] = {
     # {diff} is declared so override validation can check the placeholder is present;
     # the actual injection uses str.replace (not .format) to avoid brace-collision.
     "commit-message": (_COMMIT_MESSAGE_TEMPLATE, frozenset({"diff"})),
+    # {signals} and {tree} are declared for override validation; the actual injection
+    # uses str.replace (not .format) — see the note on _ONBOARD_TEMPLATE.
+    "onboard": (_ONBOARD_TEMPLATE, frozenset({"signals", "tree"})),
 }
 
 
