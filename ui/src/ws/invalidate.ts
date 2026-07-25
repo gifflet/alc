@@ -52,7 +52,9 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
         keys.team(msg.project_id),
       ]
     case 'config_changed': {
-      if (msg.resource === 'manifest') return [keys.manifest(msg.project_id), keys.lint(msg.project_id)]
+      // A manifest change (check_sets) alters the audit — keep the Checks view live.
+      if (msg.resource === 'manifest')
+        return [keys.manifest(msg.project_id), keys.lint(msg.project_id), keys.checksAudit(msg.project_id)]
       if (msg.resource === 'prompts') return [keys.prompts(msg.project_id)]
       if (COLLECTION_RESOURCES.has(msg.resource as CollectionName)) {
         return [
@@ -60,6 +62,8 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
           keys.lint(msg.project_id),
           // A hire writes into a collection — keep the Team roster live too.
           keys.team(msg.project_id),
+          // A blueprint's checks / check_set opt-in changes the audit — keep Checks live.
+          keys.checksAudit(msg.project_id),
         ]
       }
       return [keys.lint(msg.project_id)]
