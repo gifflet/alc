@@ -313,19 +313,13 @@ def _isatty() -> bool:
 def _hired_archetypes(project_root: Path) -> list[str]:
     """The Archetype Packs currently hired (any of their files present on disk).
 
-    Mirrors `_team_roster`'s membership test so `alc onboard`'s stage team-hints
-    match exactly what `alc team list` reports.
+    A thin wrapper over `packs.hired_archetypes` — the shared membership test also
+    used by `_team_roster` and the web UI roster — so `alc onboard`'s stage
+    team-hints match exactly what `alc team list` reports.
     """
-    from alc.packs import PACKS, pack_files
-    from alc.scaffold import detect_stacks
+    from alc.packs import hired_archetypes
 
-    stacks = detect_stacks(project_root)
-    hired: list[str] = []
-    for archetype in sorted(PACKS):
-        files = pack_files(archetype, stacks)
-        if any((project_root / rel).exists() for rel in files):
-            hired.append(archetype)
-    return hired
+    return hired_archetypes(project_root)
 
 
 def _print_onboard_apply(result) -> int:

@@ -32,6 +32,13 @@ export const keys = {
   metrics: (id: string) => ['project', id, 'metrics'] as const,
   checksHistory: (id: string) => ['project', id, 'checks', 'history'] as const,
   checksAudit: (id: string) => ['project', id, 'checks', 'audit'] as const,
+  // One proposal per chosen stage (the proposal's team_hints depend on it).
+  onboard: (id: string, stage: string | null) =>
+    ['project', id, 'checks', 'onboard', stage ?? 'none'] as const,
+  // The shared prefix over every stage's proposal — invalidating it (partial
+  // match) refreshes whichever stage a client has selected, once checks are
+  // adopted or a blueprint opts in.
+  onboardAll: (id: string) => ['project', id, 'checks', 'onboard'] as const,
   runArtifacts: (id: string, stem: string) => ['project', id, 'run-artifacts', stem] as const,
   // The shared prefix over every windowed audit query — invalidating it
   // (partial match) refreshes whichever window(s) a client has open.

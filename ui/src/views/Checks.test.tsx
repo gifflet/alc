@@ -2,13 +2,24 @@ import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { Checks } from './Checks'
 import { installFetch, renderWithProviders } from '../test/utils'
-import type { CheckHistoryEntry, ChecksAudit } from '../api/types'
+import type { CheckHistoryEntry, ChecksAudit, OnboardProposal } from '../api/types'
 
 const history: CheckHistoryEntry[] = [
   { name: 'test', runs: 4, passes: 2, pass_rate: 0.5, mean_duration_s: 1.25, flake_score: 1.0 },
 ]
 
 const emptyAudit: ChecksAudit = { check_sets: [], smoke_only_blueprints: [] }
+
+// The Checks view now embeds the Onboard panel, so every render fetches the
+// proposal too. These specs cover History/Audit — an empty proposal keeps the
+// panel out of the way (its own behavior is covered in OnboardPanel.test.tsx).
+const emptyOnboard: OnboardProposal = {
+  check_sets: {},
+  blueprint_opt_ins: {},
+  stage: null,
+  team_hints: [],
+  unknowns: [],
+}
 
 const populatedAudit: ChecksAudit = {
   check_sets: [
@@ -34,7 +45,11 @@ const smokeOnlyMixedAudit: ChecksAudit = {
 
 describe('Checks', () => {
   it('renders the history table with pass-rate/duration/flake-score', async () => {
-    installFetch({ '/checks/history': history, '/checks/audit': emptyAudit })
+    installFetch({
+      '/checks/history': history,
+      '/checks/audit': emptyAudit,
+      '/checks/onboard': emptyOnboard,
+    })
     renderWithProviders(<Checks />)
 
     expect(await screen.findByText('test')).toBeInTheDocument()
@@ -44,14 +59,22 @@ describe('Checks', () => {
   })
 
   it('shows an empty state when there is no run history yet', async () => {
-    installFetch({ '/checks/history': [], '/checks/audit': emptyAudit })
+    installFetch({
+      '/checks/history': [],
+      '/checks/audit': emptyAudit,
+      '/checks/onboard': emptyOnboard,
+    })
     renderWithProviders(<Checks />)
 
     expect(await screen.findByText(/no check history yet/i)).toBeInTheDocument()
   })
 
   it('renders proposed check-set upgrades and smoke-only blueprints', async () => {
-    installFetch({ '/checks/history': [], '/checks/audit': populatedAudit })
+    installFetch({
+      '/checks/history': [],
+      '/checks/audit': populatedAudit,
+      '/checks/onboard': emptyOnboard,
+    })
     renderWithProviders(<Checks />)
 
     expect(await screen.findByText('python')).toBeInTheDocument()
@@ -65,7 +88,11 @@ describe('Checks', () => {
   })
 
   it('phrases smoke-only blueprints honestly for detected-stack and stackless cases', async () => {
-    installFetch({ '/checks/history': [], '/checks/audit': smokeOnlyMixedAudit })
+    installFetch({
+      '/checks/history': [],
+      '/checks/audit': smokeOnlyMixedAudit,
+      '/checks/onboard': emptyOnboard,
+    })
     renderWithProviders(<Checks />)
 
     // Detected stack: keep the "while <stacks> is detected" wording.
@@ -78,7 +105,11 @@ describe('Checks', () => {
   })
 
   it('shows a clean empty state when the audit has no proposals', async () => {
-    installFetch({ '/checks/history': [], '/checks/audit': emptyAudit })
+    installFetch({
+      '/checks/history': [],
+      '/checks/audit': emptyAudit,
+      '/checks/onboard': emptyOnboard,
+    })
     renderWithProviders(<Checks />)
 
     expect(await screen.findByText(/no upgrades proposed/i)).toBeInTheDocument()

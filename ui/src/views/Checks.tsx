@@ -9,6 +9,7 @@ import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
 import { EmptyState } from '../components/EmptyState'
 import { Loading, Pill } from '../components/primitives'
+import { OnboardPanel } from './OnboardPanel'
 import type {
   CheckHistoryEntry,
   CheckProposal,
@@ -185,6 +186,11 @@ export function Checks() {
       <section>
         <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Audit</h2>
         {audit.data && <AuditSection audit={audit.data} />}
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Onboard</h2>
+        <OnboardPanel />
       </section>
     </div>
   )

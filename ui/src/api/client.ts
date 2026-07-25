@@ -23,6 +23,8 @@ import type {
   LoopLedger,
   LoopState,
   MetricSeries,
+  OnboardApplyResult,
+  OnboardProposal,
   ProjectSummary,
   PromptDetail,
   PromptEntry,
@@ -235,6 +237,19 @@ export const api = {
   getChecksHistory: (id: string) =>
     request<CheckHistoryEntry[]>(`${proj(id)}/checks/history`),
   getChecksAudit: (id: string) => request<ChecksAudit>(`${proj(id)}/checks/audit`),
+
+  // Onboard (`alc onboard`, harvest-only): propose, then apply. `stage` is the
+  // operator's optional product-stage answer; the server rebuilds the whole
+  // proposal itself, so apply never sends check data back.
+  getOnboardProposal: (id: string, stage?: string) =>
+    request<OnboardProposal>(
+      `${proj(id)}/checks/onboard${stage ? `?stage=${encodeURIComponent(stage)}` : ''}`,
+    ),
+  applyOnboard: (id: string, stage?: string) =>
+    request<OnboardApplyResult>(`${proj(id)}/checks/onboard/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ stage: stage ?? null }),
+    }),
 
   // Run configurations
   getCommands: () => request<CommandSchema>('/api/commands'),

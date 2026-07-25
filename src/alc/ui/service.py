@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from alc import artifacts as artifacts_core
 from alc import metrics as metrics_core
+from alc import onboard as onboard_core
 from alc import runs as runs_core
 from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
@@ -25,12 +26,13 @@ from alc.branches import delete_branches, list_alc_branches, prune_worktrees
 from alc.checks import audit_checks, check_history
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
+from alc.harvest import harvest
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
 from alc.manifestedit import validate_manifest_text
 from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
-from alc.packs import PACKS, pack_files
+from alc.packs import PACKS, hired_archetypes, pack_files
 from alc.policy import lint as _lint
 from alc.policy import validate_provisions, validate_prompts
 from alc.prompts import (
@@ -441,6 +443,69 @@ def checks_audit(root: Path) -> dict:
     manifest = load_manifest(ol)
     blueprints = load_all_blueprints(manifest, ol)
     return asdict(audit_checks(manifest, root, blueprints))
+
+
+# ---------------------------------------------------------------------------
+# Onboard (`alc onboard`) — HARVEST-ONLY: the deterministic proposal and its
+# append-only, gate-first apply, reusing the pure onboard core
+# (harvest -> build_proposal -> apply). The engine `--assist` path is DELIBERATELY
+# not wired here — it spends an engine turn, so it stays a CLI-only choice; the
+# UI empty-state points the operator at `alc onboard --assist` instead.
+# ---------------------------------------------------------------------------
+
+
+def _build_onboard_proposal(root: Path, stage: str | None) -> onboard_core.OnboardProposal:
+    """Build the harvest-only OnboardProposal for *root* — the SERVER's single
+    source of truth for what onboarding would do.
+
+    Loads the manifest + blueprints, computes the hired roster
+    (`packs.hired_archetypes`, the same membership test `alc team list` uses),
+    runs the deterministic `harvest`, and builds the proposal through the pure
+    core with NO ``engine_proposal``. Shared by the proposal read and the apply
+    write so the two can never diverge (apply never trusts client-sent checks).
+    """
+    ol = operator_layer(root)
+    manifest = load_manifest(ol)
+    blueprints = load_all_blueprints(manifest, ol)
+    hired = hired_archetypes(root)
+    report = harvest(root)
+    return onboard_core.build_proposal(
+        manifest, root, blueprints, report, stage=stage, hired_archetypes=hired
+    )
+
+
+def onboard_proposal(root: Path, stage: str | None = None) -> dict:
+    """Return the harvest-only `alc onboard` proposal as JSON (mirrors `--json`).
+
+    ``dataclasses.asdict`` of the OnboardProposal — byte-identical to what
+    `alc onboard --json` emits — so the UI and the CLI render the exact same
+    shape and never drift. Writes nothing.
+    """
+    return asdict(_build_onboard_proposal(root, stage))
+
+
+def onboard_apply(root: Path, stage: str | None = None) -> dict:
+    """Apply the harvest-only `alc onboard` proposal; return what was written.
+
+    The proposal is rebuilt SERVER-SIDE (never from client-sent check data — the
+    server owns what gets written), then handed to `onboard.apply`, the only
+    writer in the flow (append-only, validate-before-persist). A blocked apply
+    (the shared gate rejected the candidate, so nothing was written) is surfaced
+    as ApiError(422) with the violations in ``detail`` — the same Policy-Gate 422
+    shape `write_manifest` returns.
+    """
+    proposal = _build_onboard_proposal(root, stage)
+    result = onboard_core.apply(proposal, operator_layer(root))
+    if result.violations:
+        raise ApiError(
+            "onboarding blocked — nothing was written",
+            status=422,
+            detail=[
+                {"rule": v.rule, "severity": v.severity, "message": v.message}
+                for v in result.violations
+            ],
+        )
+    return asdict(result)
 
 
 # ---------------------------------------------------------------------------

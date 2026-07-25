@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from alc.intake import load_all_blueprints, load_manifest
-from alc.packs import PACKS, pack_files
+from alc.packs import PACKS, hired_archetypes, pack_files
 from alc.policy import lint
 from alc.scaffold import detect_stacks, scaffold
 
@@ -25,6 +25,47 @@ class TestPackFilesUnknownArchetype:
     def test_raises_key_error_with_available_packs_listed(self) -> None:
         with pytest.raises(KeyError, match="builder"):
             pack_files("nosuchpack", stacks=[])
+
+
+class TestHiredArchetypes:
+    """The shared membership test: a pack is hired once ANY of its files exists."""
+
+    def test_fresh_scaffold_has_nothing_hired(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        assert hired_archetypes(tmp_path) == []
+
+    def test_reflects_a_present_pack_file(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        # Write a single one of builder's pack files — that alone hires builder.
+        files = pack_files("builder", detect_stacks(tmp_path))
+        rel = next(iter(files))
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(files[rel])
+
+        assert hired_archetypes(tmp_path) == ["builder"]
+
+    def test_result_is_sorted_across_several_hired_packs(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        for archetype in ("sweeper", "builder"):
+            for rel, content in pack_files(archetype, stacks).items():
+                target = tmp_path / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+
+        assert hired_archetypes(tmp_path) == ["builder", "sweeper"]
+
+    def test_matches_the_cli_wrapper_it_backs(self, tmp_path: Path) -> None:
+        from alc.cli import _hired_archetypes
+
+        scaffold(tmp_path)
+        for rel, content in pack_files("builder", detect_stacks(tmp_path)).items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+
+        assert _hired_archetypes(tmp_path) == hired_archetypes(tmp_path) == ["builder"]
 
 
 class TestPackFilesBuilder:

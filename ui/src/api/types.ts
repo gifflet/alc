@@ -473,6 +473,50 @@ export interface ChecksAudit {
 }
 
 // ---------------------------------------------------------------------------
+// Onboard (`alc onboard`, harvest-only) — onboard.OnboardProposal / ApplyResult,
+// dataclasses.asdict-serialised as-is (the same shape `alc onboard --json`
+// emits). GET /checks/onboard proposes; POST /checks/onboard/apply writes.
+// ---------------------------------------------------------------------------
+
+/** One check ALC proposes to adopt (onboard.ProposedCheck). Exactly one of
+ * `command` (argv token list) or `shell` (a shell one-liner) is set. `available`
+ * is a `shutil.which` lookup — a check whose binary is off PATH is written
+ * commented-out. `origin` is "harvest" in the UI today; "engine" is kept in the
+ * mapping for honesty (the engine `--assist` path stays CLI-only for now). */
+export interface ProposedCheck {
+  name: string
+  command: string[] | null
+  shell: string | null
+  available: boolean
+  origin: string
+  source_path: string | null
+}
+
+/** GET /checks/onboard's shape (onboard.OnboardProposal) — a PLAN, nothing
+ * written. `check_sets` is primarily `{ project: [...] }`; `blueprint_opt_ins`
+ * maps a smoke-only blueprint name to the check_set it would opt into; `stage`
+ * is only ever the operator's answer (never inferred); `team_hints` are the
+ * chosen stage's core archetypes not yet hired; `unknowns` are honest gaps. */
+export interface OnboardProposal {
+  check_sets: Record<string, ProposedCheck[]>
+  blueprint_opt_ins: Record<string, string>
+  stage: string | null
+  team_hints: string[]
+  unknowns: string[]
+}
+
+/** POST /checks/onboard/apply's shape (onboard.ApplyResult) on a clean apply:
+ * what was written. A BLOCKED apply never reaches here — it is a 422 carrying
+ * the violations, like the manifest editor's save. */
+export interface OnboardApplyResult {
+  applied: boolean
+  sets_added: string[]
+  blueprints_opted_in: string[]
+  stage_set: boolean
+  notes: string[]
+}
+
+// ---------------------------------------------------------------------------
 // Artifacts (artifacts.py RunArtifacts) — e2e evidence a run captured.
 // ---------------------------------------------------------------------------
 

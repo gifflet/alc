@@ -52,9 +52,16 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
         keys.team(msg.project_id),
       ]
     case 'config_changed': {
-      // A manifest change (check_sets) alters the audit — keep the Checks view live.
+      // A manifest change (check_sets) alters the audit AND the onboard proposal
+      // (a `project` set that now exists, a stage that was appended) — keep the
+      // Checks view live.
       if (msg.resource === 'manifest')
-        return [keys.manifest(msg.project_id), keys.lint(msg.project_id), keys.checksAudit(msg.project_id)]
+        return [
+          keys.manifest(msg.project_id),
+          keys.lint(msg.project_id),
+          keys.checksAudit(msg.project_id),
+          keys.onboardAll(msg.project_id),
+        ]
       if (msg.resource === 'prompts') return [keys.prompts(msg.project_id)]
       if (COLLECTION_RESOURCES.has(msg.resource as CollectionName)) {
         return [
@@ -64,6 +71,9 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
           keys.team(msg.project_id),
           // A blueprint's checks / check_set opt-in changes the audit — keep Checks live.
           keys.checksAudit(msg.project_id),
+          // A blueprint's check_set opt-in also changes the onboard proposal
+          // (that blueprint drops out of the opt-in candidates) — refresh it.
+          keys.onboardAll(msg.project_id),
         ]
       }
       return [keys.lint(msg.project_id)]

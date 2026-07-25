@@ -30,15 +30,17 @@ describe('wsInvalidations', () => {
     expect(out).toContainEqual(keys.team('p'))
   })
 
-  it('invalidates the manifest, lint and the checks audit when the manifest changes', () => {
+  it('invalidates the manifest, lint, the checks audit and the onboard proposal when the manifest changes', () => {
     const out = wsInvalidations({ type: 'config_changed', project_id: 'p', resource: 'manifest' })
     expect(out).toContainEqual(keys.manifest('p'))
     expect(out).toContainEqual(keys.lint('p'))
     // A check_sets edit changes the audit — the Checks view must refresh live.
     expect(out).toContainEqual(keys.checksAudit('p'))
+    // It also changes the onboard proposal (the `project` set may now exist).
+    expect(out).toContainEqual(keys.onboardAll('p'))
   })
 
-  it('invalidates a collection, lint, the team roster and the checks audit when a blueprint changes', () => {
+  it('invalidates a collection, lint, the team roster, the checks audit and the onboard proposal when a blueprint changes', () => {
     const out = wsInvalidations({
       type: 'config_changed',
       project_id: 'p',
@@ -49,6 +51,8 @@ describe('wsInvalidations', () => {
     expect(out).toContainEqual(keys.team('p'))
     // A check_set opt-in / checks edit changes the audit — Checks must refresh live.
     expect(out).toContainEqual(keys.checksAudit('p'))
+    // The opt-in also drops that blueprint from the onboard candidates.
+    expect(out).toContainEqual(keys.onboardAll('p'))
   })
 
   it('invalidates the runs list only on lifecycle boundaries', () => {

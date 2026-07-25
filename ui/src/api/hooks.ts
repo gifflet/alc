@@ -159,6 +159,17 @@ export function useChecksAudit(id: string) {
   })
 }
 
+/** The harvest-only `alc onboard` proposal for the chosen stage (null = no
+ * stage). Read-only — WS invalidation refreshes it once checks are adopted /
+ * a blueprint opts in (see wsInvalidations' config_changed branch). */
+export function useOnboardProposal(id: string, stage: string | null) {
+  return useQuery({
+    queryKey: keys.onboard(id, stage),
+    queryFn: () => api.getOnboardProposal(id, stage ?? undefined),
+    enabled: enabled(id),
+  })
+}
+
 export function useRunArtifacts(id: string, stem: string) {
   return useQuery({
     queryKey: keys.runArtifacts(id, stem),
@@ -409,6 +420,26 @@ export function useHireArchetype(id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.team(id) })
       qc.invalidateQueries({ queryKey: keys.collections(id) })
+    },
+  })
+}
+
+/** Adopt the harvest-only `alc onboard` proposal (append-only, gate-first on the
+ * server). The mutation carries the operator's optional stage; the server
+ * rebuilds the whole proposal itself. On success it invalidates every surface
+ * the write touched — the proposal (now that checks are adopted / a blueprint
+ * opted in), the checks audit, the manifest, lint, and the blueprints
+ * collection — so the acting client updates without waiting on the WS event. */
+export function useApplyOnboard(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stage: string | null) => api.applyOnboard(id, stage ?? undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.onboardAll(id) })
+      qc.invalidateQueries({ queryKey: keys.checksAudit(id) })
+      qc.invalidateQueries({ queryKey: keys.manifest(id) })
+      qc.invalidateQueries({ queryKey: keys.lint(id) })
+      qc.invalidateQueries({ queryKey: keys.collection(id, 'blueprints') })
     },
   })
 }

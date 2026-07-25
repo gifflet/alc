@@ -2,13 +2,16 @@
 #
 # A pack is a plain dict {relative path: content}, parameterised by the stacks
 # detect_stacks() found. PACKS is a data table (archetype -> file-generator); no
-# class hierarchy, no plugin system. This module is pure — no filesystem I/O.
-# Writing, existence checks, and the overwrite-refusal contract all live in
-# cli.py's `alc team hire` (mirroring how scaffold.py's templates stay separate
-# from scaffold()'s own disk-writing).
+# class hierarchy, no plugin system. The pack GENERATORS are pure — no filesystem
+# I/O — and writing plus the overwrite-refusal contract live in cli.py's `alc team
+# hire` and the UI service (mirroring how scaffold.py's templates stay separate
+# from scaffold()'s own disk-writing). The ONE read-only exception is
+# `hired_archetypes` below: the shared "is this pack hired?" membership test the
+# CLI and the UI both reuse instead of each re-deriving it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Builder pack — test authoring, live e2e QA, and a hardened ship flow.
@@ -509,3 +512,27 @@ def pack_files(
     except KeyError:
         raise KeyError(f"no pack named '{archetype}' (available: {sorted(PACKS)})") from None
     return build(stacks)
+
+
+def hired_archetypes(project_root: Path) -> list[str]:
+    """Return the Archetype Packs currently hired in *project_root*, sorted.
+
+    A pack counts as hired the moment ANY of the files it would write
+    (`pack_files`, resolved against the project's detected stacks) already exists
+    on disk. This is the single membership test behind `alc team list`, `alc
+    onboard`'s stage team-hints, and the web UI roster — sharing it here means
+    those three never disagree about who is on the team.
+
+    ``detect_stacks`` is imported inside the function on purpose: this module is
+    otherwise a pure data table with no scaffold dependency at import time, and a
+    lazy import keeps it that way (and sidesteps any import-cycle risk).
+    """
+    from alc.scaffold import detect_stacks
+
+    stacks = detect_stacks(project_root)
+    hired: list[str] = []
+    for archetype in sorted(PACKS):
+        files = pack_files(archetype, stacks)
+        if any((project_root / rel).exists() for rel in files):
+            hired.append(archetype)
+    return hired
