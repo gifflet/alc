@@ -55,6 +55,41 @@ def _find_operator_layer() -> Path:
     return cwd / ".alc"
 
 
+def _abort_if_dirty_tree(project_root: Path, allow_dirty: bool, command: str) -> bool:
+    """Preflight for an autonomous run: refuse to START on a dirty working tree.
+
+    `alc cycle`, `alc loop`, and `alc tick` each drive a demand-commit / merge-back
+    that ``git add -A`` the workdir as it goes. Any uncommitted work OUTSIDE ``.alc/``
+    present when the run STARTS would therefore be swept into a commit the operator
+    never asked for (this nearly cost a user their work-in-progress). Refuse to start
+    unless the operator explicitly opts in with ``--allow-dirty``.
+
+    Mirrors the committing-Flow clean-tree guard in flow.py, reusing the same
+    ``has_non_alc_changes`` predicate: a change confined to ``.alc/`` (control-plane
+    state) never blocks, and an off-git workdir is a graceful no-op (no repo means no
+    WIP to protect). The web IDE inherits this guard for free by subprocessing the CLI.
+
+    Returns True when the command MUST abort (the abort message has already been
+    printed to stderr); False when it is safe to proceed.
+    """
+    if allow_dirty:
+        return False
+
+    from alc.commit import has_non_alc_changes
+
+    if not has_non_alc_changes(project_root):
+        return False
+
+    print(
+        f"[ERROR] {command} aborted — the working tree has uncommitted changes "
+        "outside .alc/. An autonomous run commits the workdir as it goes and would "
+        "sweep this work into a commit. Commit or stash your changes first, or pass "
+        "--allow-dirty to proceed anyway.",
+        file=sys.stderr,
+    )
+    return True
+
+
 def _validate_tier(manifest, tier: str | None) -> str | None:
     """Validate that *tier* exists in manifest.compute_tiers.
 
@@ -779,6 +814,14 @@ def cmd_tick(args: argparse.Namespace) -> int:
     from alc.queue import process_queue
 
     operator_layer = _find_operator_layer()
+
+    # Clean-tree preflight: a drain commits the workdir as it goes, so refuse to start
+    # when the tree has uncommitted non-.alc/ work (unless --allow-dirty).
+    if _abort_if_dirty_tree(
+        operator_layer.parent, getattr(args, "allow_dirty", False), "tick"
+    ):
+        return 1
+
     manifest = load_manifest(operator_layer)
 
     queue_dir = operator_layer.parent / manifest.queue_dir
@@ -935,6 +978,14 @@ def cmd_cycle(args: argparse.Namespace) -> int:
             print(f"Stopped reason:          {state.stopped_reason}")
         return 0
 
+    # Clean-tree preflight: a cycle commits the workdir as it goes, so refuse to start
+    # when the tree has uncommitted non-.alc/ work (unless --allow-dirty). Placed after
+    # the read-only --status path so status can always be inspected.
+    if _abort_if_dirty_tree(
+        operator_layer.parent, getattr(args, "allow_dirty", False), "cycle"
+    ):
+        return 1
+
     if args.reset:
         # Reset THEN run: replace the state with a fresh pending one and fall through
         # so this invocation runs one cycle on the fresh state (from pending).
@@ -977,6 +1028,13 @@ def cmd_loop(args: argparse.Namespace) -> int:
     manifest, operator_layer, loop_def, _loops, spath, err = _resolve_loop(args)
     if err is not None:
         return err
+
+    # Clean-tree preflight: each cycle commits the workdir as it goes, so refuse to
+    # start when the tree has uncommitted non-.alc/ work (unless --allow-dirty).
+    if _abort_if_dirty_tree(
+        operator_layer.parent, getattr(args, "allow_dirty", False), "loop"
+    ):
+        return 1
 
     state = load_loop_state(spath, args.name)
     if args.reset:
@@ -3170,6 +3228,15 @@ def main() -> None:
             "its own git worktree."
         ),
     )
+    tick_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        default=False,
+        help=(
+            "Proceed even if the working tree has uncommitted changes outside "
+            ".alc/ (an autonomous run may commit them)."
+        ),
+    )
 
     # alc retry [stem] [--all]
     retry_parser = subparsers.add_parser(
@@ -3541,6 +3608,15 @@ def main() -> None:
         default=False,
         help="With --status, print the loop state as JSON (machine-readable).",
     )
+    cycle_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        default=False,
+        help=(
+            "Proceed even if the working tree has uncommitted changes outside "
+            ".alc/ (an autonomous run may commit them)."
+        ),
+    )
 
     # alc loop <name> [--engine NAME] [--interval S]
     loop_parser = subparsers.add_parser(
@@ -3563,6 +3639,15 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Reset the loop's stopped/exhausted state, then run — restart in one step.",
+    )
+    loop_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        default=False,
+        help=(
+            "Proceed even if the working tree has uncommitted changes outside "
+            ".alc/ (an autonomous run may commit them)."
+        ),
     )
 
     # alc specialist <name> "<task>" [--engine NAME]
