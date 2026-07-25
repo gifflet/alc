@@ -1,5 +1,6 @@
 # cli.py — argparse entrypoint for ALC.
-# Provides subcommands: `alc init` (supports --setup and --stage), `alc lint`,
+# Provides subcommands: `alc init` (supports --setup and --stage), `alc onboard`
+# (harvest a project's own checks into check_sets), `alc lint`,
 # `alc run`, `alc spike`, `alc flow`, `alc tick`, `alc retry`, `alc land`
 # (supports --push/--pr), `alc discard`, `alc explore`, `alc compare`,
 # `alc adopt`, `alc conduct`, `alc enqueue`, `alc primer`, `alc new`, `alc team`,
@@ -270,7 +271,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(
             "No known stack detected — scaffolded a placeholder smoke check. "
             "ALC verifies only what your checks verify: add real checks to "
-            ".alc/manifest.yaml check_sets, then run `alc checks audit`."
+            ".alc/manifest.yaml check_sets, then run `alc checks audit` — or run "
+            "`alc onboard` to harvest this project's own checks (Makefile targets, "
+            "package.json scripts, …) into check_sets."
         )
 
     if args.stage:
@@ -296,6 +299,214 @@ def cmd_init(args: argparse.Namespace) -> int:
         _print_skill_result(skill_path, changed, _resolve_version(), args.engine)
 
     return 0
+
+
+def _isatty() -> bool:
+    """Whether stdout is an interactive terminal — a testable seam.
+
+    Isolated so a non-interactive shell (a pipe, the web IDE's exec) is never
+    prompted, and so tests can flip interactivity deterministically.
+    """
+    return sys.stdout.isatty()
+
+
+def _hired_archetypes(project_root: Path) -> list[str]:
+    """The Archetype Packs currently hired (any of their files present on disk).
+
+    Mirrors `_team_roster`'s membership test so `alc onboard`'s stage team-hints
+    match exactly what `alc team list` reports.
+    """
+    from alc.packs import PACKS, pack_files
+    from alc.scaffold import detect_stacks
+
+    stacks = detect_stacks(project_root)
+    hired: list[str] = []
+    for archetype in sorted(PACKS):
+        files = pack_files(archetype, stacks)
+        if any((project_root / rel).exists() for rel in files):
+            hired.append(archetype)
+    return hired
+
+
+def _print_onboard_apply(result) -> int:
+    """Print an onboard ApplyResult and return its exit code.
+
+    A blocked apply (validate-before-persist failed, nothing written) prints the
+    violations to stderr and returns 1; a clean apply (or no-op) prints what was
+    written and returns 0.
+    """
+    if result.violations:
+        print("[ERROR] onboarding blocked — nothing was written:", file=sys.stderr)
+        for v in result.violations:
+            tag = "[ERROR]" if v.severity == "error" else "[WARN] "
+            print(f"{tag} [{v.rule}] {v.message}", file=sys.stderr)
+        return 1
+
+    if not result.applied:
+        for note in result.notes:
+            print(note)
+        return 0
+
+    print("Applied:")
+    if result.sets_added:
+        print(f"  check_sets added: {', '.join(result.sets_added)}")
+    if result.blueprints_opted_in:
+        print(f"  blueprints opted in: {', '.join(result.blueprints_opted_in)}")
+    if result.stage_set:
+        print("  stage set")
+    for note in result.notes:
+        print(f"  note: {note}")
+    return 0
+
+
+def cmd_onboard(args: argparse.Namespace) -> int:
+    """Run `alc onboard [--dry-run] [--yes] [--json] [--stage NAME]`.
+
+    The follow-up to `alc init`, not a scaffolder: it HARVESTS the checks this
+    project already declares (Makefile targets, package.json scripts, …) and
+    PROPOSES adopting them into a `project` check_set — propose-then-approve, so
+    nothing is written without approval. Requires an existing `.alc/` operator
+    layer (located via `_find_operator_layer`, same as every other command).
+
+    Modes (non-interactive first): `--json` emits the proposal as JSON and writes
+    nothing; `--dry-run` prints the preview and writes nothing (also the default
+    when stdout is not a TTY and `--yes` was not passed — a non-interactive shell
+    is never prompted); `--yes` applies the full proposal non-interactively.
+    Interactively (a TTY, no `--yes`) the checks, blueprint opt-ins, and
+    stage-and-team sections are each independently approvable — a "no" skips that
+    section, never aborts the command.
+    """
+    from dataclasses import asdict, replace
+
+    from alc.harvest import harvest
+    from alc.intake import load_all_blueprints, load_manifest
+    from alc.onboard import apply as onboard_apply
+    from alc.onboard import build_proposal, render_preview
+
+    operator_layer = _find_operator_layer()
+    project_root = operator_layer.parent
+    # Precondition: an existing `.alc/`. A missing manifest raises the same
+    # FileNotFoundError every other command surfaces — `alc onboard` follows
+    # `alc init`, it does not scaffold.
+    manifest = load_manifest(operator_layer)
+    blueprints = load_all_blueprints(manifest, operator_layer)
+
+    manifest_raw = (operator_layer / "manifest.yaml").read_text()
+    blueprints_dir = operator_layer.parent / manifest.blueprints_dir
+    blueprints_raw: dict[str, str] = {}
+    for bp in blueprints:
+        bp_path = blueprints_dir / f"{bp.name}.md"
+        if bp_path.is_file():
+            blueprints_raw[bp.name] = bp_path.read_text()
+
+    hired = _hired_archetypes(project_root)
+    harvest_report = harvest(project_root)
+
+    proposal = build_proposal(
+        manifest,
+        project_root,
+        blueprints,
+        harvest_report,
+        stage=args.stage,
+        hired_archetypes=hired,
+    )
+
+    # --json: the UI's machine-readable feed. Print the proposal, write nothing.
+    if args.json:
+        from alc.output import emit_json
+
+        emit_json(asdict(proposal))
+        return 0
+
+    # Every human mode opens with the same honest preview (diffs + summary +
+    # notes/unknowns). render_preview is pure and already phrases everything as
+    # ALC's own recommendation (no external source named).
+    print(render_preview(proposal, manifest_raw, blueprints_raw))
+
+    # --dry-run, or a non-interactive shell without --yes: preview only.
+    if args.dry_run or (not args.yes and not _isatty()):
+        return 0
+
+    # --yes: apply the FULL proposal (checks + opt-ins + --stage) non-interactively.
+    if args.yes:
+        return _print_onboard_apply(onboard_apply(proposal, operator_layer))
+
+    # ---------------------------------------------------------------------
+    # Interactive: three independently-approvable sections. A "no" skips that
+    # section; it never aborts the command.
+    # ---------------------------------------------------------------------
+    project_checks = proposal.check_sets.get("project", [])
+
+    checks_approved = False
+    if project_checks:
+        n = len(project_checks)
+        m = sum(1 for c in project_checks if not c.available)
+        prompt = (
+            f"Add check_set 'project' ({n} check(s)"
+            + (f", {m} commented — binary off PATH" if m else "")
+            + ")? [y/N]: "
+        )
+        checks_approved = input(prompt).strip().lower() in ("y", "yes")
+    else:
+        # An empty harvest never invents checks — say so and point at the manual
+        # path (do NOT name any external source).
+        print(
+            "No checks were harvested from this project — add checks by hand to "
+            ".alc/manifest.yaml check_sets (ALC does not invent checks)."
+        )
+
+    opt_ins_approved = False
+    if proposal.blueprint_opt_ins:
+        names = ", ".join(sorted(proposal.blueprint_opt_ins))
+        opt_ins_approved = input(
+            f"Insert `check_set: project` into {len(proposal.blueprint_opt_ins)} "
+            f"smoke-only blueprint(s) ({names})? [y/N]: "
+        ).strip().lower() in ("y", "yes")
+
+    # Stage & team — only when --stage was not already given (advisory; a stage
+    # never changes execution).
+    chosen_stage = args.stage
+    if args.stage is None:
+        answer = input(
+            "Declare a product stage? [pre-pmf/growth/strong-pmf/skip]: "
+        ).strip().lower()
+        if answer in ("pre-pmf", "growth", "strong-pmf"):
+            chosen_stage = answer
+
+    # Build the FINAL proposal from only the approved sections. Opt-ins are kept
+    # only when the checks section was ALSO approved — a `check_set: project`
+    # line pointing at a set that was declined would dangle.
+    final = build_proposal(
+        manifest,
+        project_root,
+        blueprints,
+        harvest_report,
+        stage=chosen_stage,
+        hired_archetypes=hired,
+    )
+    final = replace(
+        final,
+        check_sets=final.check_sets if checks_approved else {},
+        blueprint_opt_ins=(
+            final.blueprint_opt_ins if (checks_approved and opt_ins_approved) else {}
+        ),
+    )
+    if opt_ins_approved and not checks_approved:
+        print(
+            "Blueprint opt-ins skipped — the 'project' check_set was not added, so "
+            "there is nothing to opt into."
+        )
+
+    # When a stage was chosen interactively, surface its team hints as ready
+    # `alc team hire` suggestions and offer to hire them now (the existing path).
+    if args.stage is None and chosen_stage is not None and final.team_hints:
+        print(f"stage '{chosen_stage}' suggests hiring:")
+        for archetype in final.team_hints:
+            print(f"  alc team hire {archetype}")
+        if input("Hire them now? [y/N]: ").strip().lower() in ("y", "yes"):
+            _install_stage_packs(project_root, chosen_stage, force=False)
+
+    return _print_onboard_apply(onboard_apply(final, operator_layer))
 
 
 def cmd_lint(args: argparse.Namespace) -> int:
@@ -2329,8 +2540,9 @@ def _checks_audit(args: argparse.Namespace) -> int:
             print(
                 f"Blueprint '{bp.blueprint}' verifies nothing but the smoke placeholder "
                 "and no stack was detected — ALC's guarantees are only as strong as your "
-                "checks. Add real ones to your manifest check_sets (also editable in the "
-                "UI: Checks / Manifest)."
+                "checks. Run `alc onboard` to harvest this project's own checks (Makefile "
+                "targets, package.json scripts, …) into check_sets, or add real ones by "
+                "hand to your manifest (also editable in the UI: Checks / Manifest)."
             )
 
     return 0
@@ -2789,6 +3001,46 @@ def main() -> None:
         help=(
             "Also hire the Archetype Pack combo for this stage's mix "
             "(see `alc team list`). Omit to only print a discovery hint."
+        ),
+    )
+
+    # alc onboard [--dry-run] [--yes] [--json] [--stage pre-pmf|growth|strong-pmf]
+    onboard_parser = subparsers.add_parser(
+        "onboard",
+        help=(
+            "Harvest this project's own declared checks (Makefile targets, "
+            "package.json scripts, …) and PROPOSE adopting them into check_sets; "
+            "nothing is written without approval. The follow-up to `alc init`."
+        ),
+    )
+    onboard_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help=(
+            "Print the proposal preview and exit; write nothing. Also the default "
+            "when stdout is not a TTY and --yes was not passed."
+        ),
+    )
+    onboard_parser.add_argument(
+        "--yes",
+        action="store_true",
+        default=False,
+        help="Apply the full proposal non-interactively (checks + opt-ins + --stage).",
+    )
+    onboard_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the proposal as JSON (machine-readable) and exit; write nothing.",
+    )
+    onboard_parser.add_argument(
+        "--stage",
+        choices=["pre-pmf", "growth", "strong-pmf"],
+        default=None,
+        help=(
+            "Record this product stage (advisory — never changes execution). "
+            "Omit to be asked interactively."
         ),
     )
 
@@ -3822,6 +4074,8 @@ def main() -> None:
 
     if args.command == "init":
         sys.exit(cmd_init(args))
+    elif args.command == "onboard":
+        sys.exit(cmd_onboard(args))
     elif args.command == "setup":
         sys.exit(cmd_setup(args))
     elif args.command == "lint":

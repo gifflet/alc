@@ -268,6 +268,8 @@ class TestInitStage:
         out = capsys.readouterr().out
 
         assert "alc team hire" in out
+        # The no-stack nudge now points at `alc onboard` as the harvest path.
+        assert "alc onboard" in out
         assert not (tmp_path / ".alc" / "blueprints" / "test.md").exists()
 
     def test_stage_hires_the_available_packs_and_reports_the_rest(

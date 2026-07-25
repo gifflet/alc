@@ -224,6 +224,8 @@ class TestChecksAuditCli:
         out = capsys.readouterr().out
         assert "chore" in out
         assert "no stack was detected" in out
+        # Now that `alc onboard` exists, the honest nudge points at the harvest path.
+        assert "alc onboard" in out
 
     def test_add_proposal_prints_a_pasteable_snippet(
         self, operator_layer: Path, monkeypatch: pytest.MonkeyPatch, capsys
