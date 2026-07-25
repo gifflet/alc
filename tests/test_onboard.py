@@ -32,6 +32,17 @@ def _manifest(stage: str | None = None) -> Manifest:
     )
 
 
+def _manifest_with_project() -> Manifest:
+    """A manifest that has ALREADY adopted a "project" check_set — the state a
+    prior `alc onboard` apply leaves behind, and the trigger for idempotency."""
+    return Manifest(
+        default_engine="mock",
+        compute_tiers={"standard": {"mock": "mock-small"}},
+        engines={"mock": {"type": "mock"}},
+        check_sets={"project": [Check(name="test", command=["npm", "run", "test"])]},
+    )
+
+
 def _blueprint(name: str, checks: list[Check]) -> Blueprint:
     return Blueprint(name=name, purpose="x", workflow="w", checks=checks)
 
@@ -94,6 +105,35 @@ class TestBuildProposalChecks:
         assert "project" not in proposal.check_sets
         assert proposal.unknowns  # a clear note is present
         assert any("no existing check" in note.lower() for note in proposal.unknowns)
+
+    def test_already_adopted_project_set_is_suppressed_with_a_distinct_note(
+        self,
+    ) -> None:
+        # Onboarding is IDEMPOTENT: when the manifest already declares a "project"
+        # check_set, re-proposing it would duplicate the block on a second adopt.
+        # The proposal must leave "project" out and say WHY — with a note DISTINCT
+        # from the empty-harvest one, so a reader tells "already onboarded" apart
+        # from "nothing harvested".
+        adopted = _manifest_with_project()
+        report = _report([_harvested("test", ["npm", "run", "test"])])
+
+        proposal = build_proposal(adopted, Path("/x"), [], report)
+
+        assert "project" not in proposal.check_sets
+        assert any("already exist" in note.lower() for note in proposal.unknowns)
+        # NOT the empty-harvest note — the two reasons stay distinguishable.
+        assert not any("no existing check" in note.lower() for note in proposal.unknowns)
+
+    def test_already_adopted_proposes_no_new_opt_ins(self) -> None:
+        # With the "project" set suppressed there is no set to opt a blueprint
+        # into, so no opt-in is proposed (the first adopt already wired them).
+        adopted = _manifest_with_project()
+        blueprints = [_blueprint("chore", [_SMOKE])]
+        report = _report([_harvested("test", ["npm", "run", "test"])])
+
+        proposal = build_proposal(adopted, Path("/x"), blueprints, report)
+
+        assert proposal.blueprint_opt_ins == {}
 
 
 # ---------------------------------------------------------------------------

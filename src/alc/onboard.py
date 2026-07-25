@@ -44,6 +44,16 @@ _EMPTY_HARVEST_NOTE = (
     "with engine assist later"
 )
 
+# The note that makes a RE-onboard honest: when the "project" set is already live
+# the proposal suppresses it (a second adopt would otherwise duplicate the block),
+# and says so with a string DELIBERATELY distinct from `_EMPTY_HARVEST_NOTE` — a
+# reader (and the UI empty-state) must tell "already onboarded" from "nothing
+# harvested" apart.
+_PROJECT_SET_EXISTS_NOTE = (
+    "the 'project' check_set already exists — its checks are live; edit the "
+    "manifest to change them"
+)
+
 
 @dataclass(frozen=True)
 class ProposedCheck:
@@ -368,8 +378,14 @@ def build_proposal(
                 )
             )
 
+    # An ALREADY-adopted "project" set is never re-proposed — the proposal is
+    # IDEMPOTENT, so a second adopt cannot duplicate the block. This suppression
+    # covers the engine-merge path too: `proposed` above already folded in any
+    # engine checks, and none of them re-create a set the manifest already owns.
     check_sets: dict[str, list[ProposedCheck]] = {}
-    if proposed:
+    if _PROJECT_SET in manifest.check_sets:
+        unknowns.append(_PROJECT_SET_EXISTS_NOTE)
+    elif proposed:
         check_sets[_PROJECT_SET] = proposed
     else:
         unknowns.append(_EMPTY_HARVEST_NOTE)
@@ -555,14 +571,19 @@ def render_preview(
 # ---------------------------------------------------------------------------
 
 
-def _splice_check_sets(raw: str, proposal: OnboardProposal) -> str | None:
-    """Append the proposal's check_sets into the manifest's `check_sets:` mapping.
+def _splice_check_sets(
+    raw: str, check_sets: dict[str, list[ProposedCheck]]
+) -> str | None:
+    """Append *check_sets* into the manifest's `check_sets:` mapping.
 
     APPEND-ONLY: existing lines are never mutated. The rendered sets are spliced
     in right after the mapping's last entry, matching its 2-space indentation
     (`render_check_set` already emits that). Returns the new text, or None when
     the `check_sets:` key cannot be located confidently — the caller then FAILS
     SAFELY and writes nothing rather than risk corrupting the file.
+
+    The caller passes ONLY the sets that are genuinely new (an already-declared
+    name is filtered out first), so splicing can never duplicate an existing set.
     """
     lines = raw.split("\n")
 
@@ -591,7 +612,7 @@ def _splice_check_sets(raw: str, proposal: OnboardProposal) -> str | None:
         break  # a top-level, non-blank line ends the mapping
 
     inserted: list[str] = []
-    for name, checks in proposal.check_sets.items():
+    for name, checks in check_sets.items():
         inserted.append("")  # blank separator between sets, matching `alc init`
         inserted.extend(render_check_set(name, _command_tuples(checks)).split("\n"))
 
@@ -661,28 +682,42 @@ def _blueprints_dir(operator_layer: Path) -> Path:
 def apply(proposal: OnboardProposal, operator_layer: Path) -> ApplyResult:
     """Apply *proposal* to *operator_layer* — the ONLY function here that writes.
 
-    Append-only and validate-before-persist:
+    Append-only, validate-before-persist, and IDEMPOTENT:
 
-    1. Build the CANDIDATE manifest by APPENDING the proposed check_sets into the
-       `check_sets:` mapping and, when answered, a top-level `stage:` line —
-       existing comments and keys survive byte-for-byte.
-    2. Validate the candidate through the shared gate
+    1. Read what the manifest ALREADY declares (its check_set names and whether a
+       top-level `stage:` is set). This is the defensive line that makes a
+       re-apply safe even if the proposal is stale: a set the manifest already
+       owns is NEVER re-spliced (it would duplicate the block), and a `stage:` is
+       NEVER re-appended (it would duplicate the key). Each skip is noted.
+    2. Build the CANDIDATE manifest by APPENDING only the genuinely-new check_sets
+       into the `check_sets:` mapping and, when the stage is both answered and not
+       yet set, a top-level `stage:` line — existing comments and keys survive
+       byte-for-byte.
+    3. Validate the candidate through the shared gate
        (`manifestedit.validate_manifest_text`). On any blocking violation, write
        NOTHING and return the violations.
-    3. Only on a clean gate: write the candidate manifest, then splice one
-       `check_set:` line into each opted-in blueprint. A missing/odd blueprint is
+    4. Only on a clean gate: write the manifest ONLY when it actually changed,
+       then splice one `check_set:` line into each opted-in blueprint. A
+       missing/odd blueprint (including one that already declares a check_set) is
        skipped with a note, never a crash.
 
-    An empty proposal (no sets, no stage, no opt-ins) is a clean no-op.
+    When nothing was genuinely new — the candidate is byte-identical to the
+    current manifest and no blueprint opt-in was performed — the apply is an
+    honest no-op (`applied=False`) rather than a false "applied". A wholly empty
+    proposal (no sets, no stage, no opt-ins) is the same clean no-op it always was.
 
     Returns:
-        An ApplyResult reporting what was written, or the violations that
+        An ApplyResult reporting what was ACTUALLY written, or the violations that
         blocked the write.
     """
     manifest_path = operator_layer / "manifest.yaml"
 
-    manifest_change = bool(proposal.check_sets) or proposal.stage is not None
-    if not manifest_change and not proposal.blueprint_opt_ins:
+    # A wholly empty proposal never touches disk — unchanged from before.
+    if (
+        not proposal.check_sets
+        and proposal.stage is None
+        and not proposal.blueprint_opt_ins
+    ):
         return ApplyResult(
             applied=False,
             sets_added=[],
@@ -692,12 +727,34 @@ def apply(proposal: OnboardProposal, operator_layer: Path) -> ApplyResult:
             notes=["nothing to apply"],
         )
 
+    # 1. Learn what the manifest already declares so a re-apply adds only what is
+    #    new. `load_manifest` is the same authoritative loader the rest of the
+    #    flow uses, so "already present" means exactly what the models mean.
+    current = load_manifest(operator_layer)
+    existing_sets = set(current.check_sets)
+    stage_already_set = current.stage is not None
+
+    notes: list[str] = []
+
+    new_sets = {
+        name: checks
+        for name, checks in proposal.check_sets.items()
+        if name not in existing_sets
+    }
+    for name in proposal.check_sets:
+        if name in existing_sets:
+            notes.append(f"check_set '{name}' already present — not re-added")
+
+    stage_to_write = proposal.stage if not stage_already_set else None
+    if proposal.stage is not None and stage_already_set:
+        notes.append("stage already set — unchanged")
+
     raw = manifest_path.read_text()
 
-    # 1. Build the candidate by appending (never re-dumping).
+    # 2. Build the candidate by appending ONLY the new additions (never re-dumping).
     candidate = raw
-    if proposal.check_sets:
-        spliced = _splice_check_sets(candidate, proposal)
+    if new_sets:
+        spliced = _splice_check_sets(candidate, new_sets)
         if spliced is None:
             return ApplyResult(
                 applied=False,
@@ -714,13 +771,13 @@ def apply(proposal: OnboardProposal, operator_layer: Path) -> ApplyResult:
                         ),
                     )
                 ],
-                notes=[],
+                notes=notes,
             )
         candidate = spliced
-    if proposal.stage is not None:
-        candidate = _append_stage(candidate, proposal.stage)
+    if stage_to_write is not None:
+        candidate = _append_stage(candidate, stage_to_write)
 
-    # 2. Validate-before-persist — a blocked apply writes NOTHING.
+    # 3. Validate-before-persist — a blocked apply writes NOTHING.
     violations = validate_manifest_text(candidate, operator_layer)
     if violations:
         return ApplyResult(
@@ -729,13 +786,14 @@ def apply(proposal: OnboardProposal, operator_layer: Path) -> ApplyResult:
             blueprints_opted_in=[],
             stage_set=False,
             violations=violations,
-            notes=[],
+            notes=notes,
         )
 
-    # 3. Persist the manifest, then opt each blueprint in with a single line.
-    manifest_path.write_text(candidate)
+    # 4. Persist the manifest ONLY when it changed, then opt each blueprint in.
+    manifest_written = candidate != raw
+    if manifest_written:
+        manifest_path.write_text(candidate)
 
-    notes: list[str] = []
     blueprints_dir = _blueprints_dir(operator_layer)
     opted_in: list[str] = []
     for bp_name, set_name in proposal.blueprint_opt_ins.items():
@@ -755,11 +813,17 @@ def apply(proposal: OnboardProposal, operator_layer: Path) -> ApplyResult:
         bp_path.write_text(new_bp)
         opted_in.append(bp_name)
 
+    # Report only what was ACTUALLY written; a run that added nothing new is an
+    # honest no-op, never a false "applied".
+    applied = manifest_written or bool(opted_in)
+    if not applied:
+        notes.append("already onboarded — nothing new to apply")
+
     return ApplyResult(
-        applied=True,
-        sets_added=list(proposal.check_sets.keys()),
+        applied=applied,
+        sets_added=list(new_sets.keys()),
         blueprints_opted_in=opted_in,
-        stage_set=proposal.stage is not None,
+        stage_set=stage_to_write is not None,
         violations=[],
         notes=notes,
     )

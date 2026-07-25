@@ -13,7 +13,7 @@ from pathlib import Path
 
 from alc.harvest import HarvestedCheck, HarvestReport
 from alc.intake import load_all_blueprints, load_blueprint, load_manifest
-from alc.onboard import ApplyResult, apply, build_proposal
+from alc.onboard import ApplyResult, OnboardProposal, ProposedCheck, apply, build_proposal
 from alc.scaffold import scaffold
 
 
@@ -156,3 +156,119 @@ class TestApplyEmptyProposal:
         assert result.stage_set is False
         assert result.notes  # a clear "nothing to apply" note
         assert (ol / "manifest.yaml").read_text() == before
+
+
+# ---------------------------------------------------------------------------
+# Idempotency — a second apply must never duplicate a set or a stage line
+# ---------------------------------------------------------------------------
+
+
+class TestApplyIsIdempotent:
+    def test_rebuilt_proposal_re_applied_writes_nothing_new(self, tmp_path: Path) -> None:
+        # The real re-adopt path: the server REBUILDS the proposal from the (now
+        # onboarded) manifest, so build_proposal suppresses the live "project"
+        # set. Applying that rebuilt proposal a second time must be a clean no-op.
+        ol = _scaffolded(tmp_path)
+        manifest = load_manifest(ol)
+        blueprints = load_all_blueprints(manifest, ol)
+        report = _report([_harvested("test", ["npm", "test"])])
+
+        first = build_proposal(manifest, tmp_path, blueprints, report, stage="growth")
+        assert apply(first, ol).applied is True
+        after_first = (ol / "manifest.yaml").read_text()
+
+        manifest2 = load_manifest(ol)
+        blueprints2 = load_all_blueprints(manifest2, ol)
+        second_proposal = build_proposal(
+            manifest2, tmp_path, blueprints2, report, stage="growth"
+        )
+
+        result = apply(second_proposal, ol)
+
+        assert result.applied is False
+        assert result.violations == []
+        assert result.sets_added == []
+        assert result.stage_set is False
+        assert result.blueprints_opted_in == []
+        # The file did not move a single byte, and exactly ONE of each survives.
+        after_second = (ol / "manifest.yaml").read_text()
+        assert after_second == after_first
+        assert after_second.split("\n").count("  project:") == 1
+        assert after_second.split("\n").count("stage: growth") == 1
+
+    def test_stale_proposal_still_carrying_project_is_defensively_skipped(
+        self, tmp_path: Path
+    ) -> None:
+        # A STALE proposal — built BEFORE the first apply, so it still carries the
+        # "project" set AND the "growth" stage — is re-applied verbatim. apply must
+        # DEFENSIVELY skip both (never trusting a proposal to be fresh) and note it.
+        ol = _scaffolded(tmp_path)
+        manifest = load_manifest(ol)
+        blueprints = load_all_blueprints(manifest, ol)
+        report = _report([_harvested("test", ["npm", "test"])])
+        stale = build_proposal(manifest, tmp_path, blueprints, report, stage="growth")
+
+        assert apply(stale, ol).applied is True
+        after_first = (ol / "manifest.yaml").read_text()
+        assert "project" in stale.check_sets  # the proposal really is stale
+
+        result = apply(stale, ol)
+
+        assert result.applied is False
+        assert result.sets_added == []
+        assert result.stage_set is False
+        after_second = (ol / "manifest.yaml").read_text()
+        assert after_second == after_first
+        assert after_second.split("\n").count("  project:") == 1
+        assert after_second.split("\n").count("stage: growth") == 1
+        # Each defensive skip is explained honestly.
+        assert any("already present" in n for n in result.notes)
+        assert any("stage already set" in n for n in result.notes)
+
+    def test_second_apply_of_a_new_set_alongside_an_existing_one(
+        self, tmp_path: Path
+    ) -> None:
+        # A proposal whose "project" set already lives in the manifest but which
+        # ALSO carries a genuinely new set: only the new set is spliced, the live
+        # one is skipped — no duplicate "project:" block.
+        ol = _scaffolded(tmp_path)
+        manifest = load_manifest(ol)
+        report = _report([_harvested("test", ["npm", "test"])])
+        apply(build_proposal(manifest, tmp_path, [], report), ol)
+
+        mixed = OnboardProposal(
+            check_sets={
+                "project": [
+                    ProposedCheck(
+                        name="test",
+                        command=["npm", "test"],
+                        shell=None,
+                        available=True,
+                        origin="harvest",
+                        source_path="package.json",
+                    )
+                ],
+                "extra": [
+                    ProposedCheck(
+                        name="lint",
+                        command=["true"],
+                        shell=None,
+                        available=True,
+                        origin="harvest",
+                        source_path="package.json",
+                    )
+                ],
+            },
+            blueprint_opt_ins={},
+            stage=None,
+            team_hints=[],
+            unknowns=[],
+        )
+
+        result = apply(mixed, ol)
+
+        assert result.applied is True
+        assert result.sets_added == ["extra"]
+        text = (ol / "manifest.yaml").read_text()
+        assert text.split("\n").count("  project:") == 1
+        assert text.split("\n").count("  extra:") == 1
