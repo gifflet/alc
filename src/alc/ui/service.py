@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-import tempfile
 import time
 import uuid
 from dataclasses import asdict
@@ -28,6 +27,7 @@ from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, 
 from alc.engines.registry import resolve_engine
 from alc.intake import load_all_blueprints, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
+from alc.manifestedit import validate_manifest_text
 from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
 from alc.packs import PACKS, pack_files
@@ -111,33 +111,27 @@ def write_manifest(root: Path, raw: str) -> dict:
     Raises ApiError(422) when the manifest does not parse or introduces a
     Policy Gate error, carrying the violations in the response detail. The file
     is written only after both checks pass.
+
+    The parse+lint gate is the shared `manifestedit.validate_manifest_text` so
+    the UI and the CLI (`alc onboard`) enforce one identical contract; this
+    function only maps its blocking violations onto the HTTP error shape.
     """
     ol = operator_layer(root)
-    # 1. Parse the candidate manifest in isolation.
-    with tempfile.TemporaryDirectory() as td:
-        tmp_ol = Path(td) / ".alc"
-        tmp_ol.mkdir()
-        (tmp_ol / "manifest.yaml").write_text(raw)
-        try:
-            manifest = load_manifest(tmp_ol)
-        except Exception as exc:  # noqa: BLE001
-            raise ApiError(f"invalid manifest: {exc}", status=422) from exc
-
-    # 2. Lint the candidate manifest against the project's real blueprints.
-    try:
-        blueprints = load_all_blueprints(manifest, ol)
-    except Exception:  # noqa: BLE001 — a broken blueprint must not mask manifest lint
-        blueprints = []
-    violations = _lint(manifest, blueprints)
-    errors = [v for v in violations if v.severity == "error"]
+    errors = validate_manifest_text(raw, ol)
     if errors:
+        # Preserve the two distinct 422s the endpoint has always returned: a
+        # candidate that does not PARSE reports its loader error with no detail;
+        # a candidate that parses but fails a Policy Gate rule carries the
+        # violations back as `detail`.
+        parse_error = next((v for v in errors if v.rule == "manifest-parse"), None)
+        if parse_error is not None:
+            raise ApiError(parse_error.message, status=422)
         raise ApiError(
             "manifest introduces Policy Gate errors",
             status=422,
             detail=[{"rule": v.rule, "severity": v.severity, "message": v.message} for v in errors],
         )
 
-    # 3. Persist.
     (ol / "manifest.yaml").write_text(raw)
     return read_manifest(root)
 

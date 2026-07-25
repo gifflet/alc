@@ -443,13 +443,16 @@ def _build_check_sets(
     return sets
 
 
-def _render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
+def render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
     """Render one named check_sets entry as a manifest.yaml YAML block.
 
     A check whose binary is not found on PATH is written commented out — a
     live check that fails on a clean checkout would break every run. A set
     left with zero live checks still renders as an explicit empty list so the
     Manifest still parses.
+
+    Public so other modules (e.g. `alc.onboard`) can reuse the exact
+    off-PATH commenting logic when rendering a proposed check_sets block.
     """
     lines = [f"  {name}:"]
     any_live = False
@@ -464,10 +467,16 @@ def _render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
     return "\n".join(lines)
 
 
+# Backwards-compatible private alias — `render_check_set` was `_render_check_set`
+# before it was promoted for reuse; keep the old name so nothing that imported it
+# breaks.
+_render_check_set = render_check_set
+
+
 def _render_check_sets_block(stacks: list[tuple[str, str, list[tuple[str, list[str]]]]]) -> str:
     """Render the full `check_sets:` mapping body for detected stacks + security."""
     check_sets = _build_check_sets(stacks)
-    return "\n\n".join(_render_check_set(name, checks) for name, checks in check_sets.items())
+    return "\n\n".join(render_check_set(name, checks) for name, checks in check_sets.items())
 
 
 # ---------------------------------------------------------------------------
