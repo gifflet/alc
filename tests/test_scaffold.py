@@ -439,7 +439,12 @@ class TestScaffoldWritesCheckSets:
         """A python + node project gets BOTH check_sets, not just the first match."""
         monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
-        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        # Real scripts so the Node battery stays live (an absent script is now
+        # scaffolded commented out — exercised by TestScaffoldNodeChecksReflectRealScripts).
+        (tmp_path / "package.json").write_text(
+            '{"name": "x", "scripts": {"test": "jest", "lint": "eslint .", '
+            '"typecheck": "tsc --noEmit"}}\n'
+        )
         scaffold(tmp_path)
 
         manifest = load_manifest(tmp_path / ".alc")
@@ -554,4 +559,159 @@ class TestScaffoldNodeWorktreeProvision:
         blueprints = load_all_blueprints(manifest, operator_layer)
         violations = lint(manifest, blueprints)
         errors = [v for v in violations if v.severity == "error"]
+        assert not errors, f"Policy Gate errors on Node layer: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# The Node check_set must reflect the project's REAL package.json scripts. A
+# scaffolded `npm run <script>` for a script the project does not have would fail
+# EVERY run with "Missing script" — it cannot be law, so an absent script is
+# scaffolded commented out (the same treatment an off-PATH binary already gets).
+# All tests force `npm` onto PATH so the ONLY reason a check is commented is a
+# missing script, isolating the new behavior from binary availability.
+# ---------------------------------------------------------------------------
+
+
+def _write_node_package(tmp_path: Path, scripts: dict[str, str] | None) -> None:
+    """Write a package.json, with a `scripts` map only when *scripts* is given."""
+    import json as _json
+
+    payload: dict[str, object] = {"name": "myapp"}
+    if scripts is not None:
+        payload["scripts"] = scripts
+    (tmp_path / "package.json").write_text(_json.dumps(payload) + "\n")
+
+
+def _node_check(manifest, name: str):  # type: ignore[no-untyped-def]
+    """The live Check named *name* in the `node` set, or None if absent/commented."""
+    for check in manifest.check_sets.get("node", []):
+        if check.name == name:
+            return check
+    return None
+
+
+class TestScaffoldNodeChecksReflectRealScripts:
+    def test_type_check_variant_is_scaffolded_live(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """`type-check` (not `typecheck`) resolves to `npm run type-check`, live."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, {"type-check": "tsc --noEmit"})
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        typecheck = _node_check(manifest, "typecheck")
+        assert typecheck is not None, "typecheck must be live when type-check exists"
+        assert typecheck.command == ["npm", "run", "type-check"]
+
+        manifest_text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert '    - name: typecheck\n      command: ["npm", "run", "type-check"]' in manifest_text
+        assert "npm\", \"run\", \"typecheck\"" not in manifest_text
+
+    def test_canonical_typecheck_script_used_verbatim(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A canonical `typecheck` script resolves to `npm run typecheck`."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, {"typecheck": "tsc --noEmit"})
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        typecheck = _node_check(manifest, "typecheck")
+        assert typecheck is not None
+        assert typecheck.command == ["npm", "run", "typecheck"]
+
+    def test_type_colon_check_variant_resolved(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The `type:check` spelling is also resolved."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, {"type:check": "tsc --noEmit"})
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        typecheck = _node_check(manifest, "typecheck")
+        assert typecheck is not None
+        assert typecheck.command == ["npm", "run", "type:check"]
+
+    def test_canonical_wins_over_variants_by_priority(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """When several spellings exist, `typecheck` wins (first in priority order)."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(
+            tmp_path, {"typecheck": "tsc", "type-check": "tsc", "type:check": "tsc"}
+        )
+        scaffold(tmp_path)
+
+        typecheck = _node_check(load_manifest(tmp_path / ".alc"), "typecheck")
+        assert typecheck is not None
+        assert typecheck.command == ["npm", "run", "typecheck"]
+
+    def test_present_test_stays_live_absent_lint_typecheck_commented(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Only `test` exists -> it stays live; lint + typecheck are commented out."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, {"test": "jest"})
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert [c.name for c in manifest.check_sets["node"]] == ["test"]
+        assert _node_check(manifest, "test").command == ["npm", "test"]
+
+        manifest_text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert '    - name: test\n      command: ["npm", "test"]' in manifest_text
+        assert "# - name: lint" in manifest_text
+        assert "# - name: typecheck" in manifest_text
+
+    def test_missing_test_script_comments_out_npm_test(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """No `test` script -> `npm test` (which would error "Missing script") is commented."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, {"lint": "eslint ."})
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert [c.name for c in manifest.check_sets["node"]] == ["lint"]
+
+        manifest_text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert "# - name: test" in manifest_text
+        assert '    - name: lint\n      command: ["npm", "run", "lint"]' in manifest_text
+
+    def test_no_scripts_key_degrades_to_all_commented(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A package.json with no `scripts` key -> the whole node set is commented out."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, None)
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.check_sets["node"] == []
+
+    def test_malformed_package_json_degrades_without_raising(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Malformed JSON must not raise; the node set degrades to all-commented."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "package.json").write_text("{ this is not valid json ")
+        scaffold(tmp_path)  # must not raise
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.check_sets["node"] == []
+
+    def test_every_case_still_lints_clean(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The scaffolded manifest parses and lints clean whether scripts are live or absent."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        _write_node_package(tmp_path, {"type-check": "tsc --noEmit"})
+        scaffold(tmp_path)
+
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = load_all_blueprints(manifest, operator_layer)
+        errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
         assert not errors, f"Policy Gate errors on Node layer: {errors}"

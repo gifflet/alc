@@ -145,6 +145,39 @@ def _make_check(
 _HarvestResult = tuple[list[HarvestedCheck], list[str], list[str]]
 
 
+def _parse_package_scripts(project_root: Path) -> tuple[dict[str, str], str | None]:
+    """Read package.json and return (scripts_map, skip_reason).
+
+    A read-only, safe JSON parse — it NEVER executes a script (see the module
+    safety invariant). `scripts_map` is the (string-keyed) `scripts` mapping, or
+    `{}` when the file is missing, has no `scripts`, or `scripts` is not a map.
+    `skip_reason` is set ONLY when package.json exists but cannot be parsed, so a
+    caller that reports scanned-vs-skipped can tell "malformed" from "no scripts".
+    """
+    path = project_root / "package.json"
+    if not path.exists():
+        return {}, None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return {}, f"invalid JSON ({type(exc).__name__})"
+    scripts = data.get("scripts") if isinstance(data, dict) else None
+    if not isinstance(scripts, dict):
+        return {}, None
+    return {k: v for k, v in scripts.items() if isinstance(k, str)}, None
+
+
+def read_package_scripts(project_root: Path) -> dict[str, str]:
+    """The `scripts` map from *project_root*'s package.json, or `{}` on any problem.
+
+    A graceful, names-only reader that never raises and never executes a script.
+    Shared with `alc.scaffold` so `alc init` resolves Node checks against the
+    project's REAL scripts the exact same safe way harvest reads them here.
+    """
+    scripts, _skip = _parse_package_scripts(project_root)
+    return scripts
+
+
 def _harvest_package_json(project_root: Path) -> _HarvestResult:
     """package.json `scripts`: check-ish keys via the project's package runner
     (`npm run`, or `pnpm run` / `yarn` when the matching lockfile is present)."""
@@ -152,18 +185,14 @@ def _harvest_package_json(project_root: Path) -> _HarvestResult:
     if not path.exists():
         return [], [], []
     rel = "package.json"
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        return [], [], [f"{rel}: invalid JSON ({type(exc).__name__})"]
-    scripts = data.get("scripts") if isinstance(data, dict) else None
-    if not isinstance(scripts, dict):
-        return [], [rel], []
+    scripts, skip_reason = _parse_package_scripts(project_root)
+    if skip_reason is not None:
+        return [], [], [f"{rel}: {skip_reason}"]
     runner = _node_runner(project_root)
     checks = [
         _make_check(key, [*runner, key], "package-json", rel)
         for key in scripts
-        if isinstance(key, str) and key in _PACKAGE_CHECKISH
+        if key in _PACKAGE_CHECKISH
     ]
     return checks, [rel], []
 

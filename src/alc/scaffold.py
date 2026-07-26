@@ -7,6 +7,8 @@ import json
 import shutil
 from pathlib import Path
 
+from alc.harvest import read_package_scripts
+
 # ---------------------------------------------------------------------------
 # Default template constants
 # ---------------------------------------------------------------------------
@@ -443,7 +445,11 @@ def _build_check_sets(
     return sets
 
 
-def render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
+def render_check_set(
+    name: str,
+    checks: list[tuple[str, list[str]]],
+    unavailable: frozenset[str] | set[str] | tuple[str, ...] = (),
+) -> str:
     """Render one named check_sets entry as a manifest.yaml YAML block.
 
     A check whose binary is not found on PATH is written commented out — a
@@ -451,13 +457,19 @@ def render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
     left with zero live checks still renders as an explicit empty list so the
     Manifest still parses.
 
+    `unavailable` names checks to comment out for a reason PATH cannot see — e.g.
+    a Node `npm run <script>` whose script is absent from package.json (it would
+    error "Missing script"). They render identically to an off-PATH binary, so the
+    operator uncomments them once the underlying script/binary exists.
+
     Public so other modules (e.g. `alc.onboard`) can reuse the exact
     off-PATH commenting logic when rendering a proposed check_sets block.
     """
+    unavailable = set(unavailable)
     lines = [f"  {name}:"]
     any_live = False
     for check_name, command in checks:
-        commented = shutil.which(command[0]) is None
+        commented = shutil.which(command[0]) is None or check_name in unavailable
         prefix = "# " if commented else ""
         lines.append(f"    {prefix}- name: {check_name}")
         lines.append(f"    {prefix}  command: {json.dumps(command)}")
@@ -473,10 +485,64 @@ def render_check_set(name: str, checks: list[tuple[str, list[str]]]) -> str:
 _render_check_set = render_check_set
 
 
-def _render_check_sets_block(stacks: list[tuple[str, str, list[tuple[str, list[str]]]]]) -> str:
-    """Render the full `check_sets:` mapping body for detected stacks + security."""
+# Node's typecheck script has no canonical name — projects spell it several ways.
+# Resolve to the first spelling that actually EXISTS so the scaffolded
+# `npm run <script>` cannot fail with "Missing script"; priority order fixes the
+# winner when a project (unusually) declares more than one.
+_NODE_TYPECHECK_VARIANTS: tuple[str, ...] = ("typecheck", "type-check", "type:check")
+
+
+def _resolve_node_checks(
+    checks: list[tuple[str, list[str]]], scripts: dict[str, str]
+) -> tuple[list[tuple[str, list[str]]], set[str]]:
+    """Rewrite the static Node battery against the project's REAL package.json scripts.
+
+    `npm test` / `npm run <script>` errors "Missing script" when the script is
+    absent, so scaffolding it live would fail EVERY run — it cannot be law. Returns
+    the battery with each command bound to the script that actually exists (and
+    `typecheck` mapped to whichever of its spellings is present), plus the set of
+    check NAMES whose script is absent so the caller comments them out. The check
+    NAMES stay stable (`test`/`lint`/`typecheck`) so downstream references never
+    churn even when the underlying script is spelled differently.
+    """
+    resolved: list[tuple[str, list[str]]] = []
+    unavailable: set[str] = set()
+    for check_name, command in checks:
+        if check_name == "typecheck":
+            variant = next((v for v in _NODE_TYPECHECK_VARIANTS if v in scripts), None)
+            if variant is None:
+                resolved.append((check_name, command))
+                unavailable.add(check_name)
+            else:
+                resolved.append((check_name, ["npm", "run", variant]))
+        else:
+            # `test`/`lint` invoke a script of the same name — keep the command,
+            # but comment the check out when that script is not declared.
+            resolved.append((check_name, command))
+            if check_name not in scripts:
+                unavailable.add(check_name)
+    return resolved, unavailable
+
+
+def _render_check_sets_block(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]], project_root: Path
+) -> str:
+    """Render the full `check_sets:` mapping body for detected stacks + security.
+
+    The `node` set is resolved against the project's real package.json scripts so
+    an absent-script check is scaffolded commented out rather than live-and-broken.
+    """
     check_sets = _build_check_sets(stacks)
-    return "\n\n".join(render_check_set(name, checks) for name, checks in check_sets.items())
+    blocks: list[str] = []
+    for name, checks in check_sets.items():
+        if name == "node":
+            resolved, unavailable = _resolve_node_checks(
+                checks, read_package_scripts(project_root)
+            )
+            blocks.append(render_check_set(name, resolved, unavailable=unavailable))
+        else:
+            blocks.append(render_check_set(name, checks))
+    return "\n\n".join(blocks)
 
 
 # Per-stack gitignored dependency directory to auto-provision into every isolated
@@ -564,7 +630,7 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     # feeds the multi-stack check_sets below.
     _stack_label, checks_block = detect_stack(project_root)
     stacks = detect_stacks(project_root)
-    check_sets_block = _render_check_sets_block(stacks)
+    check_sets_block = _render_check_sets_block(stacks, project_root)
     # Node's node_modules is gitignored, so a fresh worktree lacks it — scaffold a
     # live `worktree_provision` for it (and any future stack with a known dep dir)
     # so the default setup does not 127. Empty for stacks without one.
