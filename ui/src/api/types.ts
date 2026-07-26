@@ -602,6 +602,17 @@ export interface ScheduleStatus {
 }
 
 // ---------------------------------------------------------------------------
+// Worktree status (service.worktree_status) — whether the tree has uncommitted
+// work outside `.alc/`. An autonomous run (`alc cycle`/`loop`/`tick`) refuses to
+// START on a dirty tree, so the Loops view blocks the run controls when `dirty`.
+// Off-git (no repo to protect) is `dirty: false`, never an error.
+// ---------------------------------------------------------------------------
+
+export interface WorktreeStatus {
+  dirty: boolean
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket messages (ws.py + watch.py + execs.py)
 // ---------------------------------------------------------------------------
 

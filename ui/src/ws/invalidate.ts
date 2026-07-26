@@ -36,12 +36,15 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
       // A run finished and archived: it may have appended a new measurement
       // (metrics), it always changes what an audit window aggregates, and its
       // worktree exit-commit may have just minted a new alc/* demand branch.
+      // A finished run also commits the workdir as it goes, so the tree's
+      // dirty state may have flipped — re-check it (Loops' run-block gate).
       return [
         keys.queue(msg.project_id),
         keys.scorecard(msg.project_id),
         keys.metrics(msg.project_id),
         keys.audit(msg.project_id),
         keys.branches(msg.project_id),
+        keys.worktree(msg.project_id),
       ]
     case 'loop_changed':
       return [
@@ -61,6 +64,9 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
           keys.lint(msg.project_id),
           keys.checksAudit(msg.project_id),
           keys.onboardAll(msg.project_id),
+          // A config edit is a natural moment to re-check the tree's dirty state
+          // (the operator may have just committed/stashed) — keep Loops' run-block honest.
+          keys.worktree(msg.project_id),
         ]
       if (msg.resource === 'prompts') return [keys.prompts(msg.project_id)]
       if (COLLECTION_RESOURCES.has(msg.resource as CollectionName)) {
@@ -74,6 +80,9 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
           // A blueprint's check_set opt-in also changes the onboard proposal
           // (that blueprint drops out of the opt-in candidates) — refresh it.
           keys.onboardAll(msg.project_id),
+          // Re-check the tree's dirty state on any collection change — keep
+          // Loops' run-block honest as the operator commits/stashes.
+          keys.worktree(msg.project_id),
         ]
       }
       return [keys.lint(msg.project_id)]

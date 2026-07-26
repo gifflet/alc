@@ -25,6 +25,7 @@ export const keys = {
   run: (id: string, stem: string) => ['project', id, 'run', stem] as const,
   loopState: (id: string, name: string) => ['project', id, 'loop', name, 'state'] as const,
   loopLedger: (id: string, name: string) => ['project', id, 'loop', name, 'ledger'] as const,
+  worktree: (id: string) => ['project', id, 'worktree'] as const,
   lint: (id: string) => ['project', id, 'lint'] as const,
   engines: (id: string) => ['project', id, 'engines'] as const,
   scorecard: (id: string) => ['project', id, 'scorecard'] as const,

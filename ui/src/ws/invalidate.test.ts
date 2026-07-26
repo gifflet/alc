@@ -9,13 +9,16 @@ describe('wsInvalidations', () => {
     ])
   })
 
-  it('invalidates queue, scorecard, metrics, audit and branches when a report is archived', () => {
+  it('invalidates queue, scorecard, metrics, audit, branches and worktree when a report is archived', () => {
     const out = wsInvalidations({ type: 'report_added', project_id: 'p', stem: 's' })
     expect(out).toContainEqual(keys.queue('p'))
     expect(out).toContainEqual(keys.scorecard('p'))
     expect(out).toContainEqual(keys.metrics('p'))
     expect(out).toContainEqual(keys.audit('p'))
     expect(out).toContainEqual(keys.branches('p'))
+    // A finished run commits the workdir as it goes — the tree's dirty state may
+    // have flipped, so Loops' run-block gate must re-check.
+    expect(out).toContainEqual(keys.worktree('p'))
   })
 
   it('invalidates queue on queue_changed', () => {
@@ -38,6 +41,8 @@ describe('wsInvalidations', () => {
     expect(out).toContainEqual(keys.checksAudit('p'))
     // It also changes the onboard proposal (the `project` set may now exist).
     expect(out).toContainEqual(keys.onboardAll('p'))
+    // A config edit is a natural moment to re-check the tree — keep Loops' run-block honest.
+    expect(out).toContainEqual(keys.worktree('p'))
   })
 
   it('invalidates a collection, lint, the team roster, the checks audit and the onboard proposal when a blueprint changes', () => {
@@ -53,6 +58,8 @@ describe('wsInvalidations', () => {
     expect(out).toContainEqual(keys.checksAudit('p'))
     // The opt-in also drops that blueprint from the onboard candidates.
     expect(out).toContainEqual(keys.onboardAll('p'))
+    // A collection change is a natural moment to re-check the tree — keep Loops' run-block honest.
+    expect(out).toContainEqual(keys.worktree('p'))
   })
 
   it('invalidates the runs list only on lifecycle boundaries', () => {

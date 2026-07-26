@@ -24,6 +24,7 @@ from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
 from alc.branches import delete_branches, list_alc_branches, prune_worktrees
 from alc.checks import audit_checks, check_history
+from alc.commit import has_non_alc_changes
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
 from alc.harvest import harvest
@@ -644,6 +645,33 @@ def read_loop_ledger(root: Path, name: str) -> dict:
             except json.JSONDecodeError:
                 continue
     return {"records": records}
+
+
+# ---------------------------------------------------------------------------
+# Worktree status — backs the UI's proactive dirty-tree block on the Loops view.
+# ---------------------------------------------------------------------------
+
+
+def worktree_status(root: Path) -> dict:
+    """Return ``{"dirty": bool}`` — whether the tree has uncommitted work outside ``.alc/``.
+
+    An autonomous run (``alc cycle``/``loop``/``tick``) refuses to START on a dirty
+    tree: it commits the workdir as it goes and would sweep the operator's
+    uncommitted work into a commit they never asked for (cli._abort_if_dirty_tree,
+    which nearly cost a user their work-in-progress). The web IDE triggers those
+    runs by subprocessing the CLI, so functionally it inherits the guard — but a
+    click that hits the guard looks like it did nothing. Surfacing ``dirty`` lets
+    the Loops view disable the run controls and explain the block UP FRONT, instead
+    of the CLI's refusal being silently swallowed.
+
+    Reuses ``commit.has_non_alc_changes`` — the SAME predicate the CLI preflight and
+    the committing-Flow guard use — so the UI and the CLI can never disagree on what
+    "dirty" means. A change confined to ``.alc/`` (control-plane state) never counts,
+    and an off-git project is a graceful ``dirty: False`` (no repo means no WIP to
+    protect). Best-effort and never raises: the predicate already degrades to False
+    when git is unavailable.
+    """
+    return {"dirty": has_non_alc_changes(root)}
 
 
 # ---------------------------------------------------------------------------

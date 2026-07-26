@@ -1,10 +1,11 @@
 # routes_projects.py — Registry endpoints: list / register / deregister projects.
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 
 from alc.ui import service
+from alc.ui.deps import ProjectContext, get_project
 from alc.ui.errors import ApiError
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -49,3 +50,13 @@ def delete_project(id: str, request: Request) -> Response:
         raise ApiError(f"unknown project '{id}'", status=404)
     _notify_project_list_changed(request)
     return Response(status_code=204)
+
+
+# This `{id}`-scoped read lives here (registered BEFORE routes_config, so its
+# explicit `/{id}/worktree` path is never shadowed by the collection catch-all
+# `/{id}/{collection}`) — its "projects" tag also names it honestly as a
+# project-level status, not a checks concern.
+@router.get("/{id}/worktree")
+def get_worktree(ctx: ProjectContext = Depends(get_project)) -> dict:
+    """Whether the working tree is dirty outside ``.alc/`` (blocks an autonomous run)."""
+    return service.worktree_status(ctx.root)

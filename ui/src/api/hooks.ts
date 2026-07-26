@@ -108,6 +108,20 @@ export function useLoopLedger(id: string, name: string) {
   })
 }
 
+/** Whether the working tree is dirty outside `.alc/`. An autonomous run
+ * (cycle/loop/tick) refuses to START on a dirty tree, so the Loops view blocks
+ * its run controls when `dirty`. WS invalidation keeps it fresh: a manifest /
+ * collection change (`config_changed`) and a finished run (`report_added`) both
+ * invalidate `keys.worktree(id)`, so committing/stashing outside the UI
+ * eventually reflects (see ws/invalidate.ts). */
+export function useWorktreeStatus(id: string) {
+  return useQuery({
+    queryKey: keys.worktree(id),
+    queryFn: () => api.getWorktree(id),
+    enabled: enabled(id),
+  })
+}
+
 export function useLint(id: string) {
   return useQuery({ queryKey: keys.lint(id), queryFn: () => api.getLint(id), enabled: enabled(id) })
 }

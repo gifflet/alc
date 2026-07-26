@@ -43,6 +43,7 @@ import type {
   TeamRoster,
   VariantRow,
   Violation,
+  WorktreeStatus,
 } from './types'
 
 export class ApiError extends Error {
@@ -171,6 +172,10 @@ export const api = {
     request<LoopState>(`${proj(id)}/loops/${encodeURIComponent(name)}/state`),
   getLoopLedger: (id: string, name: string) =>
     request<LoopLedger>(`${proj(id)}/loops/${encodeURIComponent(name)}/ledger`),
+  /** Whether the working tree is dirty outside `.alc/` — an autonomous run
+   * (cycle/loop/tick) refuses to START on a dirty tree, so the Loops view blocks
+   * its run controls when this is true. Off-git degrades to `dirty: false`. */
+  getWorktree: (id: string) => request<WorktreeStatus>(`${proj(id)}/worktree`),
 
   // Branches (`alc land` / `alc discard`)
   getBranches: (id: string) => request<BranchList>(`${proj(id)}/branches`),
