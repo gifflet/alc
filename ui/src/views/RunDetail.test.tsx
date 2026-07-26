@@ -50,6 +50,27 @@ describe('RunDetail', () => {
   })
 })
 
+describe('RunDetail check-config callout', () => {
+  it('omits the callout when no check config was touched', async () => {
+    installFetch({ '/runs/': { events, next_offset: 6 } })
+    renderWithProviders(<RunDetail stem="20260712T0359-run-chore-x" />)
+    expect(await screen.findByRole('heading', { name: 'chore' })).toBeInTheDocument()
+    expect(screen.queryByText(/modified check-defining config/)).not.toBeInTheDocument()
+  })
+
+  it('renders the callout with the touched files when a check_config_edited event is present', async () => {
+    const edited = [
+      ...events.slice(0, 5),
+      { ts: '2026-07-12T03:59:55.370Z', event: 'check_config_edited', files: ['eslint.config.mjs (check config)'] },
+      events[5],
+    ]
+    installFetch({ '/runs/': { events: edited, next_offset: 7 } })
+    renderWithProviders(<RunDetail stem="20260712T0359-run-chore-x" />)
+    expect(await screen.findByText(/review before trusting the result/)).toBeInTheDocument()
+    expect(screen.getAllByText('eslint.config.mjs (check config)').length).toBeGreaterThan(0)
+  })
+})
+
 describe('RunDetail evidence panel', () => {
   const stem = '20260712T0359-run-chore-x'
 

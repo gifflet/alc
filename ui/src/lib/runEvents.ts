@@ -45,6 +45,9 @@ export interface Timeline {
   success: boolean | null
   finished: boolean
   commitSha?: string | null
+  /** Check-defining files (`"path (reason)"`) the run's net diff touched — the
+   * always-on tamper-evidence (check_config_edited events). Empty when clean. */
+  checkConfigEdits: string[]
 }
 
 function num(event: RunEvent, key: string): number {
@@ -94,6 +97,7 @@ export function buildTimeline(events: RunEvent[]): Timeline {
     scorecard: null,
     success: null,
     finished: false,
+    checkConfigEdits: [],
   }
   const scorecards: Scorecard[] = []
   let current: TimelineGroup | null = null
@@ -178,6 +182,16 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         break
       }
 
+      case 'check_config_edited': {
+        // Always-on tamper-evidence: the run's net diff touched check-defining
+        // config. Accumulate across stages (each stage mandate may emit one).
+        const files = Array.isArray(event.files)
+          ? event.files.filter((f): f is string => typeof f === 'string')
+          : []
+        timeline.checkConfigEdits.push(...files)
+        break
+      }
+
       case 'mandate_finished': {
         const card = event.scorecard as Scorecard | undefined
         if (card) scorecards.push(card)
@@ -239,6 +253,10 @@ export function describeEvent(event: RunEvent): string {
       return `Check ${str(event, 'name')} ${
         event.timed_out ? 'timed out ⏱' : event.passed ? 'passed' : 'failed'
       }`
+    case 'check_config_edited': {
+      const files = Array.isArray(event.files) ? event.files.filter((f) => typeof f === 'string') : []
+      return `modified check config: ${files.join(', ')}`
+    }
     case 'mandate_finished':
       return `Mandate finished — ${event.success ? 'success' : 'failure'}`
     case 'flow_started':

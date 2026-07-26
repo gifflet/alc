@@ -87,6 +87,19 @@ export function RunDetail({ stem }: { stem: string }) {
         <EmptyState icon={Radio} message="No events yet." />
       ) : (
         <>
+          {timeline.checkConfigEdits.length > 0 && (
+            <div className="mb-4 rounded-panel border border-warn/40 bg-warn/10 px-3 py-2 text-warn">
+              <p className="text-[12px] font-medium">
+                ⚠ This run modified check-defining config — review before trusting the result:
+              </p>
+              <ul className="mt-1 font-mono text-[11px]">
+                {timeline.checkConfigEdits.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <TimelineView timeline={timeline} />
 
           {timeline.scorecard && (

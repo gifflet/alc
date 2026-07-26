@@ -491,6 +491,12 @@ def execute_mandate(
             )
         else:
             warnings.append(f"this run modified check-defining config: {touched}")
+        # Surface the always-on tamper-evidence as a run EVENT too, on the SAME
+        # channel `check_finished` uses, so the event-based run detail shows it
+        # even in the allowed case — which fires no synthetic `check-config-integrity`
+        # check. Emitted only when the FINAL changed set touched the law (a reverted
+        # edit leaves `check_config_edits` empty -> no event, no false alarm).
+        emit("check_config_edited", files=check_config_edits)
 
     # Patch the report's blueprint field to the real name (not the truncated directive).
     final_report = RunReport(

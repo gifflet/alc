@@ -504,6 +504,91 @@ class TestExecuteMandateCheckConfigIntegration:
         assert report.check_config_edits == []
 
 
+class TestExecuteMandateCheckConfigEvent:
+    """The always-on tamper-evidence also surfaces as a `check_config_edited` run
+    EVENT, so the event-based run detail sees it — especially the allowed case,
+    which fires no synthetic `check-config-integrity` check.
+    """
+
+    def test_allowed_run_emits_the_event_with_the_touched_files(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        _init_git_repo(tmp_path)
+        engine = _write_files_engine({"eslint.config.mjs": "export default []\n"})
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine())
+
+        bp = Blueprint(
+            name="lint-maintenance",
+            purpose="Maintain the lint config.",
+            workflow="# w",
+            checks=[Check(name="smoke", command=["true"])],
+            allow_check_config=True,
+        )
+        log = tmp_path / "run.jsonl"
+        with bind_run_log(log):
+            report = execute_mandate(
+                manifest=_MINIMAL_MANIFEST,
+                blueprint=bp,
+                directive="# test\nmaintain",
+                engine_override="mock",
+                workdir=tmp_path,
+            )
+
+        events = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+        edited = [e for e in events if e["event"] == "check_config_edited"]
+        assert len(edited) == 1
+        assert edited[0]["files"] == report.check_config_edits
+        assert any("eslint.config.mjs" in f for f in edited[0]["files"])
+
+    def test_reverted_edit_emits_no_event(self, tmp_path: Path, monkeypatch) -> None:
+        _init_git_repo(tmp_path)
+
+        class _ScriptedEngine:
+            name = "mock"
+
+            def __init__(self) -> None:
+                self._call_index = 0
+
+            def capabilities(self) -> Capabilities:
+                return Capabilities()
+
+            def health_check(self) -> bool:
+                return True
+
+            def run(self, request: EngineRequest) -> EngineResult:
+                cfg = request.workdir / "eslint.config.mjs"
+                if self._call_index == 0:
+                    cfg.write_text("export default []\n")
+                else:
+                    cfg.unlink()
+                self._call_index += 1
+                return EngineResult(ok=True, output_text="[mock] wrote files")
+
+        engine = _ScriptedEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+
+        bp = Blueprint(
+            name="refactor",
+            purpose="Simplify.",
+            workflow="# w",
+            checks=[Check(name="smoke", command=["true"])],
+            max_repairs=1,
+        )
+        log = tmp_path / "run.jsonl"
+        with bind_run_log(log):
+            report = execute_mandate(
+                manifest=_MINIMAL_MANIFEST,
+                blueprint=bp,
+                directive="# test\nsimplify",
+                engine_override="mock",
+                workdir=tmp_path,
+            )
+
+        assert report.check_config_edits == []
+        events = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+        assert [e for e in events if e["event"] == "check_config_edited"] == []
+
+
 # ---------------------------------------------------------------------------
 # (a) Blueprint.allow_check_config round-trip + RunReport.check_config_edits.
 # ---------------------------------------------------------------------------

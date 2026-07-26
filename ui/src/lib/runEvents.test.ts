@@ -108,6 +108,22 @@ describe('buildTimeline — flow with stages', () => {
   })
 })
 
+describe('buildTimeline — check_config_edited (tamper-evidence)', () => {
+  it('folds the touched files onto checkConfigEdits', () => {
+    const events: RunEvent[] = [
+      ...MANDATE_RUN.slice(0, 5),
+      { ts: 't4b', event: 'check_config_edited', files: ['eslint.config.mjs (check config)'] },
+      { ts: 't5', event: 'mandate_finished', success: true, attempts: 1, scorecard: { span: 1, passes: 1, streak: 1, touch: 0 } },
+    ]
+    const t = buildTimeline(events)
+    expect(t.checkConfigEdits).toEqual(['eslint.config.mjs (check config)'])
+  })
+
+  it('is empty when no such event was emitted', () => {
+    expect(buildTimeline(MANDATE_RUN).checkConfigEdits).toEqual([])
+  })
+})
+
 describe('aggregateScorecard', () => {
   it('returns null with no cards', () => {
     expect(aggregateScorecard([], true)).toBeNull()
@@ -140,5 +156,9 @@ describe('describeEvent', () => {
     expect(timedOut).toBe('Check test timed out ⏱')
     const failed = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: false })
     expect(failed).toBe('Check test failed')
+  })
+  it('labels a check-config edit with the touched files', () => {
+    const label = describeEvent({ ts: 't', event: 'check_config_edited', files: ['ruff.toml (check config)'] })
+    expect(label).toBe('modified check config: ruff.toml (check config)')
   })
 })
