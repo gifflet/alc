@@ -27,7 +27,6 @@ from alc.worktree import (
     allocate_free_ports,
     git_toplevel,
     is_git_repo,
-    provision_worktree,
     release_ports,
 )
 
@@ -382,6 +381,11 @@ def _process_task_body(
                 commit_message=demand_message,
                 exclude_paths=((".alc/",) if is_committing_demand else ()),
                 message_provider=queue_message_provider,
+                # Provision gitignored runtime deps (node_modules/.env/data) into the
+                # worktree so the demand's dev/qa can run the real app there.
+                # IsolatedWorktree.__enter__ applies these once at creation; an empty
+                # worktree_provision is a no-op -> byte-identical to before.
+                provisions=manifest.worktree_provision,
             )
             wt_path = wt.__enter__()
             exc_info = (None, None, None)
@@ -404,12 +408,6 @@ def _process_task_body(
                     for i, port in enumerate(ports[1:], start=2):
                         port_env[f"ALC_PORT_{i}"] = str(port)
                     port_env["ALC_PORTS"] = ",".join(str(p) for p in ports)
-                # Provision gitignored runtime deps (node_modules/.env/data) into
-                # the worktree so the demand's dev/qa can run the real app there.
-                # With an empty worktree_provision this is a no-op -> byte-identical.
-                provision_worktree(
-                    wt_path, project_root, manifest.worktree_provision
-                )
                 report = _run(wt_path, port_env, skip_commit=is_committing_demand)
             except BaseException as exc:
                 exc_info = (type(exc), exc, exc.__traceback__)

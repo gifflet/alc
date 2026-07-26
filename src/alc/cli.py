@@ -679,6 +679,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 fallback=manifest.worktree_commit_message,
                 engine_override=args.engine,
             ),
+            # Provision gitignored runtime deps (node_modules/.env/data) into the
+            # worktree so the mandate's checks resolve — before this `alc run
+            # --isolate` never provisioned and a Node check 127'd. Empty -> no-op.
+            provisions=manifest.worktree_provision,
         )
         # Use the context manager manually so we can inspect wt after __exit__.
         wt_path = wt.__enter__()
@@ -1583,6 +1587,10 @@ def cmd_flow(args: argparse.Namespace) -> int:
                 fallback=demand_message,
                 engine_override=args.engine,
             ),
+            # Provision gitignored runtime deps into the worktree so the flow's
+            # stages run the real app/checks — parity with the queue drain. Empty
+            # worktree_provision -> no-op, byte-identical to before.
+            provisions=manifest.worktree_provision,
         )
         wt_path = wt.__enter__()
         exc_info = (None, None, None)

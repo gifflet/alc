@@ -254,6 +254,7 @@ class TestProcessTaskWiring:
     def test_provisioned_dep_is_present_during_the_run(
         self, operator_layer: Path, monkeypatch
     ) -> None:
+        import alc.worktree as wt_mod
         from alc import queue as queue_mod
 
         project_root = operator_layer.parent
@@ -269,18 +270,19 @@ class TestProcessTaskWiring:
             update={"worktree_provision": [ProvisionSpec(link=".env")]}
         )
 
-        # Spy provision_worktree to capture its args (and still run the real one).
-        # The worktree is torn down on exit, so record dep existence AT provision
-        # time (which is during the run) rather than after process_queue returns.
+        # Provisioning is now centralised in IsolatedWorktree.__enter__, which calls
+        # the module-level `provision_worktree` in alc.worktree — spy there. The
+        # worktree is torn down on exit, so record dep existence AT provision time
+        # (during the run) rather than after process_queue returns.
         calls: list[tuple] = []
-        real_provision = queue_mod.provision_worktree
+        real_provision = wt_mod.provision_worktree
 
         def _spy(worktree, root, provisions):
             result = real_provision(worktree, root, provisions)
             calls.append((worktree, root, provisions, (worktree / ".env").exists()))
             return result
 
-        monkeypatch.setattr(queue_mod, "provision_worktree", _spy)
+        monkeypatch.setattr(wt_mod, "provision_worktree", _spy)
 
         queue_dir = operator_layer / "queue"
         queue_dir.mkdir(parents=True, exist_ok=True)
@@ -291,10 +293,12 @@ class TestProcessTaskWiring:
         results = queue_mod.process_queue(manifest, operator_layer)
 
         assert len(results) == 1
-        # provision_worktree was called once, with (worktree_path, project_root, provisions).
+        # Provisioning happens EXACTLY ONCE per worktree (no double-provision after
+        # the redundant queue-side call was removed).
         assert len(calls) == 1
         _wt_path, root_arg, provisions_arg, dep_existed = calls[0]
-        assert root_arg == project_root
+        # The source root is the repo root (git_toplevel of the project root).
+        assert Path(root_arg).resolve() == project_root.resolve()
         assert provisions_arg == manifest.worktree_provision
         # The provisioned dep existed inside the worktree during the run.
         assert dep_existed is True
@@ -302,6 +306,7 @@ class TestProcessTaskWiring:
     def test_empty_provisions_makes_no_effect(
         self, operator_layer: Path, monkeypatch
     ) -> None:
+        import alc.worktree as wt_mod
         from alc import queue as queue_mod
 
         project_root = operator_layer.parent
@@ -310,14 +315,16 @@ class TestProcessTaskWiring:
 
         manifest = load_manifest(operator_layer)  # worktree_provision defaults to []
 
+        # An empty worktree_provision is a no-op: __enter__ skips the call entirely,
+        # so the spy is never invoked and the worktree run is byte-identical.
         seen: list[list] = []
-        real_provision = queue_mod.provision_worktree
+        real_provision = wt_mod.provision_worktree
 
         def _spy(worktree, root, provisions):
             seen.append(provisions)
             return real_provision(worktree, root, provisions)
 
-        monkeypatch.setattr(queue_mod, "provision_worktree", _spy)
+        monkeypatch.setattr(wt_mod, "provision_worktree", _spy)
 
         queue_dir = operator_layer / "queue"
         queue_dir.mkdir(parents=True, exist_ok=True)
@@ -328,8 +335,111 @@ class TestProcessTaskWiring:
         results = queue_mod.process_queue(manifest, operator_layer)
 
         assert len(results) == 1
-        # provision_worktree runs but with an EMPTY list -> zero filesystem effect.
-        assert seen == [[]]
+        # With an empty list __enter__ never calls provision_worktree at all.
+        assert seen == []
+
+
+# ---------------------------------------------------------------------------
+# cmd_run --isolate wiring — the primary P0 fix: `alc run --isolate` provisions
+# ---------------------------------------------------------------------------
+
+
+_RUN_MANIFEST = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+engines:
+  mock:
+    type: mock
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+worktree_provision:
+  - link: node_modules
+"""
+
+_RUN_CHORE = """\
+---
+name: chore
+purpose: Apply a low-risk, well-scoped maintenance change.
+compute_tier: standard
+checks:
+  - name: smoke
+    command: ["true"]
+---
+# Workflow
+1. Make the smallest change that satisfies the task.
+"""
+
+
+def _recording_engine(seen: dict):
+    """A MockEngine-like class that records whether node_modules is present in the
+    request workdir on every turn (proving provisioning ran in the worktree)."""
+    from alc.engine import Capabilities, EngineResult
+
+    class _RecordingEngine:
+        name = "mock"
+
+        def capabilities(self) -> Capabilities:
+            return Capabilities()
+
+        def health_check(self) -> bool:
+            return True
+
+        def run(self, request):
+            seen["node_modules_present"] = (request.workdir / "node_modules").exists()
+            return EngineResult(ok=True, output_text="[mock] done")
+
+    return _RecordingEngine
+
+
+class TestRunIsolateProvisions:
+    """`alc run --isolate` must provision gitignored deps into its worktree. Before
+    the centralisation this path NEVER provisioned, so a Node check 127'd even with
+    worktree_provision correctly set — the confirmed P0 bug."""
+
+    def test_provisioned_dep_present_during_isolated_run(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import argparse
+
+        from alc import cli as cli_mod
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git(repo)
+        # A gitignored node_modules (untracked -> absent from a fresh worktree).
+        (repo / ".gitignore").write_text("node_modules/\n")
+        (repo / "node_modules" / "pkg").mkdir(parents=True)
+        (repo / "node_modules" / "pkg" / "index.js").write_text("module\n")
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_RUN_MANIFEST)
+        (alc / "blueprints" / "chore.md").write_text(_RUN_CHORE)
+        _commit_all(repo)  # commits .gitignore + .alc; node_modules stays untracked
+
+        seen: dict = {}
+        engine = _recording_engine(seen)
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine())
+        monkeypatch.chdir(repo)
+
+        args = argparse.Namespace(
+            blueprint="chore",
+            task="tidy",
+            engine="mock",
+            isolate=True,
+            tier=None,
+            primer=None,
+            bundle=False,
+            from_bundle=None,
+        )
+        exit_code = cli_mod.cmd_run(args)
+
+        assert exit_code == 0
+        # The provisioned dep existed inside the worktree during the engine turn.
+        assert seen.get("node_modules_present") is True
 
 
 # ---------------------------------------------------------------------------

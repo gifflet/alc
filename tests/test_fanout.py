@@ -773,7 +773,11 @@ class TestRunFanoutProvisionsWorktree:
     that reads a provisioned path, e.g. the SQLite data dir) fails because the
     file was never checked out into the fresh worktree."""
 
-    def test_provisioned_file_is_present_in_the_worktree(self, tmp_path: Path) -> None:
+    def test_provisioned_file_is_present_in_the_worktree(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import alc.worktree as wt_mod
+
         repo = tmp_path / "repo"
         repo.mkdir()
         _init_git_repo(repo)
@@ -789,6 +793,17 @@ class TestRunFanoutProvisionsWorktree:
         (repo / "data").mkdir()
         (repo / "data" / "seed.txt").write_text("db\n")
 
+        # Provisioning is centralised in IsolatedWorktree.__enter__ — spy there to
+        # prove it fires EXACTLY ONCE (the redundant fan-out-side call was removed).
+        calls: list = []
+        real_provision = wt_mod.provision_worktree
+
+        def _spy(worktree, root, provisions):
+            calls.append(provisions)
+            return real_provision(worktree, root, provisions)
+
+        monkeypatch.setattr(wt_mod, "provision_worktree", _spy)
+
         operator_layer = alc
         manifest = load_manifest(operator_layer)
         units = [{"kind": "blueprint", "name": "probe", "task": "probe"}]
@@ -796,6 +811,7 @@ class TestRunFanoutProvisionsWorktree:
 
         assert report.success is True, report.units[0].error
         assert report.units[0].success is True
+        assert len(calls) == 1  # provisioned once, not twice
 
 
 class TestRunConductParallelMerges:

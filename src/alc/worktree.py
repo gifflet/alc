@@ -12,7 +12,7 @@ import sys
 import tempfile
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from alc.models import ProvisionSpec
@@ -123,6 +123,7 @@ class IsolatedWorktree:
         commit_message: str = "alc: {branch}",
         exclude_paths: tuple[str, ...] = (),
         message_provider: Callable[[str], str] | None = None,
+        provisions: Sequence[ProvisionSpec] = (),
     ) -> None:
         self._repo_root = repo_root
         self.branch: str = f"alc/{label}-{uuid.uuid4().hex[:8]}"
@@ -141,6 +142,11 @@ class IsolatedWorktree:
         # When False the exit commits nothing and deletes the branch, discarding
         # whatever the agent wrote. Settable by the caller after __enter__.
         self.commit_on_exit: bool = True
+        # Gitignored runtime deps (node_modules/.env/data) provisioned INTO the
+        # worktree at __enter__ — centralised here so EVERY isolated path provisions
+        # identically. Default () -> no provisioning, byte-identical to a worktree
+        # that carries only tracked files.
+        self._provisions = provisions
 
     def __enter__(self) -> Path:
         """Create the worktree and return the directory path.
@@ -168,6 +174,24 @@ class IsolatedWorktree:
                 f"Failed to create git worktree for branch '{self.branch}':\n"
                 f"{result.stderr.strip()}"
             )
+        # Provision gitignored runtime deps INTO the fresh worktree before returning
+        # it — a git worktree checks out only TRACKED files, so a gitignored dep like
+        # node_modules is absent and a check such as tsc/eslint/vitest would exit 127.
+        # Doing it here means every isolated path (run/flow --isolate, fan-out, queue)
+        # provisions identically. An empty list is a no-op (skipped entirely).
+        if self._provisions:
+            try:
+                provision_worktree(self.path, self._repo_root, list(self._provisions))
+            except Exception:
+                # Never leak the just-created worktree if provisioning fails — remove
+                # it under the lock (mirrors __exit__'s best-effort cleanup), re-raise.
+                with _GIT_MUTATION_LOCK:
+                    subprocess.run(
+                        ["git", "-C", str(self._repo_root), "worktree", "remove",
+                         "--force", str(self.path)],
+                        capture_output=True,
+                    )
+                raise
         return self.path
 
     def __exit__(self, *exc) -> None:

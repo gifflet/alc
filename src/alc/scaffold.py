@@ -45,7 +45,7 @@ engines:
 check_sets:
 {check_sets_block}
 
-blueprints_dir: .alc/blueprints
+{worktree_provision_block}blueprints_dir: .alc/blueprints
 flows_dir: .alc/flows
 queue_dir: .alc/queue
 specialists_dir: .alc/specialists
@@ -479,6 +479,44 @@ def _render_check_sets_block(stacks: list[tuple[str, str, list[tuple[str, list[s
     return "\n\n".join(render_check_set(name, checks) for name, checks in check_sets.items())
 
 
+# Per-stack gitignored dependency directory to auto-provision into every isolated
+# worktree. Only Node's node_modules is the confirmed near-universal always-
+# gitignored dep dir — a git worktree checks out only tracked files, so without a
+# provision a Node check (tsc/eslint/vitest) exits 127. Other stacks have no single
+# such directory to link in by default, so `alc init` scaffolds a live provision
+# only for the stacks listed here (keyed by check_set name).
+_STACK_PROVISION_DIRS: dict[str, str] = {
+    "node": "node_modules",
+}
+
+
+def _render_worktree_provision_block(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+) -> str:
+    """Render a `worktree_provision:` block linking each detected stack's gitignored
+    dep dir into every isolated worktree, or "" when no detected stack has one.
+
+    An empty result is byte-identical to before this block existed (the manifest
+    simply carries no worktree_provision key). A trailing blank line separates the
+    block from the `blueprints_dir` line that follows in the template.
+    """
+    links = [
+        _STACK_PROVISION_DIRS[set_name]
+        for _label, set_name, _checks in stacks
+        if set_name in _STACK_PROVISION_DIRS
+    ]
+    if not links:
+        return ""
+    lines = [
+        "# Gitignored runtime deps symlinked into each isolated worktree before a run.",
+        "# A git worktree checks out only tracked files, so these dirs would be absent",
+        "# and a check like tsc/eslint/vitest would exit 127 — link them in.",
+        "worktree_provision:",
+    ]
+    lines += [f"  - link: {path}" for path in links]
+    return "\n".join(lines) + "\n\n"
+
+
 # ---------------------------------------------------------------------------
 # Scaffolder
 # ---------------------------------------------------------------------------
@@ -525,7 +563,12 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     # their current inline checks byte-identical; detect_stacks() separately
     # feeds the multi-stack check_sets below.
     _stack_label, checks_block = detect_stack(project_root)
-    check_sets_block = _render_check_sets_block(detect_stacks(project_root))
+    stacks = detect_stacks(project_root)
+    check_sets_block = _render_check_sets_block(stacks)
+    # Node's node_modules is gitignored, so a fresh worktree lacks it — scaffold a
+    # live `worktree_provision` for it (and any future stack with a known dep dir)
+    # so the default setup does not 127. Empty for stacks without one.
+    worktree_provision_block = _render_worktree_provision_block(stacks)
 
     # Create directory structure.
     (alc_dir / "blueprints").mkdir(parents=True, exist_ok=True)
@@ -536,7 +579,10 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
 
     # Map each relative path to its content.
     files: dict[str, str] = {
-        ".alc/manifest.yaml": _MANIFEST.format(check_sets_block=check_sets_block),
+        ".alc/manifest.yaml": _MANIFEST.format(
+            check_sets_block=check_sets_block,
+            worktree_provision_block=worktree_provision_block,
+        ),
         ".alc/blueprints/chore.md": _CHORE.format(checks_block=checks_block),
         ".alc/blueprints/bug.md": _BUG.format(checks_block=checks_block),
         ".alc/blueprints/feature.md": _FEATURE.format(checks_block=checks_block),

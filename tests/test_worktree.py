@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 
+from alc.models import ProvisionSpec
 from alc.worktree import IsolatedWorktree, is_git_repo
 
 
@@ -89,6 +90,49 @@ class TestIsolatedWorktreeContainsEdits:
             ["git", "-C", str(repo), "branch", "-D", wt_obj.branch],
             capture_output=True,
         )
+
+
+def _add_gitignored_node_modules(repo: Path) -> None:
+    """Add a gitignored ``node_modules/`` dir (untracked) to *repo* and commit the
+    .gitignore. A fresh worktree checks out only tracked files, so node_modules is
+    absent there unless provisioning links/copies it in."""
+    (repo / ".gitignore").write_text("node_modules/\n")
+    (repo / "node_modules" / "pkg").mkdir(parents=True)
+    (repo / "node_modules" / "pkg" / "index.js").write_text("module\n")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "gitignore node_modules"],
+        check=True,
+        capture_output=True,
+    )
+
+
+class TestIsolatedWorktreeProvisions:
+    """Part A: provisioning is centralised in ``__enter__`` so EVERY isolated path
+    provisions identically (before this, `alc run --isolate` never provisioned)."""
+
+    def test_provisions_are_linked_in_on_enter(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _add_gitignored_node_modules(repo)
+        wt_obj = IsolatedWorktree(
+            repo, "test", provisions=[ProvisionSpec(link="node_modules")]
+        )
+        with wt_obj as wt:
+            dep = wt / "node_modules"
+            # A fresh worktree omits the gitignored dir; provisioning links it in.
+            assert dep.is_symlink()
+            assert dep.resolve() == (repo / "node_modules").resolve()
+
+    def test_empty_provisions_leaves_the_worktree_bare(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _add_gitignored_node_modules(repo)
+        wt_obj = IsolatedWorktree(repo, "test")  # no provisions -> no-op
+        with wt_obj as wt:
+            # Byte-identical to today: nothing provisioned, so the gitignored dep
+            # is simply absent from the fresh worktree.
+            assert not (wt / "node_modules").exists()
 
 
 class TestIsolatedWorktreeNoChangesCleanup:

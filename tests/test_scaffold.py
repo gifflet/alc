@@ -500,3 +500,58 @@ class TestScaffoldChecksSetsCommentOutMissingBinaries:
         violations = lint(manifest, blueprints)
         errors = [v for v in violations if v.severity == "error"]
         assert not errors, f"Policy Gate errors with check_sets present: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Part B — `alc init` scaffolds worktree_provision for Node so the default
+# Node setup does not 127 on a fresh worktree (node_modules is gitignored).
+# ---------------------------------------------------------------------------
+
+
+class TestScaffoldNodeWorktreeProvision:
+    def test_node_project_scaffolds_node_modules_link(self, tmp_path: Path) -> None:
+        """A Node project links node_modules into every isolated worktree."""
+        (tmp_path / "package.json").write_text('{"name": "myapp"}\n')
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert len(manifest.worktree_provision) == 1
+        spec = manifest.worktree_provision[0]
+        assert spec.kind == "link"
+        assert spec.path == "node_modules"
+
+    def test_non_node_project_has_no_worktree_provision(self, tmp_path: Path) -> None:
+        """A stack with no known gitignored dep dir gets no provision block."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.worktree_provision == []
+
+    def test_no_stack_has_no_worktree_provision(self, tmp_path: Path) -> None:
+        """An empty project stays byte-identical: no provision block."""
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.worktree_provision == []
+
+    def test_polyglot_including_node_gets_node_modules(self, tmp_path: Path) -> None:
+        """A python + node project still links node_modules (Node is present)."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        assert [s.path for s in manifest.worktree_provision] == ["node_modules"]
+
+    def test_node_scaffold_still_lints_clean(self, tmp_path: Path) -> None:
+        """The Node layer with worktree_provision passes the Policy Gate."""
+        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        scaffold(tmp_path)
+
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = load_all_blueprints(manifest, operator_layer)
+        violations = lint(manifest, blueprints)
+        errors = [v for v in violations if v.severity == "error"]
+        assert not errors, f"Policy Gate errors on Node layer: {errors}"
