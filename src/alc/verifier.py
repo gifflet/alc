@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import time
@@ -20,6 +21,34 @@ from alc.models import Check, MetricRecord
 
 # Maximum characters captured from a check's combined stdout+stderr.
 _MAX_OUTPUT_CHARS = 4096
+
+# Test-runner INNER-timeout signatures. A check (e.g. `npm test`) can exit
+# non-zero because its OWN runner killed a single test for exceeding THAT
+# runner's per-test deadline under load — a slow/flaky check, not an assertion
+# failure the engine should burn repair turns chasing. Within ALC's budget that
+# looks identical to a real failure, so we read the runner's own words for it.
+# These patterns are deliberately SPECIFIC (a numeric duration or an exact
+# phrase): a bare word "timeout" appears in far too much unrelated output to be
+# a safe signal, so it is intentionally NOT matched.
+_INNER_TIMEOUT_SIGNATURES = (
+    re.compile(r"Test timed out in \d+ ?ms", re.IGNORECASE),  # vitest / jest
+    re.compile(r"Timeout - Async callback was not invoked", re.IGNORECASE),  # jest / mocha async
+    re.compile(r"Exceeded timeout of \d+ ?ms", re.IGNORECASE),  # jest
+    re.compile(r"timeout of \d+ ?ms exceeded", re.IGNORECASE),  # mocha
+)
+
+# Prepended to a failed check's output when it self-reports a runner timeout, so
+# the operator (and the engine) reads the cause honestly rather than as a bug.
+_INNER_TIMEOUT_NOTE = (
+    "note: this check's output reports a test-runner timeout — likely a "
+    "slow/flaky check under load, not an assertion failure."
+)
+
+
+def _reports_inner_timeout(output: str) -> bool:
+    """True when *output* carries a recognizable test-runner per-test timeout
+    signature — see ``_INNER_TIMEOUT_SIGNATURES``."""
+    return any(pat.search(output) for pat in _INNER_TIMEOUT_SIGNATURES)
 
 
 @dataclass
@@ -166,12 +195,21 @@ class Verifier:
         try:
             stdout, stderr = proc.communicate(timeout=self._timeout_s)
             combined = ((stdout or "") + (stderr or ""))[: self._max_output_chars]
+            passed = proc.returncode == 0
+            # A non-zero exit whose output self-reports a test-runner timeout is a
+            # slow/flaky check, not an assertion failure — mark it timed_out so it
+            # flows through the SAME plumbing as ALC's own timeout ("timed out ⏱")
+            # and the engine isn't misled. It still counts as NOT passed.
+            inner_timeout = not passed and _reports_inner_timeout(combined)
+            if inner_timeout:
+                combined = f"{_INNER_TIMEOUT_NOTE}\n{combined}"
             return CheckResult(
                 name=check.name,
-                passed=(proc.returncode == 0),
+                passed=passed,
                 output=combined,
                 duration_s=time.monotonic() - start,
                 exit_code=proc.returncode,
+                timed_out=inner_timeout,
             )
         except subprocess.TimeoutExpired:
             # Kill the WHOLE process group so a child (e.g. `pnpm` -> `node --test`)

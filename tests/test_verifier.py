@@ -48,6 +48,73 @@ class TestVerifierTimeout:
         assert result.timed_out is False
 
 
+class TestVerifierInnerTimeout:
+    # A check can fail because its OWN test runner (vitest/jest/mocha) killed a
+    # single test for exceeding that runner's per-test deadline under load — the
+    # process exits non-zero WITHIN ALC's budget, so it looks identical to an
+    # assertion failure. These assert we surface it as timed_out instead.
+    def test_vitest_inner_timeout_is_marked(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="t", shell="echo 'Test timed out in 5000ms'; exit 1")], tmp_path
+        )
+        assert result.passed is False  # a timed-out check is still not green
+        assert result.timed_out is True
+        assert "test-runner timeout" in result.output  # the honest annotation
+        assert "Test timed out in 5000ms" in result.output  # original tail kept
+
+    def test_jest_async_callback_timeout_is_marked(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [
+                Check(
+                    name="t",
+                    shell="echo 'Timeout - Async callback was not invoked within the 5000 ms timeout'; exit 1",
+                )
+            ],
+            tmp_path,
+        )
+        assert result.timed_out is True
+
+    def test_jest_exceeded_timeout_is_marked(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="t", shell="echo 'Exceeded timeout of 2000ms for a hook'; exit 1")],
+            tmp_path,
+        )
+        assert result.timed_out is True
+
+    def test_mocha_timeout_exceeded_is_marked(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="t", shell="echo 'Error: timeout of 2000ms exceeded'; exit 1")],
+            tmp_path,
+        )
+        assert result.timed_out is True
+
+    def test_plain_assertion_failure_is_not_flagged(self, tmp_path: Path) -> None:
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="t", shell="echo 'expected 1 to equal 2'; exit 1")], tmp_path
+        )
+        assert result.passed is False
+        assert result.timed_out is False  # a real failure stays a plain failure
+
+    def test_bare_word_timeout_in_prose_is_not_flagged(self, tmp_path: Path) -> None:
+        # The generic word "timeout" appears in too much unrelated output to be a
+        # safe signal — only the specific runner signatures count.
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="t", shell="echo 'the timeout option is documented above'; exit 1")],
+            tmp_path,
+        )
+        assert result.passed is False
+        assert result.timed_out is False
+
+    def test_passing_check_with_timeout_wording_is_untouched(self, tmp_path: Path) -> None:
+        # A PASSING check is never re-classified, even if its output happens to
+        # contain a signature — the detector only runs on a non-zero exit.
+        [result] = Verifier(timeout_s=30).run(
+            [Check(name="t", shell="echo 'Test timed out in 5000ms'; exit 0")], tmp_path
+        )
+        assert result.passed is True
+        assert result.timed_out is False
+
+
 class TestVerifierOutcome:
     def test_passing_check_reports_duration_and_exit_code(self, tmp_path: Path) -> None:
         [result] = Verifier(timeout_s=30).run([Check(name="ok", command=["true"])], tmp_path)
