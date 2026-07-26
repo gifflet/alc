@@ -62,17 +62,25 @@ class HarvestReport:
 # Check-ish name sets — only these declared names are worth adopting.
 # ---------------------------------------------------------------------------
 
+# A typecheck script has no canonical spelling — projects write it hyphenated or
+# colon-separated too. All three spellings name the SAME gate, so all are adopted
+# (kept in sync with `scaffold._NODE_TYPECHECK_VARIANTS`, which resolves the same
+# spellings when `alc init` scaffolds a Node battery).
+_TYPECHECK_NAMES = frozenset({"typecheck", "type-check", "type:check"})
+
+# `format`/`fmt` are DELIBERATELY absent: a write-mode formatter (`prettier
+# --write`, `ruff format`) MUTATES files and exits 0 regardless, so as a check it
+# always passes and proves nothing — a formatter is not a gate. Harvesting one
+# would plant the exact "placeholder that always passes" antipattern the check
+# loop exists to prevent.
+
 # package.json `scripts` keys.
-_PACKAGE_CHECKISH = frozenset(
-    {"test", "lint", "typecheck", "check", "build", "ci", "format", "fmt"}
-)
+_PACKAGE_CHECKISH = frozenset({"test", "lint", "check", "build", "ci"}) | _TYPECHECK_NAMES
 
 # Makefile / justfile / Taskfile target names.
-_TARGET_CHECKISH = frozenset(
-    {
-        "test", "lint", "check", "fmt", "format", "typecheck",
-        "vet", "build", "ci", "tests", "lint-fix",
-    }
+_TARGET_CHECKISH = (
+    frozenset({"test", "lint", "check", "vet", "build", "ci", "tests", "lint-fix"})
+    | _TYPECHECK_NAMES
 )
 
 # Sources whose checks name a project TASK ("test", "lint", ...); several of them

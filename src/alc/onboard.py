@@ -54,6 +54,15 @@ _PROJECT_SET_EXISTS_NOTE = (
     "manifest to change them"
 )
 
+# When harvest DID find checks but every one already lives in another check_set,
+# the "project" set would be empty, so it is not proposed. This note keeps that
+# case HONEST and DISTINCT from `_EMPTY_HARVEST_NOTE`: checks were found — the
+# operator simply already has them all, so there is nothing new to adopt.
+_ALL_HARVESTED_PRESENT_NOTE = (
+    "every harvested check already appears in an existing check_set — nothing new "
+    "to adopt"
+)
+
 
 @dataclass(frozen=True)
 class ProposedCheck:
@@ -302,6 +311,39 @@ def engine_assist(
     return None
 
 
+def _command_signature(
+    command: list[str] | None, shell: str | None
+) -> tuple[str, object] | None:
+    """A comparable identity for a check's INVOCATION (argv or shell one-liner).
+
+    Two checks with the same signature run the same thing, regardless of the name
+    each was given — the basis for dropping a harvested check the operator already
+    declares elsewhere. Returns None for a check with neither form (nothing to
+    compare), which never matches an existing signature.
+    """
+    if command is not None:
+        return ("cmd", tuple(command))
+    if shell is not None:
+        return ("shell", shell)
+    return None
+
+
+def _existing_command_signatures(manifest: Manifest) -> set[tuple[str, object]]:
+    """Every invocation the manifest ALREADY declares across all its check_sets.
+
+    A harvested check whose signature is in this set is one the operator already
+    has under some set — re-proposing it would be noise, so `build_proposal` drops
+    it. Metric-only checks carry no runnable invocation here and are ignored.
+    """
+    signatures: set[tuple[str, object]] = set()
+    for checks in manifest.check_sets.values():
+        for chk in checks:
+            sig = _command_signature(chk.command, chk.shell)
+            if sig is not None:
+                signatures.add(sig)
+    return signatures
+
+
 def build_proposal(
     manifest: Manifest,
     project_root: Path,  # noqa: ARG001 — reserved for a future engine-origin harvest
@@ -344,7 +386,11 @@ def build_proposal(
     unknowns: list[str] = []
 
     # 1. Harvested checks -> the "project" check_set. Harvest already dedups, so
-    #    map through order-preservingly. An empty harvest proposes no set at all.
+    #    map through order-preservingly. A harvested check whose EXACT command is
+    #    already declared under some OTHER existing set is dropped: the operator
+    #    already has that gate, so re-proposing it is noise, not a new check. An
+    #    empty harvest (or one fully covered by existing sets) proposes no set.
+    existing_signatures = _existing_command_signatures(manifest)
     proposed = [
         ProposedCheck(
             name=hc.name,
@@ -355,6 +401,7 @@ def build_proposal(
             source_path=hc.source_path,
         )
         for hc in harvest_report.checks
+        if _command_signature(hc.command, hc.shell) not in existing_signatures
     ]
 
     # 1b. Merge engine-assist checks — engine only ADDS to the gaps. HARVEST WINS:
@@ -387,6 +434,10 @@ def build_proposal(
         unknowns.append(_PROJECT_SET_EXISTS_NOTE)
     elif proposed:
         check_sets[_PROJECT_SET] = proposed
+    elif harvest_report.checks:
+        # Harvest found checks, but the dedup above dropped every one as already
+        # declared elsewhere — a DISTINCT note from the truly-empty-harvest case.
+        unknowns.append(_ALL_HARVESTED_PRESENT_NOTE)
     else:
         unknowns.append(_EMPTY_HARVEST_NOTE)
 
@@ -440,26 +491,46 @@ def _command_tuples(checks: list[ProposedCheck]) -> list[tuple[str, list[str]]]:
     return [(c.name, c.command) for c in checks if c.command is not None]
 
 
-def _proposed_manifest(manifest_raw: str, proposal: OnboardProposal) -> str:
-    """The manifest text ALC would produce, by APPENDING the proposed additions.
+def _append_check_sets_block(
+    raw: str, check_sets: dict[str, list[ProposedCheck]]
+) -> str:
+    """Append a fresh top-level `check_sets:` block to *raw*.
 
-    Pure and non-destructive: the current text is never mutated on disk — this
-    just appends the rendered `check_sets` block(s) and the `stage:` line so a
-    diff can show exactly what onboarding would add. The real merge is the
-    later apply step's job; this is a preview only.
+    The FALLBACK used only when the manifest has no `check_sets:` mapping to splice
+    into. With no existing mapping there is nothing to duplicate, so a clean append
+    (matching `alc init`'s own layout) is correct — the same fresh-block shape apply
+    would need if it ever wrote the first mapping.
     """
-    additions: list[str] = []
+    block = ["check_sets:"]
+    block.extend(
+        render_check_set(name, _command_tuples(checks))
+        for name, checks in check_sets.items()
+    )
+    return raw.rstrip("\n") + "\n\n" + "\n".join(block) + "\n"
+
+
+def _proposed_manifest(manifest_raw: str, proposal: OnboardProposal) -> str:
+    """The manifest text ALC would produce — the SAME edit apply actually performs.
+
+    Pure and non-destructive (nothing on disk is touched). It reuses apply's exact
+    `_splice_check_sets` logic so the dry-run diff MATCHES what apply writes: when
+    the manifest already has a `check_sets:` mapping the proposed sets are spliced
+    INTO it (never a second top-level `check_sets:` key); only when there is no
+    mapping to splice into does it append a fresh block. The `stage:` line is
+    appended via apply's own `_append_stage`. This parity is the whole point —
+    the preview must not show a duplicate key that the real apply would never write.
+    """
+    text = manifest_raw
     if proposal.check_sets:
-        additions.append("check_sets:")
-        additions.extend(
-            render_check_set(name, _command_tuples(checks))
-            for name, checks in proposal.check_sets.items()
+        spliced = _splice_check_sets(text, proposal.check_sets)
+        text = (
+            spliced
+            if spliced is not None
+            else _append_check_sets_block(text, proposal.check_sets)
         )
     if proposal.stage is not None:
-        additions.append(f"stage: {proposal.stage}")
-    if not additions:
-        return manifest_raw
-    return manifest_raw.rstrip("\n") + "\n\n" + "\n".join(additions) + "\n"
+        text = _append_stage(text, proposal.stage)
+    return text
 
 
 def _check_form(check: ProposedCheck) -> str:

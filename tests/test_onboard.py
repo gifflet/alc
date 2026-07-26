@@ -13,6 +13,7 @@ from alc.models import Blueprint, Check, Manifest
 from alc.onboard import (
     OnboardProposal,
     ProposedCheck,
+    _proposed_manifest,
     build_proposal,
     render_preview,
 )
@@ -134,6 +135,114 @@ class TestBuildProposalChecks:
         proposal = build_proposal(adopted, Path("/x"), blueprints, report)
 
         assert proposal.blueprint_opt_ins == {}
+
+
+# ---------------------------------------------------------------------------
+# build_proposal — dedup against checks the manifest ALREADY declares
+# ---------------------------------------------------------------------------
+
+
+def _manifest_with_set(name: str, checks: list[Check]) -> Manifest:
+    """A manifest that already declares a NON-'project' check_set (the state an
+    `alc init` on the same stack leaves behind — e.g. a `node` set)."""
+    return Manifest(
+        default_engine="mock",
+        compute_tiers={"standard": {"mock": "mock-small"}},
+        engines={"mock": {"type": "mock"}},
+        check_sets={name: checks},
+    )
+
+
+class TestBuildProposalDedup:
+    def test_harvested_command_already_in_an_existing_set_is_not_re_proposed(
+        self,
+    ) -> None:
+        # The operator already has `npm run test` under a `node` set (from a prior
+        # `alc init`). Re-proposing the same command under `project` is noise, so it
+        # is dropped; only a genuinely-new command lands in the proposed set.
+        manifest = _manifest_with_set(
+            "node", [Check(name="test", command=["npm", "run", "test"])]
+        )
+        report = _report(
+            [
+                _harvested("test", ["npm", "run", "test"]),   # duplicate -> dropped
+                _harvested("build", ["npm", "run", "build"]),  # new -> proposed
+            ]
+        )
+
+        proposal = build_proposal(manifest, Path("/x"), [], report)
+
+        names = [c.name for c in proposal.check_sets["project"]]
+        assert "build" in names
+        assert "test" not in names  # already-present command is not re-proposed
+
+    def test_all_harvested_already_present_proposes_no_set_with_a_distinct_note(
+        self,
+    ) -> None:
+        # When EVERY harvested check already lives in an existing set, `project`
+        # would be empty — so it is not proposed. The note stays DISTINCT from the
+        # truly-empty-harvest one: checks WERE found; they are already adopted.
+        manifest = _manifest_with_set(
+            "node", [Check(name="test", command=["npm", "run", "test"])]
+        )
+        report = _report([_harvested("test", ["npm", "run", "test"])])
+
+        proposal = build_proposal(manifest, Path("/x"), [], report)
+
+        assert "project" not in proposal.check_sets
+        assert proposal.unknowns  # a coherent note explains why
+        assert not any("no existing check" in n.lower() for n in proposal.unknowns)
+
+
+# ---------------------------------------------------------------------------
+# Preview parity — the dry-run diff must reflect what apply actually writes
+# ---------------------------------------------------------------------------
+
+_MANIFEST_RAW_WITH_CHECK_SETS = (
+    "version: 1\n"
+    "default_engine: mock\n"
+    "check_sets:\n"
+    "  node:\n"
+    "    - name: existing\n"
+    '      command: ["npm", "run", "test"]\n'
+)
+
+
+class TestPreviewParityWithApply:
+    def test_preview_splices_into_existing_check_sets_not_a_duplicate_key(self) -> None:
+        # When manifest.yaml ALREADY has a `check_sets:` mapping (e.g. `alc init`
+        # wrote a `node` set), the dry-run preview must SPLICE the proposed set into
+        # it — exactly as apply does — never append a SECOND top-level `check_sets:`
+        # key. A duplicate key would misrepresent what apply actually writes.
+        manifest = _manifest_with_set(
+            "node", [Check(name="existing", command=["npm", "run", "test"])]
+        )
+        report = _report([_harvested("build", ["npm", "run", "build"])])
+        proposal = build_proposal(manifest, Path("/x"), [], report)
+
+        new_manifest = _proposed_manifest(_MANIFEST_RAW_WITH_CHECK_SETS, proposal)
+
+        # Exactly ONE `check_sets:` key — the proposed set was spliced in, not
+        # appended as a second block.
+        assert new_manifest.count("check_sets:") == 1
+        assert "  project:" in new_manifest   # the new set landed
+        assert "  node:" in new_manifest      # the existing set survived
+
+        # And the rendered diff the operator sees carries no duplicate key either.
+        preview = render_preview(proposal, _MANIFEST_RAW_WITH_CHECK_SETS, {})
+        assert "+check_sets:" not in preview
+
+    def test_preview_appends_a_fresh_block_when_no_mapping_exists(self) -> None:
+        # A manifest with NO `check_sets:` mapping still gets one appended (the
+        # splice-or-append decision degrades to append), matching apply's own
+        # fallback path.
+        report = _report([_harvested("test", ["npm", "run", "test"])])
+        proposal = build_proposal(_manifest(), Path("/x"), [], report)
+
+        new_manifest = _proposed_manifest(_MANIFEST_RAW, proposal)
+
+        assert new_manifest.count("check_sets:") == 1
+        assert "  project:" in new_manifest
 
 
 # ---------------------------------------------------------------------------

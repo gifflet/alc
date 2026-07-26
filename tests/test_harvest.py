@@ -80,6 +80,40 @@ class TestPackageJson:
         monkeypatch.setattr("alc.harvest.shutil.which", lambda cmd: None)
         assert _by_name(harvest(tmp_path))["test"].available is False
 
+    def test_write_mode_formatter_is_not_harvested(self, tmp_path: Path) -> None:
+        # A `format`/`fmt` script is a write-mode formatter (`prettier --write`)
+        # that MUTATES files and exits 0 regardless — as a check it always passes
+        # and proves nothing. A formatter is not a gate, so harvest never adopts it.
+        (tmp_path / "package.json").write_text(
+            '{"scripts": {"format": "prettier --write \\"src/**/*.ts\\"", '
+            '"fmt": "prettier --write .", "test": "jest"}}'
+        )
+
+        checks = _by_name(harvest(tmp_path))
+
+        assert "format" not in checks
+        assert "fmt" not in checks
+        assert "test" in checks  # a real gate is still harvested
+
+    def test_hyphen_and_colon_typecheck_variants_are_harvested(
+        self, tmp_path: Path
+    ) -> None:
+        # Node's typecheck script has no canonical spelling: `type-check` and
+        # `type:check` are the SAME gate as `typecheck` and must be adopted, not
+        # missed. The runner keeps the exact script spelling so `npm run` resolves.
+        (tmp_path / "package.json").write_text(
+            '{"scripts": {"type-check": "tsc --noEmit"}}'
+        )
+        checks = _by_name(harvest(tmp_path))
+        assert "type-check" in checks
+        assert checks["type-check"].command == ["npm", "run", "type-check"]
+
+        (tmp_path / "package.json").write_text(
+            '{"scripts": {"type:check": "tsc --noEmit"}}'
+        )
+        commands = [c.command for c in harvest(tmp_path).checks]
+        assert ["npm", "run", "type:check"] in commands
+
 
 # ---------------------------------------------------------------------------
 # Makefile / justfile / Taskfile — TARGET NAMES only, never recipe bodies
@@ -107,15 +141,15 @@ class TestTargetFiles:
     def test_justfile_recipes(self, tmp_path: Path) -> None:
         (tmp_path / "justfile").write_text(
             "test:\n    pytest -q\n"
-            "fmt:\n    ruff format .\n"
+            "lint:\n    ruff check .\n"
             "publish:\n    ./publish.sh\n"
         )
 
         checks = _by_name(harvest(tmp_path))
 
-        assert set(checks) == {"test", "fmt"}  # "publish" excluded
+        assert set(checks) == {"test", "lint"}  # "publish" excluded
         assert checks["test"].command == ["just", "test"]
-        assert checks["fmt"].source == "justfile"
+        assert checks["lint"].source == "justfile"
 
     def test_taskfile_tasks(self, tmp_path: Path) -> None:
         (tmp_path / "Taskfile.yml").write_text(
