@@ -5,10 +5,18 @@
 from __future__ import annotations
 
 import json
+import signal
 from datetime import datetime
 from pathlib import Path
 
-from alc.events import bind_run_log, emit, new_run_log_path
+import pytest
+
+from alc.events import (
+    abort_event_on_interrupt,
+    bind_run_log,
+    emit,
+    new_run_log_path,
+)
 from alc.flow import FlowRunner
 from alc.intake import load_blueprint, load_flow, load_manifest
 from alc.queue import process_queue
@@ -144,6 +152,74 @@ class TestNewRunLogPath:
         path = new_run_log_path(tmp_path, "task", "!!!")
         assert path.suffix == ".jsonl"
         assert "-task-" in path.stem
+
+
+@pytest.fixture
+def restore_signals():
+    """Save and restore the process SIGINT/SIGTERM handlers around a test."""
+    prev_int = signal.getsignal(signal.SIGINT)
+    prev_term = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGINT, prev_int)
+    signal.signal(signal.SIGTERM, prev_term)
+
+
+class TestAbortGuard:
+    """abort_event_on_interrupt: a terminal run_aborted on Ctrl-C / SIGTERM."""
+
+    def test_sigint_emits_run_aborted_then_reraises(
+        self, tmp_path: Path, restore_signals: None
+    ) -> None:
+        """SIGINT writes run_aborted to the bound log and re-raises KeyboardInterrupt."""
+        log = tmp_path / "run.jsonl"
+        with pytest.raises(KeyboardInterrupt):
+            with bind_run_log(log), abort_event_on_interrupt():
+                signal.raise_signal(signal.SIGINT)
+
+        events = _read_events(log)
+        assert [e["event"] for e in events] == ["run_aborted"]
+        assert events[0]["reason"] == "interrupted"
+
+    def test_sigterm_emits_run_aborted_then_exits_nonzero(
+        self, tmp_path: Path, restore_signals: None
+    ) -> None:
+        """SIGTERM writes run_aborted to the bound log and exits non-zero."""
+        log = tmp_path / "run.jsonl"
+        with pytest.raises(SystemExit) as excinfo:
+            with bind_run_log(log), abort_event_on_interrupt():
+                signal.raise_signal(signal.SIGTERM)
+
+        assert excinfo.value.code == 1
+        assert [e["event"] for e in _read_events(log)] == ["run_aborted"]
+
+    def test_noop_when_no_log_is_bound(
+        self, tmp_path: Path, restore_signals: None
+    ) -> None:
+        """With no bound log the interrupt still propagates, but nothing is written."""
+        with pytest.raises(KeyboardInterrupt):
+            with abort_event_on_interrupt():
+                signal.raise_signal(signal.SIGINT)
+
+        assert list(tmp_path.iterdir()) == []
+
+    def test_restores_handlers_and_leaves_no_signal_path_unchanged(
+        self, restore_signals: None
+    ) -> None:
+        """On a clean (no-signal) exit the prior handlers are restored intact."""
+
+        def sentinel(_signum: int, _frame: object) -> None:  # pragma: no cover
+            pass
+
+        signal.signal(signal.SIGINT, sentinel)
+        signal.signal(signal.SIGTERM, sentinel)
+
+        ran = False
+        with abort_event_on_interrupt():
+            ran = True  # the guarded body runs exactly as if the guard were absent
+
+        assert ran is True
+        assert signal.getsignal(signal.SIGINT) is sentinel
+        assert signal.getsignal(signal.SIGTERM) is sentinel
 
 
 class TestMandateIntegration:

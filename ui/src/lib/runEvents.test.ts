@@ -108,6 +108,35 @@ describe('buildTimeline — flow with stages', () => {
   })
 })
 
+describe('buildTimeline — run_aborted (interrupted run)', () => {
+  it('folds a run_aborted event into finished + aborted, leaving success null', () => {
+    const events: RunEvent[] = [
+      { ts: 't0', event: 'mandate_started', blueprint: 'chore', task: 'x', engine: 'mock', model: 'm' },
+      { ts: 't1', event: 'act_started', attempt: 0 },
+      { ts: 't2', event: 'run_aborted', reason: 'interrupted' },
+    ]
+    const t = buildTimeline(events)
+    expect(t.finished).toBe(true)
+    expect(t.aborted).toBe(true)
+    expect(t.success).toBeNull()
+  })
+
+  it('is terminal for a flow run too (no flow_finished needed)', () => {
+    const events: RunEvent[] = [
+      { ts: 't0', event: 'flow_started', flow: 'ship', task: 'build' },
+      { ts: 't1', event: 'stage_started', stage: 'impl', blueprint: 'feature' },
+      { ts: 't2', event: 'run_aborted', reason: 'terminated' },
+    ]
+    const t = buildTimeline(events)
+    expect(t.finished).toBe(true)
+    expect(t.aborted).toBe(true)
+  })
+
+  it('is not aborted for a normally finished run', () => {
+    expect(buildTimeline(MANDATE_RUN).aborted).toBe(false)
+  })
+})
+
 describe('buildTimeline — check_config_edited (tamper-evidence)', () => {
   it('folds the touched files onto checkConfigEdits', () => {
     const events: RunEvent[] = [
@@ -160,5 +189,10 @@ describe('describeEvent', () => {
   it('labels a check-config edit with the touched files', () => {
     const label = describeEvent({ ts: 't', event: 'check_config_edited', files: ['ruff.toml (check config)'] })
     expect(label).toBe('modified check config: ruff.toml (check config)')
+  })
+  it('labels an aborted run with its reason', () => {
+    expect(describeEvent({ ts: 't', event: 'run_aborted', reason: 'interrupted' })).toBe('aborted — interrupted')
+    // Falls back to "interrupted" when no reason is carried.
+    expect(describeEvent({ ts: 't', event: 'run_aborted' })).toBe('aborted — interrupted')
   })
 })

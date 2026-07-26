@@ -48,6 +48,21 @@ describe('RunDetail', () => {
     expect(await screen.findByText('stale')).toBeInTheDocument()
     expect(screen.queryByText('live')).not.toBeInTheDocument()
   })
+
+  it('shows a distinct aborted pill for an interrupted run (run_aborted event)', async () => {
+    const aborted = [
+      { ts: '2026-07-13T02:15:44Z', event: 'flow_started', flow: 'demand', task: 'fix it' },
+      { ts: '2026-07-13T02:16:00Z', event: 'stage_started', stage: 'implement' },
+      { ts: '2026-07-13T02:16:01Z', event: 'mandate_started', blueprint: 'dev' },
+      { ts: '2026-07-13T02:16:02Z', event: 'run_aborted', reason: 'interrupted' },
+    ]
+    installFetch({ '/runs/': { events: aborted, next_offset: 4 } })
+    renderWithProviders(<RunDetail stem="20260713T0215-unit-demand-fix" />)
+    // A definitive "aborted" pill — never the transient "stale" or a live pill.
+    expect(await screen.findByText('aborted')).toBeInTheDocument()
+    expect(screen.queryByText('stale')).not.toBeInTheDocument()
+    expect(screen.queryByText('live')).not.toBeInTheDocument()
+  })
 })
 
 describe('RunDetail check-config callout', () => {

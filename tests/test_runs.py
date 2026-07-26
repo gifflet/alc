@@ -58,6 +58,33 @@ class TestListRunsFinished:
         assert finished["20260101T000002-task-done-cccccc"] is True
         assert finished["20260101T000003-run-bare-dddddd"] is True
 
+    def test_run_aborted_is_terminal_for_every_kind(self, tmp_path: Path) -> None:
+        """An interrupted run's `run_aborted` closes it — flow, task, or bare mandate —
+        even without the kind's usual wrapper terminal."""
+        runs_dir = tmp_path / "runs"
+        _write_run(
+            runs_dir,
+            "20260101T000000-flow-killed-aaaaaa",
+            ["flow_started", "stage_started", "mandate_started", "run_aborted"],
+        )
+        _write_run(
+            runs_dir,
+            "20260101T000001-task-killed-bbbbbb",
+            ["task_started", "mandate_started", "run_aborted"],
+        )
+        _write_run(
+            runs_dir,
+            "20260101T000002-run-killed-cccccc",
+            ["mandate_started", "run_aborted"],
+        )
+
+        runs = list_runs(runs_dir, stale_after=1800)["runs"]
+        finished = {r["stem"]: r["finished"] for r in runs}
+
+        assert finished["20260101T000000-flow-killed-aaaaaa"] is True
+        assert finished["20260101T000001-task-killed-bbbbbb"] is True
+        assert finished["20260101T000002-run-killed-cccccc"] is True
+
     def test_kind_extracted_from_stem(self, tmp_path: Path) -> None:
         runs_dir = tmp_path / "runs"
         _write_run(runs_dir, "20260101T000000-flow-live-aaaaaa", ["flow_started"])

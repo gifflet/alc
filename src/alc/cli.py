@@ -604,7 +604,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Run `alc run <blueprint> "<task>" [--engine NAME] [--isolate]`."""
     from alc.bundle import summarize_bundle, write_bundle
     from alc.commitmsg import make_commit_message_provider
-    from alc.events import bind_run_log, new_run_log_path
+    from alc.events import abort_event_on_interrupt, bind_run_log, new_run_log_path
     from alc.intake import load_blueprint, load_manifest
     from alc.primer import load_primer
     from alc.runner import MandateRunner, PolicyViolationError
@@ -689,7 +689,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         exc_info = (None, None, None)
         report = None
         try:
-            with bind_run_log(run_log):
+            # Guard inside the worktree try so an interrupt emits run_aborted and
+            # then unwinds through this except/finally (worktree cleanup) as before.
+            with abort_event_on_interrupt(), bind_run_log(run_log):
                 report = runner.run(
                     blueprint=blueprint,
                     task=args.task,
@@ -727,7 +729,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     # Non-isolated path (default).
     try:
-        with bind_run_log(run_log):
+        with abort_event_on_interrupt(), bind_run_log(run_log):
             report = runner.run(
                 blueprint=blueprint,
                 task=args.task,
@@ -813,6 +815,7 @@ def cmd_tick(args: argparse.Namespace) -> int:
         print("[ERROR] --concurrency must be >= 1", file=sys.stderr)
         return 1
 
+    from alc.events import abort_event_on_interrupt
     from alc.intake import load_manifest
     from alc.lock import tick_lock
     from alc.queue import process_queue
@@ -839,7 +842,11 @@ def cmd_tick(args: argparse.Namespace) -> int:
         if not acquired:
             print("Another tick is already in progress; skipping.")
             return 0
-        results = process_queue(manifest, operator_layer, max_workers=args.concurrency)
+        # A serial drain binds each task's run log in the main context, so an
+        # interrupt closes the in-flight run with run_aborted. Parallel workers
+        # bind in their own worker context (unseen here) and degrade to staleness.
+        with abort_event_on_interrupt():
+            results = process_queue(manifest, operator_layer, max_workers=args.concurrency)
 
     if not results:
         print("No pending tasks.")
@@ -951,6 +958,7 @@ def _resolve_loop(args: argparse.Namespace):
 
 def cmd_cycle(args: argparse.Namespace) -> int:
     """Run `alc cycle <name>`: run exactly ONE autonomous loop cycle (cron target)."""
+    from alc.events import abort_event_on_interrupt
     from alc.loop import (
         format_cycle_summary,
         load_loop_state,
@@ -1009,9 +1017,13 @@ def cmd_cycle(args: argparse.Namespace) -> int:
             update={"drain": loop_def.drain.model_copy(update={"concurrency": args.concurrency})}
         )
 
-    state, record = run_cycle(
-        manifest, operator_layer, loop_def, state, engine_override=args.engine
-    )
+    # An interrupt closes the in-flight run (the replenish step's log is bound in
+    # the main context) with run_aborted; a parallel drain's worker-context runs
+    # are unseen here and degrade to staleness.
+    with abort_event_on_interrupt():
+        state, record = run_cycle(
+            manifest, operator_layer, loop_def, state, engine_override=args.engine
+        )
     save_loop_state(spath, state)
     print(format_cycle_summary(record))
     return 0
@@ -1021,6 +1033,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
     """Run `alc loop <name> [--interval S]`: foreground wrapper repeating cycles."""
     import time
 
+    from alc.events import abort_event_on_interrupt
     from alc.loop import (
         format_cycle_summary,
         load_loop_state,
@@ -1054,9 +1067,12 @@ def cmd_loop(args: argparse.Namespace) -> int:
         return 0
 
     while True:
-        state, record = run_cycle(
-            manifest, operator_layer, loop_def, state, engine_override=args.engine
-        )
+        # Each cycle's in-flight run (replenish step, main-context log) closes on
+        # run_aborted when interrupted; a parallel drain degrades to staleness.
+        with abort_event_on_interrupt():
+            state, record = run_cycle(
+                manifest, operator_layer, loop_def, state, engine_override=args.engine
+            )
         save_loop_state(spath, state)
         print(format_cycle_summary(record))
         if state.status == "stopped":

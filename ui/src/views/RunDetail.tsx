@@ -57,15 +57,20 @@ export function RunDetail({ stem }: { stem: string }) {
   const isStale = !timeline.finished && (query.data?.stale ?? false) && !live
   const statusTone =
     timeline.success === true ? 'live' : timeline.success === false ? 'error' : 'running'
+  // Aborted is DEFINITIVE (a terminal run_aborted event), unlike the transient
+  // "stale" guess — render it in the error tone so the two never read alike.
+  const dotTone = timeline.aborted ? 'error' : isStale ? 'warn' : statusTone
 
   return (
     <div className="flex h-full flex-col overflow-auto p-4">
       <header className="mb-3 flex items-center gap-3">
-        <StatusDot tone={isStale ? 'warn' : statusTone} pulse={!timeline.finished && !isStale} />
+        <StatusDot tone={dotTone} pulse={!timeline.finished && !isStale} />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-[14px] font-medium text-primary">{timeline.title || stem}</h1>
-            {timeline.finished ? (
+            {timeline.aborted ? (
+              <Pill tone="error">aborted</Pill>
+            ) : timeline.finished ? (
               <Pill tone={statusTone}>{timeline.success ? 'success' : 'failed'}</Pill>
             ) : isStale ? (
               <Pill tone="warn">stale</Pill>

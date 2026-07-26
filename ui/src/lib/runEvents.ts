@@ -44,6 +44,9 @@ export interface Timeline {
   scorecard: Scorecard | null
   success: boolean | null
   finished: boolean
+  /** True when the run was interrupted (a terminal `run_aborted` event) — a
+   * definitive abort, distinct from the transient "stale" guess in RunDetail. */
+  aborted: boolean
   commitSha?: string | null
   /** Check-defining files (`"path (reason)"`) the run's net diff touched — the
    * always-on tamper-evidence (check_config_edited events). Empty when clean. */
@@ -97,6 +100,7 @@ export function buildTimeline(events: RunEvent[]): Timeline {
     scorecard: null,
     success: null,
     finished: false,
+    aborted: false,
     checkConfigEdits: [],
   }
   const scorecards: Scorecard[] = []
@@ -224,6 +228,14 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         timeline.finished = true
         break
 
+      case 'run_aborted':
+        // Interrupted (Ctrl-C / SIGTERM). Terminal for ANY kind — bare mandate,
+        // flow, or task — mirroring the backend (runs._run_finished). Leaves
+        // `success` as-is: an abort is neither a pass nor a check failure.
+        timeline.finished = true
+        timeline.aborted = true
+        break
+
       default:
         break
     }
@@ -271,6 +283,8 @@ export function describeEvent(event: RunEvent): string {
       return `Task ${str(event, 'name')} (${str(event, 'kind')})`
     case 'task_finished':
       return `Task finished — ${event.success ? 'success' : 'failure'}`
+    case 'run_aborted':
+      return `aborted — ${str(event, 'reason') ?? 'interrupted'}`
     case 'engine_activity':
       // The engine's granular activity (Bash/Read/Edit/… for claude-code; the
       // model's notes for others) — nested under the macro events so an operator

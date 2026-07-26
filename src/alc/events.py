@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import contextvars
 import json
+import signal
+import sys
 import threading
 import uuid
 from collections.abc import Iterator
@@ -108,6 +110,65 @@ def current_run_log_path() -> Path | None:
     """
     binding = _run_log.get()
     return binding.path if binding is not None else None
+
+
+@contextmanager
+def abort_event_on_interrupt(reason: str = "interrupted") -> Iterator[None]:
+    """Emit a terminal ``run_aborted`` event if the guarded run is interrupted.
+
+    While active, installs SIGINT and SIGTERM handlers. On either signal it
+    emits a ``run_aborted`` event (carrying ``reason``) into the run log bound
+    in THIS context — via emit(), which targets ``current_run_log_path()`` — so
+    the UI reads the run as ABORTED at once instead of waiting out the staleness
+    threshold. It then lets the interrupt take its normal course: SIGINT
+    re-raises KeyboardInterrupt (a Ctrl-C still aborts exactly as before) and
+    SIGTERM exits non-zero. The previous handlers are always restored on exit;
+    when no signal fires the guarded block behaves exactly as if the guard were
+    absent (no change to the normal exit path).
+
+    Scope. contextvars are per-context, so the main-thread handler sees only the
+    MAIN context's bound log — which covers `alc run` and the sequential run
+    paths whose run log is bound in the main context. A PARALLEL queue-drain
+    worker binds its run log in a worker context the main-thread handler cannot
+    see, so those runs are NOT closed here; they correctly degrade to the
+    existing staleness detection (runs._run_stale). Solving the parallel case is
+    deliberately out of scope.
+
+    Signal handlers can only be installed from the main thread; off the main
+    thread (or where signals are unavailable) the guard degrades to a
+    transparent no-op — it yields without touching any handler.
+    """
+    prev_int = signal.getsignal(signal.SIGINT)
+    prev_term = signal.getsignal(signal.SIGTERM)
+
+    def _abort(signum: int, _frame: object) -> None:
+        emit("run_aborted", reason=reason)
+        # Restore the prior handlers so a SECOND signal (e.g. during unwinding /
+        # subprocess reaping) takes its normal course instead of re-firing this.
+        signal.signal(signal.SIGINT, prev_int)
+        signal.signal(signal.SIGTERM, prev_term)
+        if signum == signal.SIGINT:
+            # Mirror the default: a Ctrl-C surfaces as KeyboardInterrupt.
+            raise KeyboardInterrupt
+        # SIGTERM raises nothing into the main thread by default — translate it
+        # into a non-zero exit so the terminal event is followed by a clean stop.
+        sys.exit(1)
+
+    try:
+        signal.signal(signal.SIGINT, _abort)
+        signal.signal(signal.SIGTERM, _abort)
+    except (ValueError, OSError):
+        # Not the main thread (signal.signal raises ValueError there) or signals
+        # unavailable — degrade to a no-op. The first call fails before either
+        # handler is swapped in, so there is nothing to restore.
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, prev_int)
+        signal.signal(signal.SIGTERM, prev_term)
 
 
 def new_run_log_path(runs_dir: Path, kind: str, label: str) -> Path:

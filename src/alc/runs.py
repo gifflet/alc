@@ -19,6 +19,12 @@ from pathlib import Path
 _WRAPPER_STARTS = {"flow_started", "task_started"}
 _WRAPPER_TERMINALS = {"flow_finished", "task_finished"}
 
+# An interrupted run (Ctrl-C / SIGTERM) emits ``run_aborted`` as its LAST event
+# (events.abort_event_on_interrupt). It is terminal for EVERY kind — a bare
+# mandate, a flow, or a task run all close on it — so a killed run reads as
+# finished at once instead of waiting out the staleness threshold.
+_ABORT_TERMINAL = "run_aborted"
+
 
 def _run_kind(stem: str) -> str:
     """Extract the run kind from a run-log stem (``<ts>-<kind>-<slug>-<hex>``)."""
@@ -32,7 +38,8 @@ def _run_finished(path: Path) -> bool:
     Mirrors the detail view (buildTimeline) so the runs list and the run detail
     never disagree: a flow/task run's inner ``mandate_finished`` is not terminal
     — only ``flow_finished`` / ``task_finished`` closes it; a bare mandate run
-    (no flow/task wrapper) closes at its ``mandate_finished``.
+    (no flow/task wrapper) closes at its ``mandate_finished``. An interrupted
+    run's ``run_aborted`` is terminal for every kind.
     """
     try:
         lines = [ln for ln in path.read_text().splitlines() if ln.strip()]
@@ -46,6 +53,9 @@ def _run_finished(path: Path) -> bool:
             continue
         if isinstance(event, str):
             events.add(event)
+    # An abort is terminal for any kind, so it is checked before the wrapper.
+    if _ABORT_TERMINAL in events:
+        return True
     if events & _WRAPPER_TERMINALS:
         return True
     return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
