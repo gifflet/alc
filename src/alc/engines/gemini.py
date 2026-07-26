@@ -28,6 +28,7 @@ from alc.engine import (
     ProgressPrinter,
     Usage,
 )
+from alc.engines._proc import terminate_process_group
 
 # Map ALC's (claude-code-flavored) permission_mode intent onto the Gemini CLI's
 # --approval-mode. Keeps a Blueprint's permission_mode portable across engines:
@@ -144,6 +145,11 @@ class GeminiEngine:
                 text=True,
                 cwd=request.workdir,
                 env=merged_env,
+                # Own session/process group so a timeout or interrupt can reap the
+                # WHOLE tree (this child AND the tool/MCP subprocesses it spawns),
+                # not just the direct child — otherwise a stopped run orphans an
+                # engine that keeps burning tokens.
+                start_new_session=True,
             )
         except FileNotFoundError:
             return EngineResult(ok=False, output_text="[gemini] binary not found")
@@ -173,7 +179,7 @@ class GeminiEngine:
 
         def _on_timeout() -> None:
             timed_out["v"] = True
-            proc.kill()
+            terminate_process_group(proc)
 
         timer = threading.Timer(request.timeout_s, _on_timeout)
         timer.start()
@@ -220,6 +226,12 @@ class GeminiEngine:
                     )
                     raw = event
             proc.wait()
+        except BaseException:
+            # A KeyboardInterrupt (Ctrl-C / a stop) or any error escaping the read
+            # loop must reap the engine tree — not leave it orphaned burning tokens.
+            # Kill the whole group, then let the exception propagate unchanged.
+            terminate_process_group(proc)
+            raise
         finally:
             timer.cancel()
 
