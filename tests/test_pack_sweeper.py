@@ -73,6 +73,25 @@ class TestPackFilesSweeper:
         assert "kind: plan" in content
         assert "ref: janitor" in content
 
+    def test_sweep_loop_scopes_the_scan_to_tracked_live_source(self) -> None:
+        # P1 (dogfooding): the janitor once descended into a nested git worktree
+        # (.claude/worktrees/) of already-merged work, burning engine tokens on
+        # dead leftover code that must not be touched. The scan must enumerate
+        # tracked, live source via `git ls-files` and EXCLUDE nested worktrees
+        # and the operator layer.
+        content = pack_files("sweeper", stacks=[])[".alc/loops/sweep.yaml"]
+        assert "git ls-files" in content
+        assert ".claude/worktrees" in content
+        assert "worktree" in content
+        assert ".alc/" in content
+
+    def test_sweep_loop_keeps_the_unship_plan_item_contract(self) -> None:
+        # Hardening the scope must not drop the existing behavior: one plan item
+        # per finding targeting `unship`, with "touches" set so findings serialize.
+        content = pack_files("sweeper", stacks=[])[".alc/loops/sweep.yaml"]
+        assert "unship" in content
+        assert "touches" in content
+
     def test_unship_flow_chains_remove_and_a_verify_only_gate(self, tmp_path: Path) -> None:
         # The shipped flow's ACTIVE stages are remove -> a verify_only gate that
         # verifies with the project's REAL checks (require_real_checks); the

@@ -215,7 +215,7 @@ removal never runs this stage.
 
 _SWEEPER_JANITOR = """\
 name: janitor
-area: dead and unused code across the codebase — the accumulated cruft map
+area: dead and unused code in the tracked, live source — the accumulated cruft map (nested git worktrees and the .alc/ operator layer are out of scope)
 blueprint: refactor
 knowledge_path: .alc/specialists/janitor.knowledge.md
 """
@@ -226,9 +226,14 @@ replenish:
   kind: plan
   ref: janitor
   task: >
-    Find dead or unused code across the repository. For every finding, emit
-    one plan item targeting the `unship` flow, with "touches" set to the
-    file(s) it will edit so overlapping findings serialize instead of racing.
+    Find dead or unused code in the TRACKED, LIVE source only. Enumerate the
+    candidate files with `git ls-files` rather than walking the directory tree,
+    and EXCLUDE nested git worktrees — for example `.claude/worktrees/`, and any
+    directory that is itself a separate git worktree (it carries its own `.git`)
+    — plus the `.alc/` operator layer; none of these are live product source, so
+    dead code there must not be touched. For every finding, emit one plan item
+    targeting the `unship` flow, with "touches" set to the file(s) it will edit
+    so overlapping findings serialize instead of racing.
 stop:
   max_cycles: 10
 """
