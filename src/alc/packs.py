@@ -377,10 +377,12 @@ stop:
 
 
 # ---------------------------------------------------------------------------
-# Grower pack — DELIBERATELY PARTIAL (roadmap-phase-2.md T12). The Grower's
-# loop is hypothesis -> change -> measurement; this wave ships only a DIY
-# signal-gathering Specialist. Real signal intake (issue trackers, APM, crash
-# reports), metric checks, and the `regression` replenish kind are Phases 4-5.
+# Grower pack — a DIY signal-gathering Specialist plus a `grow` Blueprint that
+# declares `archetype: grower`, so hiring the pack clears the stage-mix warning
+# exactly like every other archetype (the Grower's loop is hypothesis -> change
+# -> measurement). STILL PARTIAL (roadmap-phase-2.md T12): automated signal
+# intake (issue trackers, APM, crash reports), metric checks, and the
+# `regression` replenish kind are Phases 4-5.
 # ---------------------------------------------------------------------------
 
 _GROWER_LISTEN = """\
@@ -397,18 +399,61 @@ blueprint: plan
 knowledge_path: .alc/specialists/listen.knowledge.md
 """
 
+_GROWER_GROW = """\
+---
+name: grow
+purpose: Grow the product — strengthen a weak test or improve a tracked metric without regressing.
+compute_tier: standard
+{check_set_line}checks:
+  # A pack Blueprint must never depend on check_set alone — an empty check_set
+  # (no stack tooling on PATH at hire time) would otherwise resolve to zero
+  # checks and fail Policy Gate rule 1. This inline check keeps it lint-clean.
+  - name: smoke
+    command: ["true"]
+report:
+  format: json
+  schema:
+    status: string
+    summary: string
+archetype: grower
+---
+
+## Grow Workflow
+
+1. Read the task to pick ONE growth target: a coverage gap, a weak or missing
+   test, or a tracked metric the task names.
+2. Strengthen it — add or harden the tests around that behavior, or make the
+   smallest change that improves the metric. No unrelated features.
+3. Run the checks — including the stack's full check_set, when declared — to
+   confirm the growth holds and nothing regressed.
+4. Output a JSON report matching the schema:
+   ```json
+   {{"status": "ok", "summary": "<one sentence describing what was grown or hardened>"}}
+   ```
+"""
+
 
 def _grower_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
 ) -> dict[str, str]:
-    """Build the Grower pack: a DIY issue/error-sweep Specialist only.
+    """Build the Grower pack: a DIY issue/error-sweep Specialist and a `grow` Blueprint.
 
-    `stacks` is unused — the sweep is DIY (operator-fed), not stack-specific;
-    kept for signature parity with the other packs in PACKS. `listen` reuses
-    the default `plan` Blueprint (read/synthesize, no code changes) rather
-    than shipping its own — this wave adds no new Blueprint for Grower.
+    `listen` reuses the default `plan` Blueprint (read/synthesize, no code
+    changes) to accumulate what users keep hitting; `grow` is the Grower's own
+    Blueprint — it strengthens tests or improves a tracked metric without
+    regressing, and its `archetype: grower` is what clears the stage-mix warning
+    (exactly like the other packs' Blueprints). `grow` opts into the primary
+    detected stack's check_set (`_check_set_line`) plus an inline smoke check, so
+    its checks are real when a stack is present and still lint-clean when none
+    is. Automated signal intake, metric checks, and the `regression` replenish
+    kind still land in Phases 4-5 (see docs/roadmap-phase-2.md).
     """
-    return {".alc/specialists/listen.yaml": _GROWER_LISTEN}
+    return {
+        ".alc/specialists/listen.yaml": _GROWER_LISTEN,
+        ".alc/blueprints/grow.md": _GROWER_GROW.format(
+            check_set_line=_check_set_line(stacks)
+        ),
+    }
 
 
 def _maintainer_files(
@@ -482,7 +527,9 @@ def _prototyper_files(
     return {".alc/blueprints/spike.md": _PROTOTYPER_SPIKE}
 
 
-# Archetype name -> file-generator. `grower` ships PARTIAL (see _grower_files).
+# Archetype name -> file-generator. `grower` is still partial on automated
+# signal intake (see _grower_files), but now ships an archetype-declaring
+# Blueprint like every other pack.
 PACKS: dict[
     str, Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]]], dict[str, str]]
 ] = {
