@@ -79,6 +79,16 @@ class AssuranceLoop:
                      workdir, called once per attempt. Bound by the caller
                      (runner.py) so this loop never gains a git dependency of
                      its own. Ignored when ``protect`` is empty.
+        check_config_guard: Callable returning a failed CheckResult when this
+                     attempt edited a file that DEFINES one of the run's checks
+                     (the "law"), else None — the `check-config-integrity` guard.
+                     Bound fully-formed by the caller (runner.py): all git/content
+                     knowledge lives in that closure, so — like ``changed_files``
+                     — this loop only knows "run the guard, append what it
+                     returns". Its result feeds the SAME repair addendum as a real
+                     check failure, so the guard is repairable (revert the config,
+                     fix the code). None (default) -> no-op (the Blueprint opted
+                     out via ``allow_check_config``, or there is no git).
         quarantined: Check NAMES (manifest.quarantined_checks) that RUN but can
                      never fail the run nor trigger a repair turn — a failure of
                      one is still recorded (visible in the run log/report as
@@ -94,6 +104,7 @@ class AssuranceLoop:
         repair_template: str = _REPAIR_TEMPLATE,
         protect: list[str] | None = None,
         changed_files: Callable[[], list[str]] | None = None,
+        check_config_guard: Callable[[], CheckResult | None] | None = None,
         quarantined: list[str] | None = None,
     ) -> None:
         self._engine = engine
@@ -102,6 +113,7 @@ class AssuranceLoop:
         self._repair_template = repair_template
         self._protect = protect or []
         self._changed_files = changed_files
+        self._check_config_guard = check_config_guard
         self._quarantined = set(quarantined or [])
 
     def run(self, request: EngineRequest, checks: list[Check]) -> RunReport:
@@ -190,9 +202,25 @@ class AssuranceLoop:
                     exit_code=cr.exit_code,
                 ),
             )
-            protect_violation = self._check_protect()
-            if protect_violation is not None:
-                check_results = [*check_results, protect_violation]
+            # Synthetic guards run AFTER the Verifier and have no subprocess of
+            # their own, so the Verifier never emitted a check_finished for them.
+            # Append each and emit one, so BOTH synthetic checks (protected-paths
+            # and check-config-integrity) are as visible in the run log as a real
+            # check — a law enforced invisibly is a law an operator cannot audit.
+            for synthetic in (self._check_protect(), self._run_check_config_guard()):
+                if synthetic is None:
+                    continue
+                check_results = [*check_results, synthetic]
+                emit(
+                    "check_finished",
+                    attempt=attempt_index,
+                    name=synthetic.name,
+                    passed=synthetic.passed,
+                    output_tail=synthetic.output,
+                    timed_out=synthetic.timed_out,
+                    duration_s=synthetic.duration_s,
+                    exit_code=synthetic.exit_code,
+                )
             failed = [cr for cr in check_results if not cr.passed]
             # A quarantined check still RUNS and its failure is fully recorded
             # (failed_checks, checks below) — it is simply excluded from what
@@ -320,6 +348,20 @@ class AssuranceLoop:
                 f"`protect:` globs — revert them:\n{hit_list}"
             ),
         )
+
+    def _run_check_config_guard(self) -> CheckResult | None:
+        """Return the injected `check-config-integrity` guard's synthetic failed
+        CheckResult when this attempt edited a check-defining file, else None.
+
+        The DETECTION (git snapshots, content diffs, basename patterns) lives
+        entirely in the caller-supplied closure, so this loop stays free of any git
+        or content knowledge — it only invokes the guard and hands back what it
+        returns. None when no guard was bound (the Blueprint opted out, or there is
+        no git repo to snapshot).
+        """
+        if self._check_config_guard is None:
+            return None
+        return self._check_config_guard()
 
     def _build_failure_section(self, failed_checks) -> str:
         """Build the repair addendum appended to the directive on failure.

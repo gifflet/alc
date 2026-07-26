@@ -162,6 +162,25 @@ declares `protect: ["tests/**", "test/**"]`, turning "a refactor must not touch
 tests" from workflow prose an agent could ignore into something the control plane
 itself enforces.
 
+The same idiom guards the checks themselves. A run's checks are its *law* — the bar
+the work must clear — and an engine that cannot make the code pass can make the law
+pass instead: widen an eslint ignore, delete a `[tool.ruff]` rule, rewrite a `test`
+script to `true`. The `check-config-integrity` guard closes that door. After every
+Act it crosses the paths changed so far against a curated set of check-defining
+files (linter/formatter/type-checker configs, `make`/`just`/`Taskfile` recipes,
+`pre-commit`/`tox`/`pytest`/`mypy` config, and — content-aware, so a plain dependency
+bump stays clean — a `package.json` `scripts` map, a `pyproject.toml` `[tool]` table,
+and any script a check's own command names); any hit becomes a synthetic failed
+check (`check-config-integrity`) feeding the same repair addendum (revert the config,
+fix the code). This makes the law tamper-*evident* — the run is always recorded as
+having touched check config (`RunReport.check_config_edits` plus a warning) — and
+tamper-*resistant* — a run that silently weakens a check fails, and a failed run
+never auto-lands. A maintenance Blueprint whose whole job is to edit that config sets
+`allow_check_config: true` to waive the guard; the edit is then permitted but the
+evidence still fires, and a Policy Gate warn keeps the standing exception visible.
+Outside a git repository the guard degrades to a silent no-op, exactly like
+`protect:`.
+
 ### Archetype Pack & the Team metaphor
 An **Archetype Pack** is scaffolded content — Blueprints, Flows, Specialists, Loops —
 for one of the five roles a codebase moves through over its life. `alc team hire

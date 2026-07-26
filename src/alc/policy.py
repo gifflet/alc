@@ -82,6 +82,16 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           pydantic validator) so the
                                                           message carries the owning
                                                           Blueprint's name.
+    15. Blueprint sets allow_check_config: true   (warn)  — it waives the
+                                                          check-config-integrity
+                                                          guard (may edit files that
+                                                          define its own checks
+                                                          without failing the run).
+                                                          PERMANENT while set, like
+                                                          rule 13's quarantine: a
+                                                          standing exception the
+                                                          lint stays silent about is
+                                                          invisible attack surface.
 
     Rule 1 is the ONE relaxation in the whole gate (roadmap-phase-3.md T1): a
     Blueprint declaring `mode: spike` still gets flagged for having no checks,
@@ -316,6 +326,25 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                         ),
                     )
                 )
+
+        # Rule 15: allow_check_config waives the check-config-integrity guard —
+        # legitimate for a maintenance Blueprint whose job IS to edit lint/test
+        # config, but a standing exception that must stay in view for as long as it
+        # is set (a run under it can pass a failing check by editing the check's own
+        # config). Permanent-while-set, mirroring rule 13's quarantine precedent.
+        if bp.allow_check_config:
+            violations.append(
+                Violation(
+                    rule="blueprint-allows-check-config",
+                    severity="warn",
+                    message=(
+                        f"Blueprint '{bp.name}' sets allow_check_config: true — it may "
+                        "edit files that define its own checks without failing the "
+                        "run. Legitimate for check maintenance; remove it once the "
+                        "maintenance is done so the guard protects this Blueprint again."
+                    ),
+                )
+            )
 
     return violations
 

@@ -7,6 +7,7 @@ import contextlib
 import subprocess
 from pathlib import Path
 
+from alc import checkconfig
 from alc.assurance import AssuranceLoop
 from alc.engine import Engine, EngineRequest
 from alc.engines.registry import resolve_engine
@@ -15,7 +16,7 @@ from alc.intake import resolve_checks
 from alc.models import Blueprint, Diffstat, Manifest, RunReport
 from alc.policy import has_errors, lint
 from alc.runtime import RuntimeService
-from alc.verifier import Verifier
+from alc.verifier import CheckResult, Verifier
 from alc.worktree import allocate_free_ports, release_ports
 
 def _git_state(workdir: Path) -> dict[str, str] | None:
@@ -320,8 +321,19 @@ def execute_mandate(
         env=_env,
     )
 
+    # Resolve the run's checks once — needed by both the Assurance Loop and the
+    # check-config-integrity guard (which surfaces a check's own referenced script).
+    checks = resolve_checks(manifest, blueprint)
+
     # Snapshot the git state before the Assurance Loop.
     state_before = _git_state(effective_workdir)
+    # Capture the pre-run state the check-config-integrity guard diffs against: the
+    # check-relevant SLICE of the two dep-manifest-AND-check-config files, and the
+    # set of existing files a check's own command names. Both read the tree directly
+    # (no git), so they are valid even outside a repo — the guard simply never fires
+    # there because `_changed_so_far` returns [] without a `state_before` to diff.
+    check_config_snapshot = checkconfig.snapshot_check_manifests(effective_workdir)
+    check_referenced = checkconfig.check_referenced_files(checks, effective_workdir)
 
     # Run the Assurance Loop — use Blueprint's repair budget when set, else keep default.
     metrics_dir = (
@@ -347,6 +359,37 @@ def execute_mandate(
         # never learns anything about git (see AssuranceLoop.__init__).
         loop_kwargs["protect"] = blueprint.protect
         loop_kwargs["changed_files"] = lambda: _changed_so_far(effective_workdir, state_before)
+    if not blueprint.allow_check_config:
+        # Gap #10: an engine can pass a FAILING check by editing the check's OWN
+        # config (widen an eslint ignore, delete a ruff rule, rewrite a `test`
+        # script to `true`) instead of fixing the code — silently weakening the
+        # law. Bind a per-attempt guard closing over the SAME git-diff callable
+        # `protect` uses plus the pre-run snapshot/referenced set: a hit becomes a
+        # synthetic failed `check-config-integrity` check feeding the repair
+        # addendum (revert the config, fix the code) — so the run is tamper-EVIDENT
+        # and, because a failed run never auto-lands, tamper-RESISTANT. NOT bound
+        # when the Blueprint opts out (`allow_check_config`); degrades to a silent
+        # no-op outside a git repo, exactly like `protect` (no `state_before` ->
+        # `_changed_so_far` returns [] -> no hits).
+        def _check_config_guard() -> CheckResult | None:
+            changed = _changed_so_far(effective_workdir, state_before)
+            hits = checkconfig.detect_check_config_edits(
+                changed, effective_workdir, check_config_snapshot, check_referenced
+            )
+            if not hits:
+                return None
+            hit_list = "\n".join(f"- {hit}" for hit in hits)
+            return CheckResult(
+                name="check-config-integrity",
+                passed=False,
+                output=(
+                    "This attempt modified file(s) that define the checks this run "
+                    "must pass — the law, not the code. Revert them and make the "
+                    "checks pass by fixing the code instead:\n" + hit_list
+                ),
+            )
+
+        loop_kwargs["check_config_guard"] = _check_config_guard
     if manifest.quarantined_checks:
         # T11: a manifest-declared quarantine still runs but can never fail the
         # run or spend a repair turn (see AssuranceLoop.__init__).
@@ -363,7 +406,7 @@ def execute_mandate(
     artifacts: list[str] = []
     capture_warnings: list[str] = []
     with service_ctx:
-        report = loop.run(request=request, checks=resolve_checks(manifest, blueprint))
+        report = loop.run(request=request, checks=checks)
         # T6: `isinstance(service_ctx, _ServiceRun)` is only True when the health
         # poll already proved the app reachable (a failed poll raises out of
         # `service_ctx.__enter__` before this line is ever reached) AND
@@ -430,6 +473,25 @@ def execute_mandate(
     # `expect: shrink` advisory above.
     warnings.extend(capture_warnings)
 
+    # Gap #10: tamper-EVIDENCE is always-on — independent of whether the guard was
+    # bound. Re-run the detector over the run's FINAL changed set so the report and
+    # log show a run that touched the law, whether the guard failed it (a run that
+    # never landed), the Blueprint waived it (`allow_check_config` — a run that
+    # did), or the engine reverted the edit before finishing (final set clean ->
+    # nothing to report). Worded for the waived case so the exception is legible.
+    check_config_edits = checkconfig.detect_check_config_edits(
+        changed_files, effective_workdir, check_config_snapshot, check_referenced
+    )
+    if check_config_edits:
+        touched = ", ".join(check_config_edits)
+        if blueprint.allow_check_config:
+            warnings.append(
+                "this run modified check-defining config (allowed by "
+                f"allow_check_config): {touched}"
+            )
+        else:
+            warnings.append(f"this run modified check-defining config: {touched}")
+
     # Patch the report's blueprint field to the real name (not the truncated directive).
     final_report = RunReport(
         blueprint=blueprint.name,
@@ -445,6 +507,7 @@ def execute_mandate(
         spike=blueprint.mode == "spike",
         warnings=warnings,
         artifacts=artifacts,
+        check_config_edits=check_config_edits,
     )
 
     for message in warnings:

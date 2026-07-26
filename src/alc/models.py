@@ -146,6 +146,17 @@ class Blueprint(BaseModel):
     # the `commit.py` never-raise pattern). None (default) -> no-op,
     # byte-identical.
     capture: str | None = None
+    # Opt-out for the `check-config-integrity` guard (dogfooding gap #10). That
+    # guard makes an Act's edit to a CHECK-DEFINING file (an eslint/ruff config, a
+    # `make`/`just` recipe, a `package.json` script — the LAW a run must pass) a
+    # synthetic failed check, so the engine cannot pass a failing check by silently
+    # weakening it instead of fixing the code. A maintenance Blueprint whose whole
+    # job IS to edit that config sets this True: the guard is then NOT bound (no
+    # synthetic failure), but tamper-EVIDENCE still fires (RunReport.check_config_edits
+    # + a warning), and a Policy Gate warn keeps the standing exception visible. Safe
+    # to trust because Blueprints live under `.alc/`, which the engine cannot commit
+    # to. Default False -> guard active, byte-identical to today.
+    allow_check_config: bool = False
 
 
 class ProvisionSpec(BaseModel):
@@ -471,6 +482,15 @@ class RunReport(BaseModel):
     # before this field existed; an archived report from before this wave
     # still loads.
     artifacts: list[str] = []
+    # Check-defining files this run modified (dogfooding gap #10) — ``"path (reason)"``
+    # strings from `alc.checkconfig.detect_check_config_edits`, computed from the run's
+    # FINAL changed set. Tamper-EVIDENCE that is always-on: populated whether the
+    # `check-config-integrity` guard was active (a run that never landed) or waived by
+    # `Blueprint.allow_check_config` (a run that did) — so an operator can always see a
+    # run that touched the law. Empty (default) -> the run touched no check config, and
+    # an archived report from before this field existed still parses (same additive
+    # contract as `artifacts` above).
+    check_config_edits: list[str] = []
 
     model_config = {"arbitrary_types_allowed": True}
 
