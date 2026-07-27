@@ -238,6 +238,10 @@ class TestExploreRowsAndArchive:
         row = rows[0]
         for key in ("branch", "engine", "tier", "success", "checks", "scorecard", "usage", "diffstat"):
             assert key in row
+        # `live` is a COMPARE-surface concept (branch still exists?) — explore rows
+        # are freshly created, never resolved, so the marker is intentionally absent
+        # here (and `_print_variant_table`'s State line stays guarded on its presence).
+        assert "live" not in row
         assert row["branch"].startswith("alc/variant-1-")
         assert row["success"] is True
         assert row["checks"] == "all passed"

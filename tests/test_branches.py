@@ -13,6 +13,7 @@ from alc.branches import (
     branch_diff,
     delete_branches,
     list_alc_branches,
+    live_variant_branches,
     prune_worktrees,
 )
 
@@ -113,6 +114,50 @@ class TestListAlcBranchesMissingGit:
 
         monkeypatch.setattr("alc.branches.subprocess.run", _raise)
         assert list_alc_branches(repo) == []
+
+
+# ---------------------------------------------------------------------------
+# live_variant_branches
+# ---------------------------------------------------------------------------
+
+
+class TestLiveVariantBranches:
+    def test_returns_exactly_the_variant_branch_short_names(self, tmp_path: Path) -> None:
+        # Only `alc/variant-*` names come back — a non-variant `alc/tick-*` branch
+        # is never in the set, so liveness marks exactly the explore variants.
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "a.txt", "a\n")
+        _make_branch(repo, "alc/variant-2-bbbbbbbb", "b.txt", "b\n")
+        _make_branch(repo, "alc/tick-cccccccc", "c.txt", "c\n")
+
+        assert live_variant_branches(repo) == {
+            "alc/variant-1-aaaaaaaa",
+            "alc/variant-2-bbbbbbbb",
+        }
+
+    def test_no_variant_branches_is_an_empty_set(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/tick-cccccccc", "c.txt", "c\n")
+
+        assert live_variant_branches(repo) == set()
+
+    def test_non_repo_degrades_to_an_empty_set(self, tmp_path: Path) -> None:
+        non_repo = tmp_path / "not-a-repo"
+        non_repo.mkdir()
+
+        assert live_variant_branches(non_repo) == set()
+
+    def test_missing_git_binary_degrades_to_an_empty_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "a.txt", "a\n")
+
+        def _raise(*args, **kwargs):
+            raise FileNotFoundError("git")
+
+        monkeypatch.setattr("alc.branches.subprocess.run", _raise)
+        assert live_variant_branches(repo) == set()
 
 
 # ---------------------------------------------------------------------------

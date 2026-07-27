@@ -54,7 +54,7 @@ from alc.stagepolicy import lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
 from alc.ui.repostatus import repo_status
-from alc.variants import list_all_variants
+from alc.variants import list_all_variants, mark_live
 from alc.worktree import git_toplevel, is_git_repo
 
 
@@ -1056,9 +1056,16 @@ def list_variants(root: Path) -> list[dict]:
     UI Compare view and bare ``alc compare`` can never show a different set (or
     order). This function only resolves the manifest's ``variants_dir``; the seam
     (dir-missing → [], unreadable archives skipped, sorted by stem) lives there.
+
+    Each row is then marked with ``live`` (``variants.mark_live``): the Compare view
+    must not offer Diff/Adopt on a branch-gone (resolved) variant — both would 404.
+    ONE git listing per GET, mirroring bare ``alc compare`` so the CLI and the UI can
+    never drift (pinned by the parity test). Off git → every row resolved.
     """
     manifest = load_manifest(operator_layer(root))
-    return list_all_variants(root / manifest.variants_dir)
+    rows = list_all_variants(root / manifest.variants_dir)
+    repo_root = git_toplevel(root) if is_git_repo(root) else None
+    return mark_live(rows, repo_root)
 
 
 def adopt_variant(root: Path, branch: str) -> dict:

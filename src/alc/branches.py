@@ -101,6 +101,41 @@ def list_alc_branches(repo_root: Path) -> list[AlcBranch]:
     return branches
 
 
+def live_variant_branches(repo_root: Path) -> set[str]:
+    """Names of every `alc/variant-*` branch that still exists — ONE for-each-ref call.
+
+    The Compare surface (bare `alc compare` / the UI view) reads back archived
+    variants that can OUTLIVE their branch: an adopted or discarded variant leaves
+    its archive on disk while its `alc/variant-*` ref is gone. Membership in this
+    set is exactly "the branch is still there" — a variant NOT in it is resolved
+    (Diff/Adopt would 404). One `for-each-ref` answers liveness for the WHOLE table
+    (no per-branch cost), unlike `list_alc_branches`, whose per-branch merged check
+    spends a `rev-list` each — liveness needs only the names.
+
+    ``%(refname:short)`` yields the short name (e.g. `alc/variant-1-a1b2c3d4`) so
+    it matches `variant_row`'s ``branch`` field byte-for-byte.
+
+    Never raises, mirroring this module's contract: a missing ``git`` binary
+    (``FileNotFoundError``) -> ``set()`` (with a house-style stderr note); a
+    non-zero exit — not a git repository -> ``set()``.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(repo_root), "for-each-ref",
+                "refs/heads/alc/variant-*", "--format=%(refname:short)",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("[branches] git not found; no variant branches listed.", file=sys.stderr)
+        return set()
+    if result.returncode != 0:
+        return set()
+    return {line for line in result.stdout.splitlines() if line.strip()}
+
+
 def branch_diff(
     repo_root: Path, branch: str, base: str = "HEAD", max_chars: int = _MAX_DIFF_CHARS
 ) -> BranchDiff | None:

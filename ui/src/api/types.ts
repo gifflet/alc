@@ -242,6 +242,10 @@ export interface VariantRow {
   scorecard: Scorecard | null
   usage: VariantUsage | null
   diffstat: Diffstat | null
+  // Branch still exists in git (actionable). false = resolved: adopted or
+  // discarded, branch gone — Diff/Adopt would 404, so the Compare view shows a
+  // "resolved" status pill instead of those buttons (the row stays as history).
+  live: boolean
 }
 
 /** Outcome of POST /variants/adopt: the winner's MergeReport plus the

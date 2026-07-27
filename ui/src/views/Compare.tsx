@@ -90,7 +90,7 @@ export function Compare() {
       header: '',
       className: 'w-32',
       render: (r) =>
-        r.branch ? (
+        !r.branch ? null : r.live ? (
           <div className="flex items-center justify-end gap-1.5">
             <button
               type="button"
@@ -112,7 +112,14 @@ export function Compare() {
               Adopt
             </button>
           </div>
-        ) : null,
+        ) : (
+          // Resolved: the branch is gone (adopted or discarded), so Diff/Adopt would
+          // both 404 — show a status pill instead of a broken button. The row stays
+          // in the table as history, never filtered out.
+          <div className="flex items-center justify-end" title="Branch gone — already adopted or discarded">
+            <Pill tone="idle">resolved</Pill>
+          </div>
+        ),
     },
   ]
 

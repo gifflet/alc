@@ -104,6 +104,37 @@ class TestListVariants:
         assert by_branch["alc/variant-1-aaaaaaaa"]["engine"] == "mock"
         assert by_branch["alc/variant-1-aaaaaaaa"]["tier"] == "standard"
 
+    def test_rows_carry_live_from_git(
+        self, client, git_registered: str, git_project: Path
+    ) -> None:
+        # The Compare view must not offer Diff/Adopt on a branch-gone row. variant-1's
+        # branch is created FIRST (before the archives are seeded — `_make_branch`
+        # runs `git add -A`); variant-2 is archive-only (its branch never existed).
+        _make_branch(git_project, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        variants_dir = git_project / ".alc" / "variants"
+        _seed_variant(variants_dir, "alc/variant-1-aaaaaaaa")
+        _seed_variant(variants_dir, "alc/variant-2-bbbbbbbb")
+
+        resp = client.get(f"/api/projects/{git_registered}/variants")
+        assert resp.status_code == 200
+        by_branch = {r["branch"]: r for r in resp.json()}
+        assert by_branch["alc/variant-1-aaaaaaaa"]["live"] is True
+        assert by_branch["alc/variant-2-bbbbbbbb"]["live"] is False
+
+    def test_off_git_project_marks_every_row_resolved(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # `registered`/`project` is NOT a git repo — every archived variant is
+        # resolved (live: False), the safe default (no branch = no broken button).
+        variants_dir = project / ".alc" / "variants"
+        _seed_variant(variants_dir, "alc/variant-1-aaaaaaaa")
+
+        resp = client.get(f"/api/projects/{registered}/variants")
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert rows
+        assert all(r["live"] is False for r in rows)
+
 
 class TestAdoptVariant:
     def test_integrates_the_winner_and_discards_siblings(

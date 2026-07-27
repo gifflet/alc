@@ -10,6 +10,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from alc.branches import live_variant_branches
 from alc.models import UnitResult
 
 
@@ -92,6 +93,28 @@ def variant_row(unit: UnitResult, engine: str | None = None, tier: str | None = 
         "usage": asdict(rr.usage) if rr.usage is not None else None,
         "diffstat": rr.diffstat.model_dump() if rr.diffstat is not None else None,
     }
+
+
+def mark_live(rows: list[dict], repo_root: Path | None) -> list[dict]:
+    """Annotate each variant row with ``live``: does its branch still exist in git?
+
+    THE one enricher shared by both Compare surfaces (bare `alc compare` and the UI
+    ``ui.service.list_variants``) so neither offers Diff/Adopt on a branch-gone
+    (resolved) variant — both would 404. A resolved variant stays in the listing as
+    history; ``live`` only tells the surface which actions are still valid.
+
+    ``repo_root=None`` (off git — no repository, no branches) marks EVERY row
+    ``live: False`` — the safe default: no branch means nothing actionable, hence no
+    broken button. A never-committed row (``branch`` is None) is likewise
+    ``live: False``. One `for-each-ref` (``live_variant_branches``) answers the whole
+    table. Mutates *rows* in place and returns them. This is a compare-surface
+    concept only — explore-time rows are deliberately NOT marked.
+    """
+    live = live_variant_branches(repo_root) if repo_root is not None else set()
+    for row in rows:
+        branch = row.get("branch")
+        row["live"] = branch in live if branch else False
+    return rows
 
 
 def list_all_variants(variants_dir: Path) -> list[dict]:

@@ -195,6 +195,13 @@ def _print_variant_table(rows: list[dict]) -> None:
             header += f"  tier={row['tier']}"
         print(header)
         print(f"  Status:    {status}")
+        # The Compare surface marks branch liveness (`mark_live`); explore rows omit
+        # it. Guarded on key presence (like the `"diff" in row` block below) so
+        # explore output is byte-for-byte unchanged. A resolved variant (branch gone)
+        # is history, not an error — the State line just says so.
+        if "live" in row:
+            state = "live" if row["live"] else "resolved (branch gone — adopted or discarded)"
+            print(f"  State:     {state}")
         print(f"  Checks:    {row['checks']}")
         sc = row["scorecard"]
         if sc:
@@ -2481,7 +2488,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
     set (and order) as the UI Compare view (CLI ≡ UI, they can never drift).
     """
     from alc.intake import load_manifest
-    from alc.variants import list_all_variants, read_variant, variant_row
+    from alc.variants import list_all_variants, mark_live, read_variant, variant_row
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
@@ -2519,6 +2526,18 @@ def cmd_compare(args: argparse.Namespace) -> int:
             )
             return 0
 
+    # Mark each row's liveness — does its `alc/variant-*` branch still exist? A
+    # resolved variant (adopted or discarded) has a GONE branch: the Compare
+    # surface must not offer Diff/Adopt on it (both would 404). ONE for-each-ref
+    # for the whole table (via `mark_live`); off git -> every row resolved (no
+    # repository, no branches, nothing actionable). Resolved rows stay in the
+    # listing as history — never filtered — and are NOT errors (exit codes
+    # unchanged). `repo_root` is then reused by the `--diff` block below (KISS).
+    from alc.worktree import git_toplevel, is_git_repo
+
+    repo_root = git_toplevel(Path.cwd()) if is_git_repo(Path.cwd()) else None
+    mark_live(rows, repo_root)
+
     # `--diff` enriches each row with its branch's unified diff so metric-tied
     # variants (identical checks/scorecard/cost) can still be told apart. It
     # reuses the ONE shared helper `branches.branch_diff` — the same read-only
@@ -2526,9 +2545,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     diff_unavailable = False
     if getattr(args, "diff", False):
         from alc.branches import branch_diff
-        from alc.worktree import git_toplevel, is_git_repo
 
-        if not is_git_repo(Path.cwd()):
+        if repo_root is None:
             # No repo -> no diffs; but the summary table the operator asked for
             # still prints. A hard error line + exit 1 signals the degradation.
             print(
@@ -2537,7 +2555,6 @@ def cmd_compare(args: argparse.Namespace) -> int:
             )
             diff_unavailable = True
         else:
-            repo_root = git_toplevel(Path.cwd())
             for row in rows:
                 branch = row.get("branch")
                 if not branch:

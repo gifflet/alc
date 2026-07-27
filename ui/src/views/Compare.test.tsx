@@ -14,6 +14,7 @@ const winner: VariantRow = {
   scorecard: { span: 2, passes: 1, streak: 1, touch: 0 },
   usage: { input_tokens: 100, output_tokens: 50, cost_usd: 1.5 },
   diffstat: { adds: 10, dels: 2, files_deleted: 0 },
+  live: true,
 }
 
 const loser: VariantRow = {
@@ -25,6 +26,7 @@ const loser: VariantRow = {
   scorecard: { span: 1, passes: 1, streak: 0, touch: 0 },
   usage: null,
   diffstat: null,
+  live: true,
 }
 
 beforeEach(() => {
@@ -146,6 +148,24 @@ describe('Compare', () => {
     await userEvent.click(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' }))
 
     expect(await screen.findByText(/diff truncated/i)).toBeInTheDocument()
+  })
+
+  it('shows a resolved pill (no Diff/Adopt) for a branch-gone variant, keeping a live row actionable', async () => {
+    // A resolved variant (adopted or discarded) has a gone branch: Diff/Adopt would
+    // both 404, so it shows a status pill instead — while a live row in the SAME
+    // table keeps both actions.
+    const resolved: VariantRow = { ...loser, branch: 'alc/variant-3-cccccccc', live: false }
+    installFetch({ '/variants': [winner, resolved] })
+    renderWithProviders(<Compare />)
+
+    await screen.findByText('alc/variant-1-aaaaaaaa')
+    // The resolved row shows a status pill and NO action buttons.
+    expect(screen.getByText('resolved')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View diff of alc/variant-3-cccccccc' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Adopt alc/variant-3-cccccccc' })).toBeNull()
+    // The live row in the same table keeps both actions.
+    expect(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Adopt alc/variant-1-aaaaaaaa' })).toBeInTheDocument()
   })
 
   it('surfaces the backend 404 detail when a diff is unavailable', async () => {

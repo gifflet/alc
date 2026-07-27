@@ -165,6 +165,28 @@ class TestCompare:
         assert row["scorecard"]["span"] == 1
         assert row["checks"] == "all passed"
 
+    def test_json_output_carries_live_per_row(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # Explicit-refs --json enriches each row with `live` too: both the refs and
+        # bare paths run through `mark_live` before printing (CLI ≡ UI).
+        repo = _make_git_repo(tmp_path)
+        # v1's branch is real (created before .alc so its commit never sweeps the
+        # untracked operator layer); v2 is archive-only (branch never created).
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(
+            _ns_compare(refs=["alc/variant-1-aaaaaaaa", "alc/variant-2-bbbbbbbb"], json=True)
+        )
+        assert rc == 0
+        by_branch = {row["branch"]: row for row in json.loads(capsys.readouterr().out)}
+        assert by_branch["alc/variant-1-aaaaaaaa"]["live"] is True
+        assert by_branch["alc/variant-2-bbbbbbbb"]["live"] is False
+
     def test_missing_ref_is_reported_on_stderr_and_exits_1(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
@@ -377,6 +399,63 @@ class TestCompareBare:
         out = capsys.readouterr().out
         assert "+winner" in out
         assert "(no diff available — branch missing)" in out
+
+    def test_marks_each_row_live_or_resolved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # v1's branch is real (created before .alc so its commit never sweeps the
+        # untracked operator layer); v2 is archive-only (its branch never existed,
+        # like a variant already adopted or discarded). The table marks one live,
+        # one resolved — the resolved row stays as history, never filtered out.
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")  # branch never created
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare())  # bare
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "State:     live" in out
+        assert "resolved (branch gone" in out
+
+    def test_json_carries_live(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")  # branch never created
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(json=True))
+        assert rc == 0
+        by_branch = {row["branch"]: row for row in json.loads(capsys.readouterr().out)}
+        assert by_branch["alc/variant-1-aaaaaaaa"]["live"] is True
+        assert by_branch["alc/variant-2-bbbbbbbb"]["live"] is False
+
+    def test_off_git_bare_compare_marks_all_resolved_without_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # A bare .alc archive with no git repo around it: no branches exist, so
+        # every row is resolved — but this is HISTORY, not an error (rc 0, no [ERROR];
+        # bare compare never touches the `--diff` non-repo path).
+        project = tmp_path / "not-a-repo"
+        project.mkdir()
+        alc = project / ".alc"
+        alc.mkdir()
+        (alc / "manifest.yaml").write_text(_MANIFEST)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        monkeypatch.chdir(project)
+
+        rc = cmd_compare(_ns_compare(json=True))
+        assert rc == 0
+        captured = capsys.readouterr()
+        rows = json.loads(captured.out)
+        assert all(row["live"] is False for row in rows)
+        assert "[ERROR]" not in captured.err
 
     def test_json_matches_the_ui_lister_exactly(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
