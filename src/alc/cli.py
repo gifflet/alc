@@ -213,6 +213,21 @@ def _print_variant_table(rows: list[dict]) -> None:
             print(
                 f"  Diffstat:  +{ds['adds']}/-{ds['dels']} ({ds['files_deleted']} file(s) deleted)"
             )
+        # The full unified diff, present ONLY under `alc compare --diff` — the key
+        # is absent for `explore`/plain `compare`, so those blocks render exactly
+        # as before (byte-for-byte; no existing test moves). None = the branch is
+        # gone (already adopted/discarded); "" = it exists but changes nothing.
+        if "diff" in row:
+            print("  Diff:")
+            diff_text = row["diff"]
+            if diff_text is None:
+                print("    (no diff available — branch missing)")
+            elif diff_text == "":
+                print("    (no changes vs current branch)")
+            else:
+                print(diff_text.rstrip("\n"))
+                if row.get("diff_truncated"):
+                    print(f"  [diff truncated at {len(diff_text)} chars]")
         print()
 
 
@@ -2480,14 +2495,43 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if missing:
         print(f"[ERROR] no archived variant for: {', '.join(missing)}", file=sys.stderr)
 
+    # `--diff` enriches each row with its branch's unified diff so metric-tied
+    # variants (identical checks/scorecard/cost) can still be told apart. It
+    # reuses the ONE shared helper `branches.branch_diff` — the same read-only
+    # `git diff <base>...<branch>` the UI's `service.variant_diff` calls (DRY).
+    diff_unavailable = False
+    if getattr(args, "diff", False):
+        from alc.branches import branch_diff
+        from alc.worktree import git_toplevel, is_git_repo
+
+        if not is_git_repo(Path.cwd()):
+            # No repo -> no diffs; but the summary table the operator asked for
+            # still prints. A hard error line + exit 1 signals the degradation.
+            print(
+                "[ERROR] not inside a git repository (diffs unavailable)",
+                file=sys.stderr,
+            )
+            diff_unavailable = True
+        else:
+            repo_root = git_toplevel(Path.cwd())
+            for row in rows:
+                branch = row.get("branch")
+                if not branch:
+                    continue  # an uncommitted variant has no branch to diff
+                bd = branch_diff(repo_root, branch)
+                # A missing branch (bd is None) is common AFTER adopt deletes the
+                # losers — per-variant degradation, never a command failure.
+                row["diff"] = bd.text if bd else None
+                row["diff_truncated"] = bool(bd and bd.truncated)
+
     if getattr(args, "json", False):
         from alc.output import emit_json
 
         emit_json(rows)
-        return 1 if missing else 0
+        return 1 if (missing or diff_unavailable) else 0
 
     _print_variant_table(rows)
-    return 1 if missing else 0
+    return 1 if (missing or diff_unavailable) else 0
 
 
 def cmd_adopt(args: argparse.Namespace) -> int:
@@ -3650,6 +3694,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Print the variant table as JSON (machine-readable).",
+    )
+    compare_parser.add_argument(
+        "--diff",
+        action="store_true",
+        default=False,
+        help="Also print each variant's unified diff vs the current branch.",
     )
 
     # alc adopt <branch> [--yes] [--json]

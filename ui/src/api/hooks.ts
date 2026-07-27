@@ -84,6 +84,17 @@ export function useVariants(id: string) {
   })
 }
 
+/** One variant's diff vs the current branch (mirrors `alc compare --diff`).
+ * LAZY: gated on a non-null `branch`, so a diff is fetched only when the
+ * operator expands a row — the Compare table never pays for diffs up front. */
+export function useVariantDiff(id: string, branch: string | null) {
+  return useQuery({
+    queryKey: keys.variantDiff(id, branch ?? ''),
+    queryFn: () => api.getVariantDiff(id, branch as string),
+    enabled: enabled(id) && Boolean(branch),
+  })
+}
+
 export function useSignals(id: string) {
   return useQuery({
     queryKey: keys.signals(id),

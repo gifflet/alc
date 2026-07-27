@@ -22,7 +22,7 @@ from alc import onboard as onboard_core
 from alc import runs as runs_core
 from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
-from alc.branches import delete_branches, list_alc_branches, prune_worktrees
+from alc.branches import branch_diff, delete_branches, list_alc_branches, prune_worktrees
 from alc.checks import audit_checks, check_history
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
@@ -1089,6 +1089,34 @@ def adopt_variant(root: Path, branch: str) -> dict:
         "conflicted": merge_report.conflicted,
         "discarded": discarded,
     }
+
+
+def variant_diff(root: Path, branch: str) -> dict:
+    """Return *branch*'s unified diff vs the current branch (mirrors `alc compare --diff`).
+
+    The Compare view's summary metrics (checks, scorecard, cost, diffstat) can be
+    identical across variants; this exposes the ONE thing that always differs —
+    the actual change — so metric-tied variants can be told apart. Read-only: it
+    only runs ``git diff`` (via ``branches.branch_diff``), never a mutation.
+    """
+    if not branch.startswith("alc/"):
+        raise ApiError(f"not an alc/ branch: {branch}", status=422)
+    if not is_git_repo(root):
+        raise ApiError("not inside a git repository", status=409)
+    repo_root = git_toplevel(root)
+
+    bd = branch_diff(repo_root, branch)
+    if bd is None:
+        # None means the ref is gone (already adopted or discarded), not an empty
+        # diff — so this is a 404 (nothing to show), distinct from a 409 non-repo.
+        raise ApiError(
+            f"no diff available for {branch} (unknown branch — already adopted or discarded?)",
+            status=404,
+        )
+    # The base the three-dot diff was taken against (what the operator sees on
+    # disk); `current_branch` is the same helper `delivery` uses, "HEAD" if unknown.
+    base = current_branch(repo_root) or "HEAD"
+    return {"branch": branch, "base": base, "diff": bd.text, "truncated": bd.truncated}
 
 
 # ---------------------------------------------------------------------------

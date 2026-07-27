@@ -252,6 +252,16 @@ export interface AdoptResult {
   discarded: string[]
 }
 
+/** GET /variants/diff?branch=…: one variant's unified diff vs the current
+ * branch (`base`). `diff` is "" when the branch changes nothing; `truncated`
+ * flags a diff cut to the backend cap (point the reader at `git diff`). */
+export interface VariantDiff {
+  branch: string
+  base: string
+  diff: string
+  truncated: boolean
+}
+
 // ---------------------------------------------------------------------------
 // Signals (models.py Signal) — `alc signal ingest`/`signal list`: typed,
 // external events (an error tracker alert, operator feedback, an issue, a

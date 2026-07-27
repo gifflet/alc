@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Compare } from './Compare'
-import { installFetch, renderWithProviders } from '../test/utils'
+import { installFetch, renderWithProviders, res } from '../test/utils'
 import type { VariantRow } from '../api/types'
 
 const winner: VariantRow = {
@@ -87,5 +87,77 @@ describe('Compare', () => {
 
     const note = await screen.findByText(/left for manual resolution/i)
     expect(note.textContent).toContain('alc/variant-1-aaaaaaaa')
+  })
+
+  it('fetches a variant diff only when its row is expanded, then closes on re-click', async () => {
+    // `/variants/diff` must be matched before the shorter `/variants` prefix.
+    const mock = installFetch({
+      '/variants/diff': {
+        branch: 'alc/variant-1-aaaaaaaa',
+        base: 'main',
+        diff: 'diff --git a/f b/f\n@@ -0,0 +1 @@\n+new line\n',
+        truncated: false,
+      },
+      '/variants': [winner, loser],
+    })
+    renderWithProviders(<Compare />)
+
+    await screen.findByText('alc/variant-1-aaaaaaaa')
+    // LAZY: no diff request until the operator asks for one.
+    expect(mock.calls.some((c) => c.url.includes('/variants/diff'))).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' }))
+
+    const diffCall = mock.calls.find((c) => c.url.includes('/variants/diff'))
+    expect(diffCall?.url).toContain(`branch=${encodeURIComponent('alc/variant-1-aaaaaaaa')}`)
+    expect(await screen.findByText('+new line')).toBeInTheDocument()
+
+    // Clicking the active toggle again closes the panel.
+    await userEvent.click(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' }))
+    expect(screen.queryByText('+new line')).not.toBeInTheDocument()
+  })
+
+  it('shows a plain notice when the variant diff is empty', async () => {
+    installFetch({
+      '/variants/diff': { branch: 'alc/variant-1-aaaaaaaa', base: 'main', diff: '', truncated: false },
+      '/variants': [winner],
+    })
+    renderWithProviders(<Compare />)
+
+    await screen.findByText('alc/variant-1-aaaaaaaa')
+    await userEvent.click(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' }))
+
+    expect(await screen.findByText(/no changes vs main/i)).toBeInTheDocument()
+  })
+
+  it('warns when the variant diff was truncated', async () => {
+    installFetch({
+      '/variants/diff': {
+        branch: 'alc/variant-1-aaaaaaaa',
+        base: 'main',
+        diff: '+partial\n',
+        truncated: true,
+      },
+      '/variants': [winner],
+    })
+    renderWithProviders(<Compare />)
+
+    await screen.findByText('alc/variant-1-aaaaaaaa')
+    await userEvent.click(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' }))
+
+    expect(await screen.findByText(/diff truncated/i)).toBeInTheDocument()
+  })
+
+  it('surfaces the backend 404 detail when a diff is unavailable', async () => {
+    installFetch({
+      '/variants/diff': res(404, { detail: 'no diff available for alc/variant-1-aaaaaaaa (unknown branch — already adopted or discarded?)' }),
+      '/variants': [winner],
+    })
+    renderWithProviders(<Compare />)
+
+    await screen.findByText('alc/variant-1-aaaaaaaa')
+    await userEvent.click(screen.getByRole('button', { name: 'View diff of alc/variant-1-aaaaaaaa' }))
+
+    expect(await screen.findByText(/no diff available for alc\/variant-1-aaaaaaaa/i)).toBeInTheDocument()
   })
 })

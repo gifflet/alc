@@ -20,6 +20,11 @@ export const keys = {
   queue: (id: string) => ['project', id, 'queue'] as const,
   branches: (id: string) => ['project', id, 'branches'] as const,
   variants: (id: string) => ['project', id, 'variants'] as const,
+  // Nested UNDER the `variants` prefix on purpose: the existing adopt /
+  // exec_finished invalidations target `variants`, and prefix-match sweeps this
+  // in too — so an open diff refreshes for free when the archive changes.
+  variantDiff: (id: string, branch: string) =>
+    ['project', id, 'variants', 'diff', branch] as const,
   signals: (id: string) => ['project', id, 'signals'] as const,
   runs: (id: string) => ['project', id, 'runs'] as const,
   run: (id: string, stem: string) => ['project', id, 'run', stem] as const,

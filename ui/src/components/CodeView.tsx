@@ -5,7 +5,7 @@
 // dark and stays trivially safe (React spans, never innerHTML).
 import type { ReactNode } from 'react'
 
-export type CodeLang = 'yaml' | 'markdown' | 'text'
+export type CodeLang = 'yaml' | 'markdown' | 'diff' | 'text'
 
 /** Infer a language from a file suffix (.md -> markdown, .yaml -> yaml). */
 export function langForName(name: string): CodeLang {
@@ -38,9 +38,21 @@ function highlightMarkdown(line: string): ReactNode {
   return <span className="text-muted">{line}</span>
 }
 
+function highlightDiff(line: string): ReactNode {
+  // File/metadata headers first — they also start with +/-/@, so they must be
+  // matched BEFORE the single-char add/del/hunk cases below.
+  if (line.startsWith('+++') || line.startsWith('---')) return <span className="text-faint">{line}</span>
+  if (line.startsWith('diff ') || line.startsWith('index ')) return <span className="text-faint">{line}</span>
+  if (line.startsWith('@@')) return <span className="text-accent">{line}</span>
+  if (line.startsWith('+')) return <span className="text-live">{line}</span>
+  if (line.startsWith('-')) return <span className="text-error">{line}</span>
+  return <span className="text-muted">{line}</span>
+}
+
 function highlight(line: string, lang: CodeLang): ReactNode {
   if (lang === 'yaml') return highlightYaml(line)
   if (lang === 'markdown') return highlightMarkdown(line)
+  if (lang === 'diff') return highlightDiff(line)
   return <span>{line}</span>
 }
 

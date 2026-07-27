@@ -41,6 +41,7 @@ import type {
   Signal,
   SignalIngestPayload,
   TeamRoster,
+  VariantDiff,
   VariantRow,
   Violation,
   WorktreeStatus,
@@ -199,13 +200,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  // Variants (`alc compare` / `alc adopt`)
+  // Variants (`alc compare` / `alc adopt` / `alc compare --diff`)
   getVariants: (id: string) => request<VariantRow[]>(`${proj(id)}/variants`),
   adoptVariant: (id: string, branch: string) =>
     request<AdoptResult>(`${proj(id)}/variants/adopt`, {
       method: 'POST',
       body: JSON.stringify({ branch }),
     }),
+  // `branch` is a query param (it carries a `/`, like /artifacts/file?path=).
+  getVariantDiff: (id: string, branch: string) =>
+    request<VariantDiff>(`${proj(id)}/variants/diff?branch=${encodeURIComponent(branch)}`),
 
   // Signals (`alc signal ingest` / `signal list`)
   getSignals: (id: string) => request<Signal[]>(`${proj(id)}/signals`),

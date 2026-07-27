@@ -5,10 +5,11 @@
 // screen, matching how Runs/Team/Metrics each get one rather than being
 // squeezed into a Dashboard card.
 import { useState } from 'react'
-import { GitCompare, Sparkles } from 'lucide-react'
+import { GitCompare, Sparkles, X } from 'lucide-react'
 import { ApiError } from '../api/client'
-import { useAdoptVariant, useVariants } from '../api/hooks'
+import { useAdoptVariant, useVariantDiff, useVariants } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
+import { CodeView } from '../components/CodeView'
 import { ConfirmDialog } from '../components/Dialog'
 import { DataTable } from '../components/DataTable'
 import type { Column } from '../components/DataTable'
@@ -43,6 +44,10 @@ export function Compare() {
   const [exploring, setExploring] = useState(false)
   const [adopting, setAdopting] = useState<string | null>(null)
   const [adoptResult, setAdoptResult] = useState<AdoptResult | null>(null)
+  // A SINGLE open diff at a time — its branch, or null when none is expanded.
+  // The hook is enabled-gated on this, so the fetch is lazy (only on expand).
+  const [diffBranch, setDiffBranch] = useState<string | null>(null)
+  const diff = useVariantDiff(id, diffBranch)
 
   if (isLoading) return <Loading />
   const rows = data ?? []
@@ -83,18 +88,30 @@ export function Compare() {
     {
       key: 'actions',
       header: '',
-      className: 'w-20',
+      className: 'w-32',
       render: (r) =>
         r.branch ? (
-          <button
-            type="button"
-            aria-label={`Adopt ${r.branch}`}
-            onClick={() => setAdopting(r.branch as string)}
-            disabled={adopt.isPending}
-            className="rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-40"
-          >
-            Adopt
-          </button>
+          <div className="flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              aria-label={`View diff of ${r.branch}`}
+              aria-pressed={diffBranch === r.branch}
+              // Toggling the already-open row closes it — a second click hides the panel.
+              onClick={() => setDiffBranch(diffBranch === r.branch ? null : (r.branch as string))}
+              className="rounded-panel border border-border px-2 py-0.5 text-[11px] text-muted hover:bg-panel aria-pressed:border-accent/60 aria-pressed:text-accent"
+            >
+              Diff
+            </button>
+            <button
+              type="button"
+              aria-label={`Adopt ${r.branch}`}
+              onClick={() => setAdopting(r.branch as string)}
+              disabled={adopt.isPending}
+              className="rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-40"
+            >
+              Adopt
+            </button>
+          </div>
         ) : null,
     },
   ]
@@ -121,6 +138,45 @@ export function Compare() {
       ) : (
         <div className="overflow-x-auto">
           <DataTable columns={columns} rows={rows} rowKey={(r) => r.branch ?? r.checks} />
+        </div>
+      )}
+
+      {diffBranch && (
+        // The actual change behind the summary metrics — so metric-tied variants
+        // (identical checks/scorecard/cost) can still be told apart at a glance.
+        <div className="rounded-panel border border-border">
+          <header className="flex items-center justify-between border-b border-border px-3 py-1.5">
+            <span className="font-mono text-[11px] text-muted">
+              {diffBranch}
+              {diff.data ? ` vs ${diff.data.base}` : ''}
+            </span>
+            <button
+              type="button"
+              aria-label="Close diff"
+              onClick={() => setDiffBranch(null)}
+              className="text-faint hover:text-muted"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </header>
+          <div className="p-3">
+            {diff.isLoading ? (
+              <Loading />
+            ) : apiMessage(diff.error) ? (
+              <p className="text-[11px] text-error">{apiMessage(diff.error)}</p>
+            ) : diff.data?.diff === '' ? (
+              <p className="text-[11px] text-muted">No changes vs {diff.data.base}.</p>
+            ) : diff.data ? (
+              <div className="max-h-[50vh] overflow-auto rounded-panel border border-border">
+                <CodeView code={diff.data.diff} lang="diff" />
+              </div>
+            ) : null}
+            {diff.data?.truncated && (
+              <p className="mt-2 text-[11px] text-warn">
+                Diff truncated — run `git diff {diff.data.base}...{diffBranch}` for the full change.
+              </p>
+            )}
+          </div>
         </div>
       )}
 

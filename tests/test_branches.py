@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from alc.branches import AlcBranch, delete_branches, list_alc_branches, prune_worktrees
+from alc.branches import (
+    AlcBranch,
+    BranchDiff,
+    branch_diff,
+    delete_branches,
+    list_alc_branches,
+    prune_worktrees,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -187,3 +194,80 @@ class TestPruneWorktrees:
 
         monkeypatch.setattr("alc.branches.subprocess.run", _raise)
         assert prune_worktrees(repo) == 0
+
+
+# ---------------------------------------------------------------------------
+# branch_diff
+# ---------------------------------------------------------------------------
+
+
+class TestBranchDiff:
+    def test_returns_the_branch_s_own_changes(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+
+        bd = branch_diff(repo, "alc/variant-1-aaaaaaaa")
+
+        assert isinstance(bd, BranchDiff)
+        assert bd.truncated is False
+        assert "win.txt" in bd.text
+        assert "+winner" in bd.text
+
+    def test_three_dot_excludes_the_base_s_later_commits(self, tmp_path: Path) -> None:
+        # Pins the `...` (merge-base) decision: even after main advances past the
+        # branch point, a variant's diff must show ONLY the variant's own change —
+        # never the base's later, unrelated work.
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        # main moves on AFTER the branch was cut.
+        (repo / "on-main.txt").write_text("advanced\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "main advances")
+
+        bd = branch_diff(repo, "alc/variant-1-aaaaaaaa")
+
+        assert bd is not None
+        assert "+winner" in bd.text
+        assert "on-main.txt" not in bd.text
+
+    def test_truncates_at_max_chars(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(
+            repo,
+            "alc/variant-1-aaaaaaaa",
+            "big.txt",
+            "".join(f"line-{i}\n" for i in range(200)),
+        )
+
+        bd = branch_diff(repo, "alc/variant-1-aaaaaaaa", max_chars=50)
+
+        assert bd is not None
+        assert bd.truncated is True
+        assert len(bd.text) == 50
+
+    def test_missing_branch_returns_none(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+
+        assert branch_diff(repo, "alc/variant-9-ffffffff") is None
+
+    def test_branch_at_base_tip_is_an_empty_diff_not_none(self, tmp_path: Path) -> None:
+        # A branch that adds no commits over the base exists but changes nothing:
+        # BranchDiff("", False) — distinct from None (a branch that isn't there).
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "branch", "alc/noop-00000000")
+
+        bd = branch_diff(repo, "alc/noop-00000000")
+
+        assert bd == BranchDiff("", False)
+
+    def test_missing_git_binary_degrades_to_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+
+        def _raise(*args, **kwargs):
+            raise FileNotFoundError("git")
+
+        monkeypatch.setattr("alc.branches.subprocess.run", _raise)
+        assert branch_diff(repo, "alc/variant-1-aaaaaaaa") is None

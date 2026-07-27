@@ -144,3 +144,43 @@ class TestAdoptVariant:
         )
         assert resp.status_code == 409
         assert "git repository" in resp.json()["detail"]
+
+
+class TestVariantDiff:
+    def test_returns_the_variant_s_diff_against_the_current_branch(
+        self, client, git_registered: str, git_project: Path
+    ) -> None:
+        _make_branch(git_project, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+
+        resp = client.get(
+            f"/api/projects/{git_registered}/variants/diff",
+            params={"branch": "alc/variant-1-aaaaaaaa"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["branch"] == "alc/variant-1-aaaaaaaa"
+        assert body["base"] == "main"
+        assert "+winner" in body["diff"]
+        assert body["truncated"] is False
+
+    def test_unknown_branch_is_404(self, client, git_registered: str) -> None:
+        resp = client.get(
+            f"/api/projects/{git_registered}/variants/diff",
+            params={"branch": "alc/variant-9-ffffffff"},
+        )
+        assert resp.status_code == 404
+
+    def test_rejects_a_non_alc_branch(self, client, git_registered: str) -> None:
+        resp = client.get(
+            f"/api/projects/{git_registered}/variants/diff",
+            params={"branch": "not-alc"},
+        )
+        assert resp.status_code == 422
+
+    def test_outside_git_repo_is_409_not_500(self, client, registered: str) -> None:
+        resp = client.get(
+            f"/api/projects/{registered}/variants/diff",
+            params={"branch": "alc/variant-1-aaaaaaaa"},
+        )
+        assert resp.status_code == 409
+        assert "git repository" in resp.json()["detail"]

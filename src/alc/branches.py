@@ -16,6 +16,12 @@ from pathlib import Path
 # 8-hex-char suffix minted by IsolatedWorktree (`uuid.uuid4().hex[:8]`).
 _BRANCH_RE = re.compile(r"^alc/(?P<label>.+)-(?P<hex>[0-9a-f]{8})$")
 
+# A single variant's diff can be large (a broad refactor touches many files).
+# The Compare view and `alc compare --diff` both render it inline, so cap the
+# payload: past this many characters the transport/render cost outweighs the
+# value of one more hunk, and the reader is pointed at `git diff` for the rest.
+_MAX_DIFF_CHARS = 200_000
+
 
 @dataclass(frozen=True)
 class AlcBranch:
@@ -25,6 +31,14 @@ class AlcBranch:
     label: str           # provenance segment, e.g. "run"/"flow"/"tick"/"conduct"
     committed_at: float  # epoch seconds of the branch tip's committer date
     merged: bool         # already contained in HEAD
+
+
+@dataclass(frozen=True)
+class BranchDiff:
+    """The unified diff of one `alc/*` branch against its merge-base with a base ref."""
+
+    text: str        # unified diff; "" when the branch changes nothing vs the merge-base
+    truncated: bool  # True when `text` was cut to `max_chars` (more diff exists)
 
 
 def _label_for(name: str) -> str:
@@ -85,6 +99,54 @@ def list_alc_branches(repo_root: Path) -> list[AlcBranch]:
             )
         )
     return branches
+
+
+def branch_diff(
+    repo_root: Path, branch: str, base: str = "HEAD", max_chars: int = _MAX_DIFF_CHARS
+) -> BranchDiff | None:
+    """Return the unified diff of *branch* against its merge-base with *base*.
+
+    Uses the THREE-dot form ``git diff <base>...<branch>``: git diffs *branch*
+    against the merge-base of the two refs, so the result shows ONLY the
+    branch's own changes even after *base* has advanced past the branch point —
+    the base's later, unrelated commits never bleed into a variant's diff. This
+    is the same reachability the operator's ``delivery.changed_files`` relies on.
+
+    Read-only by construction: ``--no-ext-diff`` blocks any user-configured
+    external diff tool from running, ``--no-color`` keeps the bytes clean for
+    the transport/render layers, and the trailing ``--`` disambiguates the ref
+    from any path of the same name. Nothing here mutates the repository.
+
+    Never raises, mirroring this module's contract:
+      * a missing ``git`` binary (``FileNotFoundError``) -> ``None``;
+      * a non-zero exit — an unknown or ambiguous *branch*/*base* ref -> ``None``.
+    ``None`` therefore means "no diff is computable" (the branch is gone —
+    already adopted or discarded). A branch that exists but adds nothing over
+    the merge-base yields ``BranchDiff("", False)``, a DISTINCT, well-defined
+    "exists, empty diff" — never conflated with the missing-branch ``None``.
+
+    Diffs past *max_chars* are truncated (``text[:max_chars]``, ``truncated``
+    True) so one oversized variant can never bloat the response.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git", "-C", str(repo_root), "diff", "--no-color", "--no-ext-diff",
+                f"{base}...{branch}", "--",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("[branches] git not found; no diff available.", file=sys.stderr)
+        return None
+    if result.returncode != 0:
+        # Ref can't be read (missing/ambiguous) — degrade to "no diff computable".
+        return None
+    text = result.stdout
+    if len(text) > max_chars:
+        return BranchDiff(text[:max_chars], True)
+    return BranchDiff(text, False)
 
 
 def delete_branches(repo_root: Path, names: list[str]) -> list[str]:

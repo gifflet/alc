@@ -95,7 +95,7 @@ def _seed_variant(
 
 
 def _ns_compare(**overrides) -> argparse.Namespace:
-    defaults = {"refs": [], "json": False}
+    defaults = {"refs": [], "json": False, "diff": False}
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
 
@@ -193,6 +193,92 @@ class TestCompare:
         out, err = capsys.readouterr()
         assert "alc/variant-1-aaaaaaaa" in out
         assert "alc/variant-9-ffffffff" in err
+
+
+class TestCompareDiff:
+    def test_diff_flag_prints_each_variant_s_diff(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        # Create the real branch BEFORE the .alc dir exists, so the branch's
+        # commit never sweeps in the (untracked) operator layer.
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(refs=["alc/variant-1-aaaaaaaa"], diff=True))
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Diff:" in out
+        assert "+winner" in out
+
+    def test_diff_of_a_deleted_branch_degrades_per_variant_not_fatal(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # The archive outlives its branch (adopt deletes losers). A missing
+        # branch is per-variant degradation, not a command failure.
+        repo = _make_git_repo(tmp_path)
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")  # branch never created
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(refs=["alc/variant-1-aaaaaaaa"], diff=True))
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "(no diff available" in out
+
+    def test_json_with_diff_carries_diff_fields(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(
+            _ns_compare(refs=["alc/variant-1-aaaaaaaa"], json=True, diff=True)
+        )
+        assert rc == 0
+        row = json.loads(capsys.readouterr().out)[0]
+        assert "+winner" in row["diff"]
+        assert row["diff_truncated"] is False
+
+    def test_plain_json_carries_no_diff_fields(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(refs=["alc/variant-1-aaaaaaaa"], json=True))
+        assert rc == 0
+        row = json.loads(capsys.readouterr().out)[0]
+        assert "diff" not in row
+        assert "diff_truncated" not in row
+
+    def test_diff_outside_git_errors_on_stderr_but_still_prints_the_table(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # A bare .alc archive with no git repo around it: the diffs are
+        # unavailable, but the summary table the operator asked for still prints.
+        project = tmp_path / "not-a-repo"
+        project.mkdir()
+        alc = project / ".alc"
+        alc.mkdir()
+        (alc / "manifest.yaml").write_text(_MANIFEST)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        monkeypatch.chdir(project)
+
+        rc = cmd_compare(_ns_compare(refs=["alc/variant-1-aaaaaaaa"], diff=True))
+        assert rc == 1
+        out, err = capsys.readouterr()
+        assert "[ERROR]" in err
+        assert "not inside a git repository" in err
+        assert "alc/variant-1-aaaaaaaa" in out  # the table still printed
 
 
 # ---------------------------------------------------------------------------
