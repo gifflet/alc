@@ -446,6 +446,17 @@ def _process_task_body(
     done_dir = queue_dir / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
 
+    # Propagate the task's provenance tag (a demand a loop's run_replenish
+    # stamped) onto the report's archetype-LESS stages, so Mix Health attributes
+    # a drain through an archetype-less blueprint instead of the `(none)` bucket.
+    # Precedence: a Blueprint-declared stage archetype WINS — the tag only fills
+    # a None gap, never rewriting deliberate taxonomy. Strictly additive: no
+    # existing attribution ever moves.
+    if qt is not None and qt.archetype is not None:
+        for stage_report in report.stages:
+            if stage_report.archetype is None:
+                stage_report.archetype = qt.archetype
+
     (done_dir / f"{task_file.stem}.report.json").write_text(
         report.model_dump_json(indent=2)
     )

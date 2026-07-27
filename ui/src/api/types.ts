@@ -380,15 +380,27 @@ export interface ArchetypeSpend {
   net_lines: number
 }
 
+/** A stage CORE archetype with zero archived runs, plus the one actionable
+ * hint for it: hire it (not on the team), run its loop (hired, brought a loop),
+ * or route a demand through its blueprints (hired, no loop). Derived by
+ * stagepolicy.mix_health so the CLI and the UI render the same guidance. */
+export interface IdleCoreArchetype {
+  archetype: string
+  hired: boolean
+  hint: string
+}
+
 /** `stage`/`core`/`secondary` are null/[] when no stage is declared: the
  * breakdown is still built, just never judged against a target mix.
- * `total_runs === 0` means no archived report exists yet — "no data yet". */
+ * `total_runs === 0` means no archived report exists yet — "no data yet".
+ * `idle_core` names the core archetypes with no runs and the hint for each. */
 export interface MixHealth {
   stage: string | null
   core: string[]
   secondary: string[]
   by_archetype: ArchetypeSpend[]
   total_runs: number
+  idle_core: IdleCoreArchetype[]
 }
 
 export interface TeamRoster {

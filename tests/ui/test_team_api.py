@@ -219,3 +219,20 @@ class TestMixHealth:
         assert health["total_runs"] == 1
         by_archetype = {e["archetype"]: e for e in health["by_archetype"]}
         assert by_archetype["builder"]["cost_usd"] == 0.5
+
+    def test_idle_core_hints_exercising_a_hired_but_unexercised_archetype(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # /team must carry the idle-core hint the CLI shows — one computation,
+        # both surfaces. maintainer is hired (brought deps-refresh) but idle.
+        manifest_path = project / ".alc" / "manifest.yaml"
+        manifest_path.write_text(manifest_path.read_text() + "\nstage: strong-pmf\n")
+        client.post(
+            f"/api/projects/{registered}/team/hire", json={"archetype": "maintainer"}
+        )
+        _write_archive(project, "r1", archetype="sweeper")  # so total_runs > 0
+
+        body = client.get(f"/api/projects/{registered}/team").json()
+        idle = {e["archetype"]: e for e in body["mix_health"]["idle_core"]}
+        assert idle["maintainer"]["hired"] is True
+        assert idle["maintainer"]["hint"] == "run its loop (alc loop deps-refresh)"

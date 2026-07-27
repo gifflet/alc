@@ -97,6 +97,13 @@ class TestPackFilesMaintainer:
         assert "--depends-on" in task
         assert "--id" in task
 
+    def test_deps_refresh_loop_declares_the_maintainer_archetype(self) -> None:
+        # The loop's scheduled spend IS maintainer work; the tag is what lets a
+        # drain through an archetype-less blueprint attribute its runs correctly
+        # (instead of falling into the `(none)` bucket).
+        content = pack_files("maintainer", stacks=[])[".alc/loops/deps-refresh.yaml"]
+        assert yaml.safe_load(content)["archetype"] == "maintainer"
+
 
 # ---------------------------------------------------------------------------
 # Loading is strict: flows, specialists, and loops are pydantic-validated
@@ -130,6 +137,7 @@ class TestMaintainerPackLoadsThroughTheRealLoaders:
         assert loop_def.replenish.kind == "specialist"
         assert loop_def.replenish.ref == "deps"
         assert loop_def.stop.max_cycles > 0
+        assert loop_def.archetype == "maintainer"
 
     def test_patrol_loads_as_a_flow_definition(self, tmp_path: Path) -> None:
         operator_layer = _hire(tmp_path)

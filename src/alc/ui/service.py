@@ -814,7 +814,13 @@ def team_roster(root: Path) -> dict:
         members.append({"archetype": archetype, "files": present, "loops": member_loops})
 
     done_dir = root / manifest.queue_dir / "done"
-    health = mix_health(done_dir, manifest)
+    # Same roster mapping the CLI passes (hired archetype -> its loop names), so
+    # `/team` and `alc team status` derive the SAME idle-core hints from one
+    # computation. asdict serialises the nested idle_core for free.
+    member_roster = {
+        m["archetype"]: [lp["name"] for lp in m["loops"]] for m in members
+    }
+    health = mix_health(done_dir, manifest, roster=member_roster)
     return {"members": members, "mix_health": asdict(health)}
 
 

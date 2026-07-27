@@ -12,6 +12,8 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 from alc.events import bind_run_log, new_run_log_path
 from alc.intake import load_specialist
 from alc.models import (
@@ -203,12 +205,19 @@ def _warn_if_budget_unmeasurable(
 # ---------------------------------------------------------------------------
 
 
-def _count_queue_files(manifest: Manifest, operator_layer: Path) -> int:
-    """Count pending *.yaml task files at the top of the queue directory."""
+def _pending_queue_files(manifest: Manifest, operator_layer: Path) -> set[str]:
+    """Return the NAMES of pending *.yaml task files at the top of the queue dir.
+
+    A set of filenames (not a count) so run_replenish can diff a before/after
+    snapshot and identify the demands the replenish ITSELF created (after -
+    before) — the files to stamp with the loop's archetype. Mirrors the glob
+    ``_count_queue_files`` used; the enqueued count is still ``len(after) -
+    len(before)``, byte-identical to the old count-based delta.
+    """
     queue_dir = operator_layer.parent / manifest.queue_dir
     if not queue_dir.exists():
-        return 0
-    return len(list(queue_dir.glob("*.yaml")))
+        return set()
+    return {p.name for p in queue_dir.glob("*.yaml")}
 
 
 def _new_paths_since(
@@ -318,7 +327,7 @@ def run_replenish(
     # Each replenish that runs a mandate/flow binds its own run log so the loop's
     # planning step is as observable as a demand drain (kind "replenish").
     runs_dir = operator_layer.parent / manifest.runs_dir
-    before = _count_queue_files(manifest, operator_layer)
+    before = _pending_queue_files(manifest, operator_layer)
 
     if replenish.kind == "specialist":
         from alc.specialist import run_specialist
@@ -621,8 +630,29 @@ def run_replenish(
         # RunReport; count it as one for the engine_calls cap (approximate).
         delta["engine_calls"] += 1
 
-    after = _count_queue_files(manifest, operator_layer)
-    enqueued = max(0, after - before)
+    after = _pending_queue_files(manifest, operator_layer)
+    enqueued = max(0, len(after) - len(before))
+
+    # Stamp the loop's archetype onto the demands THIS replenish created (the new
+    # files, after - before) so a later drain through an archetype-less blueprint
+    # still attributes its runs to the right archetype — the maintainer's
+    # deps-refresh no longer reports runs=0 despite real work. Edit the RAW yaml
+    # dict, NOT a QueueTask round-trip: pydantic would drop any key a
+    # hand-written/self-enqueued task file carries that QueueTask does not model.
+    # Never-raise per file: a malformed demand must not break the replenish.
+    if loop_def.archetype is not None:
+        queue_dir = operator_layer.parent / manifest.queue_dir
+        for name in after - before:
+            path = queue_dir / name
+            try:
+                raw = yaml.safe_load(path.read_text())
+                if not isinstance(raw, dict) or "archetype" in raw:
+                    continue  # non-dict, or an archetype already declared -> leave it
+                raw["archetype"] = loop_def.archetype
+                path.write_text(yaml.safe_dump(raw, sort_keys=True))
+            except (OSError, yaml.YAMLError):
+                continue
+
     return enqueued, delta, replenish_ok
 
 

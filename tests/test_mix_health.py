@@ -11,8 +11,18 @@ from pathlib import Path
 
 from alc.cli import cmd_team
 from alc.models import Manifest
+from alc.packs import pack_files
 from alc.scaffold import scaffold
 from alc.stagepolicy import mix_health
+
+
+def _hire_packs(project_root: Path, *archetypes: str) -> None:
+    """Write the pack files for each archetype onto disk (hire it)."""
+    for archetype in archetypes:
+        for rel_path, text in pack_files(archetype, stacks=[]).items():
+            target = project_root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
 
 
 def _manifest(**overrides) -> Manifest:
@@ -192,6 +202,83 @@ class TestMixHealthStageJudgement:
         assert health.secondary == []
 
 
+class TestMixHealthIdleCore:
+    """idle_core — a core archetype with ZERO archived runs, and the RIGHT hint:
+    hire it (not on the team), exercise its loop (hired, brought a loop), or route
+    a demand through its blueprints (hired, no loop). The roster maps a hired
+    archetype -> the loop names its pack brought.
+    """
+
+    def test_hired_with_loop_hints_to_run_the_loop(self, tmp_path: Path) -> None:
+        done_dir = tmp_path / "done"
+        # sweeper exercised; maintainer hired (brought deps-refresh) but idle.
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        health = mix_health(
+            done_dir,
+            _manifest(stage="strong-pmf"),
+            roster={"sweeper": ["sweep"], "maintainer": ["deps-refresh"], "grower": []},
+        )
+        maintainer = next(e for e in health.idle_core if e.archetype == "maintainer")
+        assert maintainer.hired is True
+        assert maintainer.hint == "run its loop (alc loop deps-refresh)"
+
+    def test_hired_without_loops_hints_to_route_a_demand(self, tmp_path: Path) -> None:
+        done_dir = tmp_path / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        health = mix_health(
+            done_dir,
+            _manifest(stage="strong-pmf"),
+            roster={"sweeper": ["sweep"], "maintainer": ["deps-refresh"], "grower": []},
+        )
+        grower = next(e for e in health.idle_core if e.archetype == "grower")
+        assert grower.hired is True
+        assert grower.hint == (
+            'route a demand through its blueprints '
+            '(alc conduct "<goal>" or alc enqueue <flow> "<task>")'
+        )
+
+    def test_absent_from_roster_hints_to_hire(self, tmp_path: Path) -> None:
+        done_dir = tmp_path / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        # maintainer/grower NOT in the roster -> not hired.
+        health = mix_health(
+            done_dir,
+            _manifest(stage="strong-pmf"),
+            roster={"sweeper": ["sweep"]},
+        )
+        maintainer = next(e for e in health.idle_core if e.archetype == "maintainer")
+        assert maintainer.hired is False
+        assert maintainer.hint == "alc team hire maintainer"
+
+    def test_a_core_with_runs_never_appears_in_idle_core(self, tmp_path: Path) -> None:
+        done_dir = tmp_path / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        health = mix_health(
+            done_dir,
+            _manifest(stage="strong-pmf"),
+            roster={"sweeper": ["sweep"], "maintainer": ["deps-refresh"], "grower": []},
+        )
+        assert "sweeper" not in {e.archetype for e in health.idle_core}
+
+    def test_no_stage_yields_empty_idle_core(self, tmp_path: Path) -> None:
+        done_dir = tmp_path / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "builder"}])
+        health = mix_health(done_dir, _manifest(), roster={"builder": []})
+        assert health.idle_core == []
+
+    def test_roster_none_treats_every_idle_core_as_not_hired(self, tmp_path: Path) -> None:
+        # Legacy/tests: roster=None means membership is unknown -> not hired,
+        # byte-identical to the pre-roster "alc team hire X" behavior.
+        done_dir = tmp_path / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        health = mix_health(done_dir, _manifest(stage="strong-pmf"))
+        idle = {e.archetype: e for e in health.idle_core}
+        assert set(idle) == {"grower", "maintainer"}
+        assert all(not e.hired for e in idle.values())
+        assert idle["maintainer"].hint == "alc team hire maintainer"
+        assert idle["grower"].hint == "alc team hire grower"
+
+
 # ---------------------------------------------------------------------------
 # `alc team status` — the CLI surface
 # ---------------------------------------------------------------------------
@@ -274,6 +361,45 @@ class TestCmdTeamStatusMixHealth:
 
         assert cmd_team(_ns(team_action="status")) == 0
         out = capsys.readouterr().out
-        # growth core = builder + sweeper + grower; only builder was ever run.
+        # growth core = builder + sweeper + grower; only builder was ever run,
+        # and neither sweeper nor grower is hired -> hire hints.
         assert "alc team hire sweeper" in out
         assert "alc team hire grower" in out
+
+    def test_human_output_hints_exercising_an_already_hired_idle_core(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        # Bug (1): a HIRED-but-idle core archetype must be told to EXERCISE it,
+        # never to (re-)hire it. maintainer + grower are hired; only sweeper ran.
+        scaffold(tmp_path)
+        _hire_packs(tmp_path, "maintainer", "grower")
+        done_dir = tmp_path / ".alc" / "queue" / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        manifest_path = tmp_path / ".alc" / "manifest.yaml"
+        manifest_path.write_text(manifest_path.read_text() + "\nstage: strong-pmf\n")
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_team(_ns(team_action="status")) == 0
+        out = capsys.readouterr().out
+        assert "hired but never exercised" in out
+        assert "alc loop deps-refresh" in out
+        # It must NOT tell you to hire what is already on the team.
+        assert "alc team hire maintainer" not in out
+        assert "alc team hire grower" not in out
+
+    def test_json_carries_idle_core(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        scaffold(tmp_path)
+        _hire_packs(tmp_path, "maintainer", "grower")
+        done_dir = tmp_path / ".alc" / "queue" / "done"
+        _write_report(done_dir, "a", stages=[{"archetype": "sweeper"}])
+        manifest_path = tmp_path / ".alc" / "manifest.yaml"
+        manifest_path.write_text(manifest_path.read_text() + "\nstage: strong-pmf\n")
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_team(_ns(team_action="status", json=True)) == 0
+        payload = json.loads(capsys.readouterr().out)
+        idle = {e["archetype"]: e for e in payload["mix_health"]["idle_core"]}
+        assert idle["maintainer"]["hired"] is True
+        assert idle["maintainer"]["hint"] == "run its loop (alc loop deps-refresh)"

@@ -1312,7 +1312,6 @@ def _print_mix_health(health) -> None:
             f"core={health.core} secondary={health.secondary}):"
         )
 
-    seen: set[str | None] = set()
     for entry in health.by_archetype:
         label = ""
         if health.stage is not None:
@@ -1323,19 +1322,25 @@ def _print_mix_health(health) -> None:
             elif entry.archetype is not None:
                 label = "  [off-mix]"
         name = entry.archetype or "(none)"
-        seen.add(entry.archetype)
         print(
             f"  {name:<12} runs={entry.runs} span={entry.span} "
             f"cost_usd={entry.cost_usd:.4f} net_lines={entry.net_lines:+d}{label}"
         )
 
-    if health.stage is not None:
-        for archetype in health.core:
-            if archetype not in seen:
-                print(
-                    f"  {archetype:<12} runs=0 — core archetype never exercised yet; "
-                    f"hint: alc team hire {archetype}"
-                )
+    # A core archetype with zero runs, and the hint the report already derived
+    # (hire it, exercise its loop, or route a demand) — never re-derived here so
+    # the CLI and the UI can never disagree about what to advise.
+    for idle in health.idle_core:
+        if idle.hired:
+            print(
+                f"  {idle.archetype:<12} runs=0 — core archetype hired but never "
+                f"exercised; hint: {idle.hint}"
+            )
+        else:
+            print(
+                f"  {idle.archetype:<12} runs=0 — core archetype not hired yet; "
+                f"hint: {idle.hint}"
+            )
 
 
 def _team_roster(args: argparse.Namespace) -> int:
@@ -1383,7 +1388,14 @@ def _team_roster(args: argparse.Namespace) -> int:
         from alc.stagepolicy import mix_health
 
         done_dir = project_root / manifest.queue_dir / "done"
-        health = mix_health(done_dir, manifest)
+        # Map each hired archetype to the loop names its pack brought, so
+        # mix_health can hint "run its loop" for a hired-but-idle core (never
+        # "hire it" for something already on the team). Built from the roster we
+        # already assembled — no extra IO.
+        member_roster = {
+            m["archetype"]: [lp["name"] for lp in m["loops"]] for m in roster
+        }
+        health = mix_health(done_dir, manifest, roster=member_roster)
 
     if getattr(args, "json", False):
         from dataclasses import asdict

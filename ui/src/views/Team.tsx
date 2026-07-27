@@ -147,6 +147,18 @@ function MixHealthSection({ health }: { health: MixHealth }) {
           </tbody>
         </table>
       </div>
+      {health.idle_core.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {health.idle_core.map((idle) => (
+            <li key={idle.archetype} className="flex items-center gap-1.5 text-[12px]">
+              <Pill tone="warn">{idle.archetype}</Pill>
+              <span className="text-muted">
+                {idle.hired ? 'hired but never exercised' : 'not hired'} — {idle.hint}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

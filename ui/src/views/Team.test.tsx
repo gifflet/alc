@@ -6,7 +6,14 @@ import { installFetch, renderWithProviders } from '../test/utils'
 import { uiStore } from '../app/uiStore'
 import type { TeamRoster } from '../api/types'
 
-const emptyHealth = { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0 }
+const emptyHealth = {
+  stage: null,
+  core: [],
+  secondary: [],
+  by_archetype: [],
+  total_runs: 0,
+  idle_core: [],
+}
 
 const oneHiredMember: TeamRoster = {
   members: [
@@ -151,6 +158,7 @@ describe('Team Mix Health', () => {
         secondary: [],
         by_archetype: [{ archetype: 'builder', runs: 2, span: 4, cost_usd: 1.5, net_lines: 12 }],
         total_runs: 2,
+        idle_core: [],
       },
     }
     installFetch({ '/team': roster })
@@ -175,6 +183,7 @@ describe('Team Mix Health', () => {
           { archetype: 'prototyper', runs: 1, span: 1, cost_usd: 0.1, net_lines: -5 },
         ],
         total_runs: 4,
+        idle_core: [],
       },
     }
     installFetch({ '/team': roster })
@@ -183,5 +192,35 @@ describe('Team Mix Health', () => {
     expect(await screen.findByText('growth')).toBeInTheDocument()
     expect(screen.getByText('[core]')).toBeInTheDocument()
     expect(screen.getByText('[off-mix]')).toBeInTheDocument()
+  })
+
+  it('lists an idle-core row: hired-but-idle exercises, not-hired hires', async () => {
+    const roster: TeamRoster = {
+      members: [],
+      mix_health: {
+        stage: 'strong-pmf',
+        core: ['sweeper', 'grower', 'maintainer'],
+        secondary: ['builder'],
+        by_archetype: [{ archetype: 'sweeper', runs: 2, span: 4, cost_usd: 0.5, net_lines: 3 }],
+        total_runs: 2,
+        idle_core: [
+          {
+            archetype: 'maintainer',
+            hired: true,
+            hint: 'run its loop (alc loop deps-refresh)',
+          },
+          { archetype: 'grower', hired: false, hint: 'alc team hire grower' },
+        ],
+      },
+    }
+    installFetch({ '/team': roster })
+    renderWithProviders(<Team />)
+
+    // Hired-but-idle: told to EXERCISE it, with the loop hint.
+    expect(await screen.findByText(/hired but never exercised/)).toBeInTheDocument()
+    expect(screen.getByText(/alc loop deps-refresh/)).toBeInTheDocument()
+    // Not hired: told to hire it.
+    expect(screen.getByText(/not hired/)).toBeInTheDocument()
+    expect(screen.getByText(/alc team hire grower/)).toBeInTheDocument()
   })
 })

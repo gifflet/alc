@@ -359,6 +359,7 @@ knowledge_path: .alc/specialists/deps.knowledge.md
 
 _MAINTAINER_DEPS_REFRESH_LOOP = """\
 name: deps-refresh
+archetype: maintainer
 replenish:
   kind: specialist
   ref: deps

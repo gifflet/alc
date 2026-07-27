@@ -702,6 +702,14 @@ class QueueTask(BaseModel):
     # who goes first among tasks that are ALREADY ready. Default 0 = today's
     # filename-only ordering (byte-identical).
     priority: int = 0
+    # Provenance tag: the archetype whose spend this task represents (stamped by
+    # a loop's run_replenish from LoopDefinition.archetype). The queue drain
+    # propagates it onto the archived report's archetype-less stages so Mix
+    # Health attributes them correctly. Legacy/hand-written task files omit it ->
+    # None. Retries preserve it (build_retry_task's model_copy carries it
+    # forward). Reporting only, the same zero-runtime-effect contract as
+    # `Blueprint.archetype`.
+    archetype: str | None = None
 
     def unit_name(self) -> str:
         """Return the unit name to dispatch: ``name`` when set, else ``flow``."""
@@ -1040,6 +1048,13 @@ class LoopDefinition(BaseModel):
     stop: LoopStop
     failure: LoopFailure = LoopFailure()
     drain: LoopDrain = LoopDrain()
+    # The archetype whose spend this loop's scheduled work represents;
+    # run_replenish stamps it onto the demands the replenish creates so a drain
+    # through an archetype-less blueprint still attributes its runs correctly
+    # (instead of the `(none)` bucket). Reporting only, the same
+    # zero-runtime-effect contract as `Blueprint.archetype`. None (default) ->
+    # no stamp, byte-identical for a loop from before this field existed.
+    archetype: str | None = None
 
 
 class LoopState(BaseModel):

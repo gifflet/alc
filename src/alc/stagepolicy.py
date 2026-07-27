@@ -15,6 +15,7 @@
 # turning into paperwork.
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -178,6 +179,25 @@ class ArchetypeSpend:
 
 
 @dataclass
+class IdleCoreArchetype:
+    """A stage CORE archetype with ZERO archived runs, plus the ONE actionable
+    hint for it — carried IN the report so the CLI and the UI render the same
+    guidance from one computation, never each re-deriving it (the bug that let
+    the CLI hint "hire X" for an archetype already on the team).
+
+    `hired` and `hint` are derived from the roster passed to `mix_health`
+    (hired-archetype -> its loop names): not hired -> hire it; hired WITH a loop
+    -> run that loop; hired with NO loop -> route a demand through its
+    blueprints. Reporting only, the same zero-runtime-effect contract as
+    `Blueprint.archetype`.
+    """
+
+    archetype: str
+    hired: bool
+    hint: str
+
+
+@dataclass
 class MixHealthReport:
     """`alc team status`'s answer to "is the autonomous work the right work
     for this product's stage?" (roadmap-phase-4.md T6, the essay's central
@@ -185,6 +205,9 @@ class MixHealthReport:
     declared: the breakdown is still built, just never judged against a mix.
     `total_runs == 0` means no archived report exists yet — render that as
     "no data yet", never a division by zero or a misleading all-zero table.
+    `idle_core` names the core archetypes with no runs and the right hint for
+    each (see IdleCoreArchetype); empty when no stage is declared. Additive
+    default keeps every existing consumer identical.
     """
 
     stage: str | None
@@ -192,15 +215,26 @@ class MixHealthReport:
     secondary: list[str] = field(default_factory=list)
     by_archetype: list[ArchetypeSpend] = field(default_factory=list)
     total_runs: int = 0
+    idle_core: list[IdleCoreArchetype] = field(default_factory=list)
 
 
-def mix_health(done_dir: Path, manifest: Manifest) -> MixHealthReport:
+def mix_health(
+    done_dir: Path,
+    manifest: Manifest,
+    roster: Mapping[str, Sequence[str]] | None = None,
+) -> MixHealthReport:
     """Aggregate archived reports (`done_dir/*.report.json`) by `RunReport.archetype`.
 
     Mirrors `audit.audit_window`'s read pattern: an unreadable or invalid
     archive is skipped, never fatal; a missing/empty `done_dir` yields a
     report with `total_runs == 0` (no data yet, not zeroed statistics for
     archetypes that were never even attempted).
+
+    ``roster`` maps each hired archetype to the loop names its pack brought; it
+    is what turns a bare "core X never ran" into the correct hint (hire it /
+    run its loop / route a demand). ``roster=None`` (legacy callers, tests)
+    means membership is UNKNOWN -> every idle core is treated as not hired,
+    byte-identical to the pre-roster "alc team hire X" behavior.
     """
     buckets: dict[str | None, ArchetypeSpend] = {}
     total_runs = 0
@@ -227,12 +261,34 @@ def mix_health(done_dir: Path, manifest: Manifest) -> MixHealthReport:
     mix = effective_mix(manifest)
     by_archetype = sorted(buckets.values(), key=lambda b: (-b.runs, b.archetype or ""))
 
+    idle_core: list[IdleCoreArchetype] = []
+    for archetype in (mix.get("core", []) if mix else []):
+        if archetype in buckets:
+            continue  # it was exercised — never idle
+        if roster is not None and archetype in roster:
+            loops = roster[archetype]
+            if loops:
+                hint = f"run its loop (alc loop {loops[0]})"
+            else:
+                hint = (
+                    'route a demand through its blueprints '
+                    '(alc conduct "<goal>" or alc enqueue <flow> "<task>")'
+                )
+            idle_core.append(IdleCoreArchetype(archetype=archetype, hired=True, hint=hint))
+        else:
+            idle_core.append(
+                IdleCoreArchetype(
+                    archetype=archetype, hired=False, hint=f"alc team hire {archetype}"
+                )
+            )
+
     return MixHealthReport(
         stage=manifest.stage,
         core=list(mix.get("core", [])) if mix else [],
         secondary=list(mix.get("secondary", [])) if mix else [],
         by_archetype=by_archetype,
         total_runs=total_runs,
+        idle_core=idle_core,
     )
 
 

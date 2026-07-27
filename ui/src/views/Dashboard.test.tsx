@@ -143,7 +143,7 @@ describe('Mix Health card', () => {
   it('shows "no data" when total_runs is 0', async () => {
     installFetch({
       ...dashboardStubs,
-      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0 } },
+      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0, idle_core: [] } },
     })
     renderWithProviders(<Dashboard />)
 
@@ -162,6 +162,7 @@ describe('Mix Health card', () => {
           secondary: [],
           by_archetype: [{ archetype: 'builder', runs: 2, span: 4, cost_usd: 1.5, net_lines: 12 }],
           total_runs: 2,
+          idle_core: [],
         },
       },
     })
@@ -184,6 +185,7 @@ describe('Mix Health card', () => {
             { archetype: 'prototyper', runs: 1, span: 1, cost_usd: 0.1, net_lines: -5 },
           ],
           total_runs: 4,
+          idle_core: [],
         },
       },
     })
@@ -197,7 +199,7 @@ describe('Mix Health card', () => {
   it('opens the Team view from the card action', async () => {
     installFetch({
       ...dashboardStubs,
-      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0 } },
+      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0, idle_core: [] } },
     })
     renderWithProviders(<Dashboard />)
 

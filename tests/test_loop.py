@@ -792,6 +792,134 @@ class TestReplenishCounting:
 
 
 # ---------------------------------------------------------------------------
+# Replenish archetype stamp — a loop with `archetype:` tags the NEW demands its
+# replenish creates, so a drain through an archetype-less blueprint still
+# attributes its runs (instead of the `(none)` bucket).
+# ---------------------------------------------------------------------------
+
+
+class TestReplenishArchetypeStamp:
+    def _write_specialist(self, operator_layer: Path) -> None:
+        specialists_dir = operator_layer / "specialists"
+        specialists_dir.mkdir(exist_ok=True)
+        (specialists_dir / "pm.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "pm",
+                    "area": "planning",
+                    "blueprint": "chore",
+                    "knowledge_path": ".alc/specialists/pm.knowledge.md",
+                }
+            )
+        )
+
+    def _fake_specialist_writing(self, files: dict[str, str]):
+        """A fake run_specialist that writes the given {name: content} task files."""
+
+        def _fake(*, manifest, operator_layer, specialist, task, engine_override):
+            from alc.models import RunReport, Scorecard, SpecialistReport
+
+            queue_dir = operator_layer.parent / manifest.queue_dir
+            queue_dir.mkdir(parents=True, exist_ok=True)
+            for name, content in files.items():
+                (queue_dir / name).write_text(content)
+            act = RunReport(
+                blueprint="chore", engine="mock", success=True, attempts=[],
+                scorecard=Scorecard(span=0, passes=0, streak=0, touch=0), output_text="",
+            )
+            return SpecialistReport(specialist=specialist.name, act=act, knowledge_updated=False)
+
+        return _fake
+
+    def _run(self, operator_layer: Path, monkeypatch, files: dict[str, str], loop_body: str):
+        from alc import loop as loop_mod
+
+        self._write_specialist(operator_layer)
+        _write_loop(operator_layer, "deliver", loop_body)
+        monkeypatch.setattr(
+            "alc.specialist.run_specialist", self._fake_specialist_writing(files)
+        )
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+    _LOOP_WITH_ARCHETYPE = (
+        "name: deliver\narchetype: maintainer\n"
+        "replenish:\n  kind: specialist\n  ref: pm\n  task: plan\n"
+        "stop:\n  max_cycles: 20\n"
+    )
+    _LOOP_NO_ARCHETYPE = (
+        "name: deliver\n"
+        "replenish:\n  kind: specialist\n  ref: pm\n  task: plan\n"
+        "stop:\n  max_cycles: 20\n"
+    )
+
+    def test_stamps_archetype_onto_each_new_task_file(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        self._run(
+            operator_layer, monkeypatch,
+            {"planned-0.yaml": _MARKER_TASK, "planned-1.yaml": _MARKER_TASK},
+            self._LOOP_WITH_ARCHETYPE,
+        )
+        queue_dir = operator_layer / "queue"
+        for name in ("planned-0.yaml", "planned-1.yaml"):
+            raw = yaml.safe_load((queue_dir / name).read_text())
+            assert raw["archetype"] == "maintainer"
+
+    def test_pre_existing_pending_file_is_untouched(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        # A file already pending BEFORE the replenish is not the replenish's own
+        # demand — it must not be stamped.
+        _seed_queue(operator_layer, "old", _MARKER_TASK)
+        original = (operator_layer / "queue" / "old.yaml").read_text()
+        self._run(
+            operator_layer, monkeypatch,
+            {"planned-0.yaml": _MARKER_TASK},
+            self._LOOP_WITH_ARCHETYPE,
+        )
+        assert (operator_layer / "queue" / "old.yaml").read_text() == original
+
+    def test_loop_without_archetype_leaves_new_files_byte_identical(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        self._run(
+            operator_layer, monkeypatch,
+            {"planned-0.yaml": _MARKER_TASK},
+            self._LOOP_NO_ARCHETYPE,
+        )
+        assert (operator_layer / "queue" / "planned-0.yaml").read_text() == _MARKER_TASK
+
+    def test_new_file_already_carrying_an_archetype_is_not_overwritten(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        tagged = _MARKER_TASK + "archetype: builder\n"
+        self._run(
+            operator_layer, monkeypatch,
+            {"planned-0.yaml": tagged},
+            self._LOOP_WITH_ARCHETYPE,
+        )
+        raw = yaml.safe_load((operator_layer / "queue" / "planned-0.yaml").read_text())
+        assert raw["archetype"] == "builder"
+
+    def test_malformed_new_yaml_does_not_raise_and_others_are_stamped(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        # A malformed new task file must not break the replenish; the valid one
+        # is still stamped.
+        self._run(
+            operator_layer, monkeypatch,
+            {"broken.yaml": "a: b: c\n", "planned-0.yaml": _MARKER_TASK},
+            self._LOOP_WITH_ARCHETYPE,
+        )
+        queue_dir = operator_layer / "queue"
+        assert (queue_dir / "broken.yaml").read_text() == "a: b: c\n"
+        raw = yaml.safe_load((queue_dir / "planned-0.yaml").read_text())
+        assert raw["archetype"] == "maintainer"
+
+
+# ---------------------------------------------------------------------------
 # CLI: cmd_cycle / cmd_loop
 # ---------------------------------------------------------------------------
 

@@ -9,6 +9,7 @@ import yaml
 
 from alc.intake import load_manifest
 from alc.queue import process_queue
+from alc.stagepolicy import mix_health
 
 
 _TASK_YAML = """\
@@ -16,6 +17,15 @@ flow: ship
 task: "tidy"
 engine: mock
 isolate: false
+"""
+
+# A task tagged with a provenance archetype (as a loop's run_replenish stamps).
+_TAGGED_TASK_YAML = """\
+flow: ship
+task: "tidy"
+engine: mock
+isolate: false
+archetype: maintainer
 """
 
 # A specialist queue task (kind/name shape), no flow field.
@@ -123,6 +133,104 @@ class TestProcessQueueLegacyFlowOnly:
         assert results[0].success is True
         assert results[0].flow == "ship"
         assert (queue_dir / "done" / "legacy.yaml").exists()
+
+
+class TestArchetypeTagPropagation:
+    """A tagged task's provenance archetype fills the archetype-LESS stages of
+    its archived report, so Mix Health attributes a drain through an
+    archetype-less blueprint (the maintainer's deps-refresh) instead of
+    dropping it into the `(none)` bucket. A blueprint-declared stage archetype
+    always WINS — the tag only fills None gaps."""
+
+    def _single_stage_chore_flow(self, operator_layer: Path) -> None:
+        """A one-stage archetype-less flow, so a drain yields exactly one run."""
+        (operator_layer / "flows" / "chore-flow.yaml").write_text(
+            "name: chore-flow\ndescription: one chore.\n"
+            "stages:\n  - name: apply\n    blueprint: chore\n"
+        )
+
+    def test_tag_fills_archetype_less_stages(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(_TAGGED_TASK_YAML)
+
+        process_queue(manifest, operator_layer)
+
+        raw = json.loads((queue_dir / "done" / "t1.report.json").read_text())
+        # ship's plan + build stages both declare no archetype -> both filled.
+        assert [s["archetype"] for s in raw["stages"]] == ["maintainer", "maintainer"]
+
+    def test_untagged_task_keeps_null_stages(self, operator_layer: Path) -> None:
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(_TASK_YAML)
+
+        process_queue(manifest, operator_layer)
+
+        raw = json.loads((queue_dir / "done" / "t1.report.json").read_text())
+        assert all(s["archetype"] is None for s in raw["stages"])
+
+    def test_blueprint_declared_archetype_is_not_overridden(
+        self, operator_layer: Path
+    ) -> None:
+        # A stage whose Blueprint declares its OWN archetype keeps it — the tag
+        # only fills None gaps, never rewrites deliberate taxonomy.
+        (operator_layer / "blueprints" / "tagged.md").write_text(
+            "---\nname: tagged\npurpose: A blueprint that declares its archetype.\n"
+            "compute_tier: standard\nchecks:\n  - name: smoke\n    command: [\"true\"]\n"
+            "archetype: builder\n---\n# Workflow\n1. Nothing.\n"
+        )
+        (operator_layer / "flows" / "tagged-flow.yaml").write_text(
+            "name: tagged-flow\ndescription: one tagged stage.\n"
+            "stages:\n  - name: apply\n    blueprint: tagged\n"
+        )
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(
+            "flow: tagged-flow\ntask: t\nengine: mock\nisolate: false\narchetype: maintainer\n"
+        )
+
+        process_queue(manifest, operator_layer)
+
+        raw = json.loads((queue_dir / "done" / "t1.report.json").read_text())
+        assert raw["stages"][0]["archetype"] == "builder"
+
+    def test_end_to_end_mix_health_attributes_the_tagged_drain(
+        self, operator_layer: Path
+    ) -> None:
+        self._single_stage_chore_flow(operator_layer)
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(
+            "flow: chore-flow\ntask: t\nengine: mock\nisolate: false\narchetype: maintainer\n"
+        )
+
+        process_queue(manifest, operator_layer)
+
+        health = mix_health(queue_dir / "done", manifest)
+        by_name = {e.archetype: e for e in health.by_archetype}
+        assert by_name["maintainer"].runs == 1
+        assert None not in by_name  # no `(none)` bucket
+
+    def test_end_to_end_untagged_drain_still_buckets_none(
+        self, operator_layer: Path
+    ) -> None:
+        self._single_stage_chore_flow(operator_layer)
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(
+            "flow: chore-flow\ntask: t\nengine: mock\nisolate: false\n"
+        )
+
+        process_queue(manifest, operator_layer)
+
+        health = mix_health(queue_dir / "done", manifest)
+        assert None in {e.archetype for e in health.by_archetype}
 
 
 class TestProcessQueueSpecialistTask:

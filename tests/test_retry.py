@@ -198,6 +198,13 @@ class TestBuildRetryTask:
         assert "x" * 100 in retry.task
         assert "x" * 101 not in retry.task
 
+    def test_preserves_the_provenance_archetype_tag(self) -> None:
+        # A retry must carry the provenance tag forward (model_copy), so a
+        # re-executed demand still attributes its runs to the right archetype.
+        qt = QueueTask(flow="demand", task="t", archetype="maintainer")
+        retry = build_retry_task(qt, "boom")
+        assert retry.archetype == "maintainer"
+
 
 # ---------------------------------------------------------------------------
 # (2) write_retry_task
