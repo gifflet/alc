@@ -32,17 +32,16 @@ beforeEach(() => {
 })
 
 describe('Loops', () => {
-  it('blocks the run controls and explains why when the working tree is dirty', async () => {
+  it('warns but keeps the run controls enabled when the tree is dirty', async () => {
     installFetch(routes({ dirty: true }))
     renderWithProviders(<Loops />)
 
-    // The concise inline note names the block AND what unblocks it.
+    // The banner sets expectations — it no longer gates the run.
     expect(await screen.findByText(/Working tree not clean/i)).toBeInTheDocument()
-    expect(screen.getByText(/commit or stash your changes/i)).toBeInTheDocument()
 
-    // Both autonomous-run controls are disabled while the tree is dirty.
-    expect(screen.getByLabelText('Run cycle deliver')).toBeDisabled()
-    expect(screen.getByLabelText('Run loop deliver')).toBeDisabled()
+    // A dirty tree is safe: the run proceeds, so both controls stay live.
+    expect(screen.getByLabelText('Run cycle deliver')).not.toBeDisabled()
+    expect(screen.getByLabelText('Run loop deliver')).not.toBeDisabled()
   })
 
   it('renders normally with the run controls enabled when the tree is clean', async () => {

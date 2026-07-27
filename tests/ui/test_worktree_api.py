@@ -2,10 +2,10 @@
 #
 # `client`/`registered`/`project` come from conftest.py (a non-git scaffolded
 # project); the git-backed cases layer a real LOCAL repo on top, mirroring the
-# house style (tests/test_branches_api.py / tests/test_commitmsg.py). The whole
-# point of the endpoint is the UI's proactive dirty-tree block on the Loops view:
-# an autonomous run refuses to start on a dirty tree, and the UI must surface that
-# instead of the CLI's refusal being silently swallowed after a click.
+# house style (tests/test_branches_api.py / tests/test_commitmsg.py). The endpoint
+# backs the Loops view's reassuring dirty-tree notice: an autonomous run is safe on
+# a dirty tree (it commits only what it produces), so the UI warns and proceeds —
+# this endpoint just tells it whether to show that banner.
 from __future__ import annotations
 
 import subprocess

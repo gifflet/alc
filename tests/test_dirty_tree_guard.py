@@ -1,7 +1,10 @@
-# test_dirty_tree_guard.py — Preflight: an autonomous run (`alc cycle`, `alc loop`,
-# `alc tick`) must refuse to START when the working tree carries uncommitted work
-# OUTSIDE `.alc/`, so the run's demand-commit / merge-back never sweeps the
-# operator's unrelated work-in-progress into a commit.
+# test_dirty_tree_guard.py — Preflight NOTICE: an autonomous run (`alc cycle`,
+# `alc loop`, `alc tick`) WARNS (never aborts) when the working tree carries
+# uncommitted work OUTSIDE `.alc/`, then proceeds. The run is safe on a dirty
+# tree: its plan replenish commits only the planner's own paths, and any serial
+# committing demand protects itself via the flow-level clean-tree guard (it fails
+# visibly, it never sweeps the operator's work-in-progress). `--allow-dirty` now
+# only silences the notice.
 #
 # Uses a real LOCAL git repo in tmp_path + monkeypatched engine/queue paths; no
 # model is ever called and no real cycle ever runs.
@@ -11,7 +14,7 @@ import argparse
 import subprocess
 from pathlib import Path
 
-from alc.cli import _abort_if_dirty_tree
+from alc.cli import _warn_if_dirty_tree
 from alc.models import CycleRecord
 
 # ---------------------------------------------------------------------------
@@ -126,78 +129,85 @@ def _fake_run_cycle(calls: list):
     return _run
 
 
-def _boom(*args, **kwargs):
-    raise AssertionError("the autonomous run must not start on a dirty tree")
-
-
 # ---------------------------------------------------------------------------
-# Unit matrix: the shared guard helper.
+# Unit matrix: the shared warning helper.
 # ---------------------------------------------------------------------------
 
 
-class TestAbortIfDirtyTree:
-    def test_dirty_non_alc_aborts(self, tmp_path: Path, capsys) -> None:
+class TestWarnIfDirtyTree:
+    def test_dirty_non_alc_warns(self, tmp_path: Path, capsys) -> None:
         repo = _build_repo(tmp_path)
         (repo / "wip.txt").write_text("unrelated work\n")
 
-        assert _abort_if_dirty_tree(repo, allow_dirty=False, command="cycle") is True
+        assert _warn_if_dirty_tree(repo, allow_dirty=False, command="cycle") is None
         err = capsys.readouterr().err
-        assert "cycle aborted" in err
+        assert "[WARN]" in err
+        # The reassuring core promise the operator must be able to read verbatim.
+        assert "never your uncommitted work" in err
         assert "--allow-dirty" in err
+        # It is a NOTICE, not an abort — the run proceeds regardless.
+        assert "aborted" not in err
 
-    def test_allow_dirty_bypasses(self, tmp_path: Path, capsys) -> None:
+    def test_allow_dirty_is_silent(self, tmp_path: Path, capsys) -> None:
         repo = _build_repo(tmp_path)
         (repo / "wip.txt").write_text("unrelated work\n")
 
-        assert _abort_if_dirty_tree(repo, allow_dirty=True, command="cycle") is False
+        # The flag's whole contract now: suppress the notice (the run proceeds anyway).
+        assert _warn_if_dirty_tree(repo, allow_dirty=True, command="cycle") is None
         assert capsys.readouterr().err == ""
 
-    def test_clean_tree_proceeds(self, tmp_path: Path) -> None:
+    def test_clean_tree_is_silent(self, tmp_path: Path, capsys) -> None:
         repo = _build_repo(tmp_path)
-        assert _abort_if_dirty_tree(repo, allow_dirty=False, command="cycle") is False
+        assert _warn_if_dirty_tree(repo, allow_dirty=False, command="cycle") is None
+        assert capsys.readouterr().err == ""
 
-    def test_alc_only_change_does_not_abort(self, tmp_path: Path) -> None:
+    def test_alc_only_change_is_silent(self, tmp_path: Path, capsys) -> None:
         repo = _build_repo(tmp_path)
-        # A change confined to .alc/ (control-plane state) must NOT block.
+        # A change confined to .alc/ (control-plane state) must NOT warn.
         (repo / ".alc" / "scratch.txt").write_text("state\n")
-        assert _abort_if_dirty_tree(repo, allow_dirty=False, command="tick") is False
+        assert _warn_if_dirty_tree(repo, allow_dirty=False, command="tick") is None
+        assert capsys.readouterr().err == ""
 
-    def test_off_git_is_noop(self, tmp_path: Path) -> None:
-        # tmp_path is not a git repo -> has_non_alc_changes is False -> no block.
+    def test_off_git_is_noop(self, tmp_path: Path, capsys) -> None:
+        # tmp_path is not a git repo -> has_non_alc_changes is False -> no output.
         (tmp_path / "wip.txt").write_text("unrelated work\n")
-        assert _abort_if_dirty_tree(tmp_path, allow_dirty=False, command="loop") is False
+        assert _warn_if_dirty_tree(tmp_path, allow_dirty=False, command="loop") is None
+        assert capsys.readouterr().err == ""
 
     def test_message_uses_command_label(self, tmp_path: Path, capsys) -> None:
         repo = _build_repo(tmp_path)
         (repo / "wip.txt").write_text("unrelated work\n")
-        _abort_if_dirty_tree(repo, allow_dirty=False, command="tick")
-        assert "tick aborted" in capsys.readouterr().err
+        _warn_if_dirty_tree(repo, allow_dirty=False, command="tick")
+        assert "[WARN] tick" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
-# Integration: the guard is wired into each command entry.
+# Integration: the notice is wired into each command entry, which then proceeds.
 # ---------------------------------------------------------------------------
 
 
 class TestCmdCycleGuard:
-    def test_aborts_on_dirty_tree(self, tmp_path: Path, monkeypatch, capsys) -> None:
+    def test_warns_and_proceeds_on_dirty_tree(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
         from alc.cli import cmd_cycle
 
         repo = _build_repo(tmp_path)
         (repo / "wip.txt").write_text("unrelated work\n")
         monkeypatch.chdir(repo)
-        monkeypatch.setattr("alc.loop.run_cycle", _boom)
+        calls: list = []
+        monkeypatch.setattr("alc.loop.run_cycle", _fake_run_cycle(calls))
 
         args = argparse.Namespace(
             name="deliver", engine="mock", concurrency=0,
             status=False, reset=False, allow_dirty=False,
         )
-        assert cmd_cycle(args) == 1
-        err = capsys.readouterr().err
-        assert "cycle aborted" in err
-        assert "--allow-dirty" in err
+        # A dirty tree no longer blocks: the run proceeds and only warns.
+        assert cmd_cycle(args) == 0
+        assert calls == [True]
+        assert "[WARN]" in capsys.readouterr().err
 
-    def test_proceeds_on_clean_tree(self, tmp_path: Path, monkeypatch) -> None:
+    def test_proceeds_on_clean_tree(self, tmp_path: Path, monkeypatch, capsys) -> None:
         from alc.cli import cmd_cycle
 
         repo = _build_repo(tmp_path)
@@ -211,8 +221,12 @@ class TestCmdCycleGuard:
         )
         assert cmd_cycle(args) == 0
         assert calls == [True]
+        # A clean tree draws no notice.
+        assert "[WARN]" not in capsys.readouterr().err
 
-    def test_allow_dirty_proceeds_on_dirty_tree(self, tmp_path: Path, monkeypatch) -> None:
+    def test_allow_dirty_proceeds_on_dirty_tree(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
         from alc.cli import cmd_cycle
 
         repo = _build_repo(tmp_path)
@@ -227,26 +241,30 @@ class TestCmdCycleGuard:
         )
         assert cmd_cycle(args) == 0
         assert calls == [True]
+        # The flag's new contract: same proceed, but the notice is silenced.
+        assert "[WARN]" not in capsys.readouterr().err
 
 
 class TestCmdLoopGuard:
-    def test_aborts_on_dirty_tree(self, tmp_path: Path, monkeypatch, capsys) -> None:
+    def test_warns_and_proceeds_on_dirty_tree(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
         from alc.cli import cmd_loop
 
         repo = _build_repo(tmp_path)
         (repo / "wip.txt").write_text("unrelated work\n")
         monkeypatch.chdir(repo)
-        monkeypatch.setattr("alc.loop.run_cycle", _boom)
+        calls: list = []
+        monkeypatch.setattr("alc.loop.run_cycle", _fake_run_cycle(calls))
 
         args = argparse.Namespace(
             name="deliver", engine="mock", interval=0, reset=False, allow_dirty=False
         )
-        assert cmd_loop(args) == 1
-        err = capsys.readouterr().err
-        assert "loop aborted" in err
-        assert "--allow-dirty" in err
+        assert cmd_loop(args) == 0
+        assert calls == [True]
+        assert "[WARN]" in capsys.readouterr().err
 
-    def test_proceeds_on_clean_tree(self, tmp_path: Path, monkeypatch) -> None:
+    def test_proceeds_on_clean_tree(self, tmp_path: Path, monkeypatch, capsys) -> None:
         from alc.cli import cmd_loop
 
         repo = _build_repo(tmp_path)
@@ -259,8 +277,11 @@ class TestCmdLoopGuard:
         )
         assert cmd_loop(args) == 0
         assert calls == [True]
+        assert "[WARN]" not in capsys.readouterr().err
 
-    def test_allow_dirty_proceeds_on_dirty_tree(self, tmp_path: Path, monkeypatch) -> None:
+    def test_allow_dirty_proceeds_on_dirty_tree(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
         from alc.cli import cmd_loop
 
         repo = _build_repo(tmp_path)
@@ -274,29 +295,17 @@ class TestCmdLoopGuard:
         )
         assert cmd_loop(args) == 0
         assert calls == [True]
+        assert "[WARN]" not in capsys.readouterr().err
 
 
 class TestCmdTickGuard:
-    def test_aborts_on_dirty_tree(self, tmp_path: Path, monkeypatch, capsys) -> None:
+    def test_warns_and_proceeds_on_dirty_tree(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
         from alc.cli import cmd_tick
 
         repo = _build_repo(tmp_path)
         (repo / "wip.txt").write_text("unrelated work\n")
-        monkeypatch.chdir(repo)
-        monkeypatch.setattr("alc.queue.process_queue", _boom)
-
-        args = argparse.Namespace(concurrency=1, allow_dirty=False)
-        assert cmd_tick(args) == 1
-        err = capsys.readouterr().err
-        assert "tick aborted" in err
-        assert "--allow-dirty" in err
-
-    def test_proceeds_on_clean_tree(self, tmp_path: Path, monkeypatch) -> None:
-        from alc.cli import cmd_tick
-
-        repo = _build_repo(tmp_path)
-        # A queue dir under .alc/ must exist so the drain path is reached; it is
-        # untracked but confined to .alc/, so the guard still treats the tree as clean.
         (repo / ".alc" / "queue").mkdir(parents=True, exist_ok=True)
         monkeypatch.chdir(repo)
         calls: list = []
@@ -310,8 +319,32 @@ class TestCmdTickGuard:
         args = argparse.Namespace(concurrency=1, allow_dirty=False)
         assert cmd_tick(args) == 0
         assert calls == [True]
+        assert "[WARN]" in capsys.readouterr().err
 
-    def test_allow_dirty_proceeds_on_dirty_tree(self, tmp_path: Path, monkeypatch) -> None:
+    def test_proceeds_on_clean_tree(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        from alc.cli import cmd_tick
+
+        repo = _build_repo(tmp_path)
+        # A queue dir under .alc/ must exist so the drain path is reached; it is
+        # untracked but confined to .alc/, so the tree still reads as clean.
+        (repo / ".alc" / "queue").mkdir(parents=True, exist_ok=True)
+        monkeypatch.chdir(repo)
+        calls: list = []
+
+        def _fake_process_queue(manifest, operator_layer, max_workers=1):
+            calls.append(True)
+            return []
+
+        monkeypatch.setattr("alc.queue.process_queue", _fake_process_queue)
+
+        args = argparse.Namespace(concurrency=1, allow_dirty=False)
+        assert cmd_tick(args) == 0
+        assert calls == [True]
+        assert "[WARN]" not in capsys.readouterr().err
+
+    def test_allow_dirty_proceeds_on_dirty_tree(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
         from alc.cli import cmd_tick
 
         repo = _build_repo(tmp_path)
@@ -329,3 +362,4 @@ class TestCmdTickGuard:
         args = argparse.Namespace(concurrency=1, allow_dirty=True)
         assert cmd_tick(args) == 0
         assert calls == [True]
+        assert "[WARN]" not in capsys.readouterr().err

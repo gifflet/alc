@@ -603,8 +603,9 @@ export interface ScheduleStatus {
 
 // ---------------------------------------------------------------------------
 // Worktree status (service.worktree_status) — whether the tree has uncommitted
-// work outside `.alc/`. An autonomous run (`alc cycle`/`loop`/`tick`) refuses to
-// START on a dirty tree, so the Loops view blocks the run controls when `dirty`.
+// work outside `.alc/`. An autonomous run (`alc cycle`/`loop`/`tick`) is safe on a
+// dirty tree (it commits only what it produces), so the Loops view warns and
+// proceeds when `dirty` — a banner that sets expectations, not a block.
 // Off-git (no repo to protect) is `dirty: false`, never an error.
 // ---------------------------------------------------------------------------
 

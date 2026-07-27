@@ -19,14 +19,17 @@ const STATUS_TONE: Record<LoopStatus, Tone> = {
   stopped: 'error',
 }
 
-// The exact reason an autonomous run is blocked, phrased for the operator: an
-// `alc cycle`/`loop`/`tick` commits the workdir as it goes and refuses to START
-// on a dirty tree (cli._abort_if_dirty_tree), so we say what unblocks it.
+// A reassuring notice, not a gate: an autonomous run is SAFE on a dirty tree —
+// it commits only what it produces, never the operator's own uncommitted work.
+// So we set expectations rather than block. Serial committing demands still need
+// a clean tree (they abort themselves if not), which is why we nudge toward an
+// isolated drain. Mirrors the CLI's warn-and-proceed notice.
 const DIRTY_NOTE =
-  "Working tree not clean — an autonomous run won't start until you commit or " +
-  'stash your changes (outside .alc/).'
+  'Working tree not clean — the run proceeds and commits only what it produces, ' +
+  'never your uncommitted work (outside .alc/). Serial committing demands still ' +
+  'need a clean tree; prefer an isolated drain.'
 
-function LoopRow({ name, dirty }: { name: string; dirty: boolean }) {
+function LoopRow({ name }: { name: string }) {
   const id = useProjectId()
   const { activeTabId } = useUiState()
   const start = useStartExec()
@@ -36,11 +39,11 @@ function LoopRow({ name, dirty }: { name: string; dirty: boolean }) {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Surface a rejected cycle dispatch instead of swallowing it: the CLI's
-  // dirty-tree refusal (and any other exec/abort) must not vanish on click — the
-  // silent `.catch(() => {})` here is exactly what made a blocked run look like a
-  // no-op. The dirty tree is already blocked up front (button disabled + note),
-  // so this is the belt-and-braces surface for anything that still slips through.
+  // Surface a rejected cycle dispatch instead of swallowing it: the run proceeds
+  // on a dirty tree, but a serial committing demand can still abort itself at the
+  // flow level — that error (and any other exec failure) must not vanish on click,
+  // so we render it below the row rather than the silent `.catch(() => {})` that
+  // once made a blocked run look like a no-op.
   const runCycle = async () => {
     setError(null)
     try {
@@ -71,8 +74,6 @@ function LoopRow({ name, dirty }: { name: string; dirty: boolean }) {
           type="button"
           aria-label={`Run cycle ${name}`}
           onClick={() => void runCycle()}
-          disabled={dirty}
-          title={dirty ? DIRTY_NOTE : undefined}
           className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-live group-hover:opacity-100 disabled:cursor-not-allowed disabled:text-faint disabled:hover:text-faint"
         >
           <Play className="h-3.5 w-3.5" />
@@ -81,8 +82,6 @@ function LoopRow({ name, dirty }: { name: string; dirty: boolean }) {
           type="button"
           aria-label={`Run loop ${name}`}
           onClick={() => setRunning(true)}
-          disabled={dirty}
-          title={dirty ? DIRTY_NOTE : undefined}
           className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-live group-hover:opacity-100 disabled:cursor-not-allowed disabled:text-faint disabled:hover:text-faint"
         >
           <Repeat className="h-3.5 w-3.5" />
@@ -97,10 +96,9 @@ function LoopRow({ name, dirty }: { name: string; dirty: boolean }) {
 export function Loops() {
   const id = useProjectId()
   const { data, isLoading } = useCollection(id, 'loops')
-  // A dirty working tree blocks every autonomous run: gate the run controls and
-  // explain why UP FRONT, rather than letting a click hit the CLI guard and look
-  // like nothing happened. Off-git (or still loading) reads as clean — the guard
-  // is a no-op there anyway.
+  // A dirty working tree is safe to run on, so we only warn: show a banner that
+  // sets expectations, but never gate the run controls. Off-git (or still loading)
+  // reads as clean — there is simply nothing to notice.
   const dirty = useWorktreeStatus(id).data?.dirty ?? false
 
   if (isLoading) return <Loading />
@@ -119,7 +117,7 @@ export function Loops() {
         </div>
       )}
       {loops.map((l) => (
-        <LoopRow key={l.name} name={l.name} dirty={dirty} />
+        <LoopRow key={l.name} name={l.name} />
       ))}
     </div>
   )

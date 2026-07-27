@@ -55,39 +55,53 @@ def _find_operator_layer() -> Path:
     return cwd / ".alc"
 
 
-def _abort_if_dirty_tree(project_root: Path, allow_dirty: bool, command: str) -> bool:
-    """Preflight for an autonomous run: refuse to START on a dirty working tree.
+def _warn_if_dirty_tree(project_root: Path, allow_dirty: bool, command: str) -> None:
+    """Preflight NOTICE for an autonomous run: warn on a dirty tree, then proceed.
 
-    `alc cycle`, `alc loop`, and `alc tick` each drive a demand-commit / merge-back
-    that ``git add -A`` the workdir as it goes. Any uncommitted work OUTSIDE ``.alc/``
-    present when the run STARTS would therefore be swept into a commit the operator
-    never asked for (this nearly cost a user their work-in-progress). Refuse to start
-    unless the operator explicitly opts in with ``--allow-dirty``.
+    `alc cycle`, `alc loop`, and `alc tick` are SAFE to run on the operator's real,
+    dirty repo — the run commits only what IT produces, never the operator's own
+    uncommitted work; the tree stays under the operator's sole control. Concretely:
+    the plan replenish commits only the planner's own paths, and a serial committing
+    demand does not run blindly — it is stopped by the flow-level clean-tree guard,
+    which aborts a committing Flow that finds uncommitted non-``.alc/`` work before it
+    runs any stage. So a dirty tree can, at worst, make a serial committing demand
+    fail VISIBLY; it can never sweep work-in-progress into a commit. (Isolated demands
+    — ``isolate: true``, or automatic when ``drain.concurrency > 1`` — run in a
+    worktree cut fresh from HEAD and are unaffected either way.)
 
-    Mirrors the committing-Flow clean-tree guard in flow.py, reusing the same
-    ``has_non_alc_changes`` predicate: a change confined to ``.alc/`` (control-plane
-    state) never blocks, and an off-git workdir is a graceful no-op (no repo means no
-    WIP to protect). The web IDE inherits this guard for free by subprocessing the CLI.
+    Serial NON-committing work (a specialist demand, or a commit-disabled flow) still
+    runs in place, so the engine's edits mingle with the operator's WIP in the working
+    tree — but that is only interleaving, not a commit-sweep, and it was already the
+    behaviour under the prior ``--allow-dirty`` opt-in.
 
-    Returns True when the command MUST abort (the abort message has already been
-    printed to stderr); False when it is safe to proceed.
+    Because proceeding risks at most a visible failure and never data loss, the old
+    hard abort is now a non-blocking warning. ``allow_dirty`` therefore no longer
+    changes WHETHER the run happens — it only SUPPRESSES this notice (the name is kept
+    for backward compatibility). A future strict ``--require-clean`` opt-in could
+    restore a hard block for operators who want one, but that is intentionally out of
+    scope here.
+
+    Reuses the ``has_non_alc_changes`` predicate — the SAME one the flow-level guard
+    uses — so a change confined to ``.alc/`` (control-plane state) never warns, and an
+    off-git workdir is a graceful no-op (no repo means no WIP, so nothing to notice).
     """
     if allow_dirty:
-        return False
+        return
 
     from alc.commit import has_non_alc_changes
 
     if not has_non_alc_changes(project_root):
-        return False
+        return
 
     print(
-        f"[ERROR] {command} aborted — the working tree has uncommitted changes "
-        "outside .alc/. An autonomous run commits the workdir as it goes and would "
-        "sweep this work into a commit. Commit or stash your changes first, or pass "
-        "--allow-dirty to proceed anyway.",
+        f"[WARN] {command}: the working tree has uncommitted changes outside .alc/. "
+        "Proceeding — an autonomous run commits only what it produces, never your "
+        "uncommitted work; the working tree stays under your control. Serial "
+        "committing demands still require a clean tree and will abort themselves; "
+        "prefer an isolated drain (drain.concurrency > 1 or isolate: true). Pass "
+        "--allow-dirty to silence this notice.",
         file=sys.stderr,
     )
-    return True
 
 
 def _validate_tier(manifest, tier: str | None) -> str | None:
@@ -822,12 +836,12 @@ def cmd_tick(args: argparse.Namespace) -> int:
 
     operator_layer = _find_operator_layer()
 
-    # Clean-tree preflight: a drain commits the workdir as it goes, so refuse to start
-    # when the tree has uncommitted non-.alc/ work (unless --allow-dirty).
-    if _abort_if_dirty_tree(
+    # Dirty-tree preflight: warn-and-proceed. A drain never sweeps the operator's
+    # WIP — committing demands protect themselves (flow-level guard / isolation), so
+    # a dirty tree is at most a visible failure, never data loss. Just notify.
+    _warn_if_dirty_tree(
         operator_layer.parent, getattr(args, "allow_dirty", False), "tick"
-    ):
-        return 1
+    )
 
     manifest = load_manifest(operator_layer)
 
@@ -990,13 +1004,13 @@ def cmd_cycle(args: argparse.Namespace) -> int:
             print(f"Stopped reason:          {state.stopped_reason}")
         return 0
 
-    # Clean-tree preflight: a cycle commits the workdir as it goes, so refuse to start
-    # when the tree has uncommitted non-.alc/ work (unless --allow-dirty). Placed after
-    # the read-only --status path so status can always be inspected.
-    if _abort_if_dirty_tree(
+    # Dirty-tree preflight: warn-and-proceed. A cycle never sweeps the operator's
+    # WIP — committing demands protect themselves (flow-level guard / isolation), so
+    # a dirty tree is at most a visible failure, never data loss. Just notify. Placed
+    # after the read-only --status path so status can always be inspected.
+    _warn_if_dirty_tree(
         operator_layer.parent, getattr(args, "allow_dirty", False), "cycle"
-    ):
-        return 1
+    )
 
     if args.reset:
         # Reset THEN run: replace the state with a fresh pending one and fall through
@@ -1046,12 +1060,12 @@ def cmd_loop(args: argparse.Namespace) -> int:
     if err is not None:
         return err
 
-    # Clean-tree preflight: each cycle commits the workdir as it goes, so refuse to
-    # start when the tree has uncommitted non-.alc/ work (unless --allow-dirty).
-    if _abort_if_dirty_tree(
+    # Dirty-tree preflight: warn-and-proceed. Each cycle never sweeps the operator's
+    # WIP — committing demands protect themselves (flow-level guard / isolation), so
+    # a dirty tree is at most a visible failure, never data loss. Just notify.
+    _warn_if_dirty_tree(
         operator_layer.parent, getattr(args, "allow_dirty", False), "loop"
-    ):
-        return 1
+    )
 
     state = load_loop_state(spath, args.name)
     if args.reset:
@@ -3257,8 +3271,9 @@ def main() -> None:
         action="store_true",
         default=False,
         help=(
-            "Proceed even if the working tree has uncommitted changes outside "
-            ".alc/ (an autonomous run may commit them)."
+            "Silence the dirty working-tree notice. The run proceeds either way "
+            "and never commits your uncommitted work; this flag only quiets the "
+            "warning."
         ),
     )
 
@@ -3637,8 +3652,9 @@ def main() -> None:
         action="store_true",
         default=False,
         help=(
-            "Proceed even if the working tree has uncommitted changes outside "
-            ".alc/ (an autonomous run may commit them)."
+            "Silence the dirty working-tree notice. The run proceeds either way "
+            "and never commits your uncommitted work; this flag only quiets the "
+            "warning."
         ),
     )
 
@@ -3669,8 +3685,9 @@ def main() -> None:
         action="store_true",
         default=False,
         help=(
-            "Proceed even if the working tree has uncommitted changes outside "
-            ".alc/ (an autonomous run may commit them)."
+            "Silence the dirty working-tree notice. The run proceeds either way "
+            "and never commits your uncommitted work; this flag only quiets the "
+            "warning."
         ),
     )
 

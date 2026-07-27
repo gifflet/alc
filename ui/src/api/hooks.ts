@@ -109,8 +109,9 @@ export function useLoopLedger(id: string, name: string) {
 }
 
 /** Whether the working tree is dirty outside `.alc/`. An autonomous run
- * (cycle/loop/tick) refuses to START on a dirty tree, so the Loops view blocks
- * its run controls when `dirty`. WS invalidation keeps it fresh: a manifest /
+ * (cycle/loop/tick) is safe on a dirty tree (it commits only what it produces),
+ * so the Loops view warns and proceeds when `dirty` — a banner that sets
+ * expectations, never a block. WS invalidation keeps it fresh: a manifest /
  * collection change (`config_changed`) and a finished run (`report_added`) both
  * invalidate `keys.worktree(id)`, so committing/stashing outside the UI
  * eventually reflects (see ws/invalidate.ts). */

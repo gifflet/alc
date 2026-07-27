@@ -648,21 +648,19 @@ def read_loop_ledger(root: Path, name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Worktree status — backs the UI's proactive dirty-tree block on the Loops view.
+# Worktree status — backs the Loops view's reassuring dirty-tree notice.
 # ---------------------------------------------------------------------------
 
 
 def worktree_status(root: Path) -> dict:
     """Return ``{"dirty": bool}`` — whether the tree has uncommitted work outside ``.alc/``.
 
-    An autonomous run (``alc cycle``/``loop``/``tick``) refuses to START on a dirty
-    tree: it commits the workdir as it goes and would sweep the operator's
-    uncommitted work into a commit they never asked for (cli._abort_if_dirty_tree,
-    which nearly cost a user their work-in-progress). The web IDE triggers those
-    runs by subprocessing the CLI, so functionally it inherits the guard — but a
-    click that hits the guard looks like it did nothing. Surfacing ``dirty`` lets
-    the Loops view disable the run controls and explain the block UP FRONT, instead
-    of the CLI's refusal being silently swallowed.
+    An autonomous run (``alc cycle``/``loop``/``tick``) is SAFE on a dirty tree: it
+    commits only what IT produces, never the operator's own uncommitted work (the plan
+    replenish is path-scoped and a serial committing demand aborts itself via the
+    flow-level clean-tree guard). So the UI does not block a dirty tree — it WARNS and
+    proceeds. Surfacing ``dirty`` lets the Loops view show a banner that sets
+    expectations up front, without ever disabling the run controls.
 
     Reuses ``commit.has_non_alc_changes`` — the SAME predicate the CLI preflight and
     the committing-Flow guard use — so the UI and the CLI can never disagree on what
