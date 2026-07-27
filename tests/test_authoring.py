@@ -1,6 +1,8 @@
 # test_authoring.py — Hermetic tests for the core unit scaffolds.
 from __future__ import annotations
 
+import yaml
+
 from alc.authoring import scaffold_text
 
 
@@ -25,6 +27,14 @@ class TestScaffoldTextKnownKinds:
         text = scaffold_text("loops", "nightly")
         assert "name: nightly" in text
         assert "max_cycles: 10" in text
+
+    def test_loop_scaffold_carries_a_usd_budget_cost_ceiling(self) -> None:
+        # GAP 2: an authored loop must be safe-by-default too — max_cycles alone is
+        # no cost ceiling for a real-engine loop, so the scaffold ships a $10 usd
+        # cap alongside it. Parse the YAML so the block layout stays free.
+        text = scaffold_text("loops", "nightly")
+        stop = yaml.safe_load(text)["stop"]
+        assert stop["budget"] == {"unit": "usd", "max": 10}
 
     def test_primer_fills_name_as_title(self) -> None:
         text = scaffold_text("primers", "house-style")

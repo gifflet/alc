@@ -236,6 +236,13 @@ replenish:
     so overlapping findings serialize instead of racing.
 stop:
   max_cycles: 10
+  # Cost ceiling for an out-of-box real-engine loop: stop once cumulative spend
+  # reaches $10 (checked between cycles; a running cycle always completes). Raise
+  # it once you trust the loop — max_cycles stays the hard backstop, and an engine
+  # that reports no cost (e.g. gemini) warns each cycle instead.
+  budget:
+    unit: usd
+    max: 10
 """
 
 _SWEEPER_UNSHIP_FLOW = """\
@@ -372,8 +379,20 @@ replenish:
     `--id <slug>` when a later one bumps a related major (e.g. a framework
     and its official plugin) so the dependent one can `--depends-on <slug>`
     and land in the right order instead of racing.
+
+    Do NOT tell a chore to run the package-manager install (e.g. "run npm
+    install"): ALC's env-refresh reinstalls automatically before the checks
+    whenever a dependency manifest changes — and updates the lockfile too — so
+    the chore only edits the manifest file(s) and fixes any breaking changes.
 stop:
   max_cycles: 10
+  # Cost ceiling for an out-of-box real-engine loop: stop once cumulative spend
+  # reaches $10 (checked between cycles; a running cycle always completes). Raise
+  # it once you trust the loop — max_cycles stays the hard backstop, and an engine
+  # that reports no cost (e.g. gemini) warns each cycle instead.
+  budget:
+    unit: usd
+    max: 10
 """
 
 

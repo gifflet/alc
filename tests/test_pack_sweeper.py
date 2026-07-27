@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from alc.intake import load_all_blueprints, load_flow, load_loop, load_manifest, load_specialist
 from alc.packs import PACKS, pack_files
 from alc.policy import lint_flow, validate_loop
@@ -92,6 +94,15 @@ class TestPackFilesSweeper:
         assert "unship" in content
         assert "touches" in content
 
+    def test_sweep_loop_declares_a_usd_budget_cost_ceiling(self) -> None:
+        # GAP 2: max_cycles alone is not a cost ceiling — a real-engine loop can
+        # spend ~$50 before 10 cycles elapse. The out-of-box loop must carry a
+        # usd budget cap. Parse the YAML (not a raw substring) so the block's
+        # exact layout stays free to change.
+        content = pack_files("sweeper", stacks=[])[".alc/loops/sweep.yaml"]
+        stop = yaml.safe_load(content)["stop"]
+        assert stop["budget"] == {"unit": "usd", "max": 10}
+
     def test_unship_flow_chains_remove_and_a_verify_only_gate(self, tmp_path: Path) -> None:
         # The shipped flow's ACTIVE stages are remove -> a verify_only gate that
         # verifies with the project's REAL checks (require_real_checks); the
@@ -171,6 +182,10 @@ class TestSweeperPackLoadsThroughTheRealLoaders:
         assert loop_def.replenish.kind == "plan"
         assert loop_def.replenish.ref == "janitor"
         assert loop_def.stop.max_cycles > 0
+        # GAP 2: the usd cost ceiling survives the real LoopDefinition loader.
+        assert loop_def.stop.budget is not None
+        assert loop_def.stop.budget.unit == "usd"
+        assert loop_def.stop.budget.max == 10.0
 
     def test_unship_loads_as_a_flow_definition(self, tmp_path: Path) -> None:
         operator_layer = _hire(tmp_path)

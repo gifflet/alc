@@ -18,6 +18,8 @@ from alc.intake import (
     load_specialist,
     resolve_checks,
 )
+from alc.loop import check_pre_stop
+from alc.models import LoopState
 from alc.packs import PACKS, pack_files
 from alc.policy import lint_flow, validate_loop
 from alc.scaffold import scaffold
@@ -104,6 +106,26 @@ class TestPackFilesMaintainer:
         content = pack_files("maintainer", stacks=[])[".alc/loops/deps-refresh.yaml"]
         assert yaml.safe_load(content)["archetype"] == "maintainer"
 
+    def test_deps_refresh_loop_declares_a_usd_budget_cost_ceiling(self) -> None:
+        # GAP 2: max_cycles alone is not a cost ceiling — a real-engine loop can
+        # spend ~$50 before 10 cycles elapse. The out-of-box loop must carry a
+        # usd budget cap. Parse the YAML (not a raw substring) so the block's
+        # exact layout stays free to change.
+        content = pack_files("maintainer", stacks=[])[".alc/loops/deps-refresh.yaml"]
+        stop = yaml.safe_load(content)["stop"]
+        assert stop["budget"] == {"unit": "usd", "max": 10}
+
+    def test_deps_refresh_task_steers_chores_off_the_package_manager_install(self) -> None:
+        # GAP 4a: env-refresh (f394f0b) reinstalls structurally before the checks
+        # and updates the lockfile whenever a manifest changes, so a chore told to
+        # "run npm install" double-installs. The replenish prompt must steer chores
+        # off it — parse the folded scalar (line-wrap whitespace is brittle) and
+        # assert the steer is present AND the existing --touches guidance survives.
+        content = pack_files("maintainer", stacks=[])[".alc/loops/deps-refresh.yaml"]
+        task = yaml.safe_load(content)["replenish"]["task"]
+        assert "Do NOT tell a chore to run the package-manager install" in task
+        assert "--touches" in task
+
 
 # ---------------------------------------------------------------------------
 # Loading is strict: flows, specialists, and loops are pydantic-validated
@@ -138,6 +160,21 @@ class TestMaintainerPackLoadsThroughTheRealLoaders:
         assert loop_def.replenish.ref == "deps"
         assert loop_def.stop.max_cycles > 0
         assert loop_def.archetype == "maintainer"
+        # GAP 2: the usd cost ceiling survives the real LoopDefinition loader.
+        assert loop_def.stop.budget is not None
+        assert loop_def.stop.budget.unit == "usd"
+        assert loop_def.stop.budget.max == 10.0
+
+    def test_deps_refresh_pre_stops_on_budget_once_the_usd_cap_is_reached(
+        self, tmp_path: Path
+    ) -> None:
+        # GAP 2: the ceiling is a real backstop — a hired loop whose cumulative usd
+        # spend has reached $10 pre-stops with reason "budget" (before max_cycles),
+        # so an out-of-box real-engine loop cannot overspend.
+        operator_layer = _hire(tmp_path)
+        loop_def = load_loop(operator_layer / "loops", "deps-refresh")
+        state = LoopState(name="deps-refresh", budget_used={"usd": 10.0})
+        assert check_pre_stop(loop_def, state) == "budget"
 
     def test_patrol_loads_as_a_flow_definition(self, tmp_path: Path) -> None:
         operator_layer = _hire(tmp_path)

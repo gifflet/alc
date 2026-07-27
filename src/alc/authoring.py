@@ -34,7 +34,17 @@ _SCAFFOLDS: dict[str, str] = {
         "blueprint: chore\n"
         "knowledge_path: .alc/knowledge/{name}.md\n"
     ),
-    "loops": ("name: {name}\nstop:\n  max_cycles: 10\n"),
+    "loops": (
+        "name: {name}\n"
+        "stop:\n"
+        "  max_cycles: 10\n"
+        # Safe-by-default: max_cycles alone is no cost ceiling for a real-engine
+        # loop, so ship a $10 usd cap alongside it (checked between cycles; a
+        # running cycle always completes). Raise it once you trust the loop.
+        "  budget:\n"
+        "    unit: usd\n"
+        "    max: 10\n"
+    ),
     "primers": ("# {name}\n\nReusable context for this project.\n"),
 }
 
