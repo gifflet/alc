@@ -286,3 +286,31 @@ class TestSmokeOnlyPolicyRule:
         bp = _blueprint("chore", check_set=None)
         violations = lint(_manifest(), [bp])
         assert not any(v.rule == "blueprint-checks-smoke-only" for v in violations)
+
+    def test_hint_names_a_populated_alternative_set_when_one_exists(self) -> None:
+        # The hired-pack case: `test` points at the empty `python` set while a
+        # populated `project` set (onboard's harvest) already exists — the WARN
+        # should name it so the remedy is actionable, not the dead-end audit hint.
+        manifest = _manifest(
+            check_sets={
+                "python": [],
+                "project": [Check(name="test", command=["make", "test"])],
+            }
+        )
+        bp = _blueprint("test", check_set="python")
+        [warn] = [v for v in lint(manifest, [bp]) if v.rule == "blueprint-checks-smoke-only"]
+        assert "'project'" in warn.message
+        assert "check_set: project" in warn.message
+        assert "alc checks audit" in warn.message  # kept as a secondary pointer
+
+    def test_hint_falls_back_to_audit_when_no_populated_alternative(self) -> None:
+        # With no other populated set, the actionable pointer has nothing to name,
+        # so the original `alc checks audit` remedy is preserved unchanged.
+        bp = _blueprint("chore", check_set="python")
+        [warn] = [
+            v
+            for v in lint(self._manifest_with_empty_set(), [bp])
+            if v.rule == "blueprint-checks-smoke-only"
+        ]
+        assert "Run `alc checks audit` to see what would become available." in warn.message
+        assert "A populated check_set already exists" not in warn.message

@@ -270,6 +270,28 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
             bp.check_set is not None
             and is_smoke_only(manifest, bp)
         ):
+            # When the referenced set is empty, a DIFFERENT check_set may already be
+            # populated — e.g. the `project` set `alc onboard` harvests when the
+            # stack tooling is off PATH. A pack Blueprint hired later still points at
+            # the stack-default set, re-introducing the divergence onboard resolved;
+            # naming the populated set makes the remedy ACTIONABLE instead of the
+            # dead-end `alc checks audit` (which only reports the same off-PATH gap).
+            populated = sorted(
+                name
+                for name, checks in manifest.check_sets.items()
+                if checks and name != bp.check_set
+            )
+            if populated:
+                names = ", ".join(f"'{n}'" for n in populated)
+                remedy = (
+                    f"A populated check_set already exists ({names}) — point this "
+                    f"Blueprint at one (e.g. `check_set: {populated[0]}`), or run "
+                    "`alc checks audit`."
+                )
+            else:
+                remedy = (
+                    "Run `alc checks audit` to see what would become available."
+                )
             violations.append(
                 Violation(
                     rule="blueprint-checks-smoke-only",
@@ -278,8 +300,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                         f"Blueprint '{bp.name}' declares check_set '{bp.check_set}' but "
                         "resolves to nothing but the smoke placeholder — check_set "
                         f"'{bp.check_set}' is currently empty (no matching tool binary "
-                        "on PATH). Run `alc checks audit` to see what would become "
-                        "available."
+                        f"on PATH). {remedy}"
                     ),
                 )
             )
