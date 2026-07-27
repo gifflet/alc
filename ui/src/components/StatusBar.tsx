@@ -3,6 +3,7 @@ import { Cpu, Keyboard, Loader2 } from 'lucide-react'
 import { useEngines, useExecs } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useWs } from '../ws/WsProvider'
+import { RepoStatus } from './RepoStatus'
 import { StatusDot } from './StatusDot'
 
 export function StatusBar({
@@ -24,6 +25,8 @@ export function StatusBar({
         <Cpu className="h-3 w-3 text-muted" />
         {projectName}
       </span>
+
+      <RepoStatus />
 
       <span className="flex items-center gap-1.5">
         {(engines ?? []).map((e) => (

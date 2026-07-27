@@ -602,15 +602,27 @@ export interface ScheduleStatus {
 }
 
 // ---------------------------------------------------------------------------
-// Worktree status (service.worktree_status) — whether the tree has uncommitted
-// work outside `.alc/`. An autonomous run (`alc cycle`/`loop`/`tick`) is safe on a
-// dirty tree (it commits only what it produces), so the Loops view warns and
-// proceeds when `dirty` — a banner that sets expectations, not a block.
-// Off-git (no repo to protect) is `dirty: false`, never an error.
+// Worktree status (service.worktree_status -> RepoStatus). `dirty` is whether the
+// tree has uncommitted work outside `.alc/` — an autonomous run is safe on a dirty
+// tree (it commits only what it produces), so the Loops view warns and proceeds, a
+// banner that sets expectations, not a block. Off-git (no repo) is `available:
+// false` (and `dirty: false`), never an error.
+//
+// `ahead`/`behind` are measured against the LOCAL remote-tracking ref, as of the
+// operator's last fetch — the backend NEVER auto-fetches. They are `null` when
+// there is no upstream (unknown), never 0 (which means "in sync"). Every field is
+// required: the server always sends them (RepoStatus is a fixed dataclass).
 // ---------------------------------------------------------------------------
 
 export interface WorktreeStatus {
+  available: boolean
   dirty: boolean
+  branch: string | null
+  detached: boolean
+  upstream: string | null
+  ahead: number | null
+  behind: number | null
+  untracked: number
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +683,14 @@ export interface WsSignalsChanged {
   type: 'signals_changed'
   project_id: string
 }
+/** The live repo/working-tree push (watch.py RepoStatusTracker): a debounced
+ * `git status` flipped, so the whole enriched status rides along as `status`. The
+ * client invalidates `keys.worktree` on it (see ws/invalidate.ts). */
+export interface WsWorktreeChanged {
+  type: 'worktree_changed'
+  project_id: string
+  status: WorktreeStatus
+}
 
 export type WsMessage =
   | WsSubscribed
@@ -684,3 +704,4 @@ export type WsMessage =
   | WsProjectListChanged
   | WsRunConfigsChanged
   | WsSignalsChanged
+  | WsWorktreeChanged

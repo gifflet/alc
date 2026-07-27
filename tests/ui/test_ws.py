@@ -59,3 +59,32 @@ class TestWebSocket:
             message = ws.receive_json()
             assert message["type"] == "run_event"
             assert message["event"]["event"] == "act_started"
+
+    def test_worktree_changed_forwarded_with_status_payload(
+        self, client, app, registered: str
+    ) -> None:
+        # The live repo/working-tree push: the Watcher's RepoStatusTracker
+        # publishes this on a debounced change; it must reach a subscribed client
+        # verbatim, `status` payload included (the client invalidates on it).
+        bus = app.state.bus
+        status = {
+            "available": True,
+            "dirty": True,
+            "branch": "main",
+            "detached": False,
+            "upstream": "origin/main",
+            "ahead": 1,
+            "behind": 0,
+            "untracked": 2,
+        }
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "subscribe", "project_id": registered})
+            assert ws.receive_json()["type"] == "subscribed"
+
+            bus.publish(
+                {"type": "worktree_changed", "project_id": registered, "status": status}
+            )
+            message = ws.receive_json()
+            assert message["type"] == "worktree_changed"
+            assert message["project_id"] == registered
+            assert message["status"] == status

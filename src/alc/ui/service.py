@@ -24,7 +24,6 @@ from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
 from alc.branches import delete_branches, list_alc_branches, prune_worktrees
 from alc.checks import audit_checks, check_history
-from alc.commit import has_non_alc_changes
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
 from alc.harvest import harvest
@@ -54,6 +53,7 @@ from alc.schedule import has_crontab, list_entries, read_crontab
 from alc.stagepolicy import lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
+from alc.ui.repostatus import repo_status
 from alc.variants import read_variant, variant_row
 from alc.worktree import git_toplevel, is_git_repo
 
@@ -653,7 +653,7 @@ def read_loop_ledger(root: Path, name: str) -> dict:
 
 
 def worktree_status(root: Path) -> dict:
-    """Return ``{"dirty": bool}`` — whether the tree has uncommitted work outside ``.alc/``.
+    """Return the enriched RepoStatus (asdict) for the project's working tree.
 
     An autonomous run (``alc cycle``/``loop``/``tick``) is SAFE on a dirty tree: it
     commits only what IT produces, never the operator's own uncommitted work (the plan
@@ -662,14 +662,20 @@ def worktree_status(root: Path) -> dict:
     proceeds. Surfacing ``dirty`` lets the Loops view show a banner that sets
     expectations up front, without ever disabling the run controls.
 
-    Reuses ``commit.has_non_alc_changes`` — the SAME predicate the CLI preflight and
-    the committing-Flow guard use — so the UI and the CLI can never disagree on what
-    "dirty" means. A change confined to ``.alc/`` (control-plane state) never counts,
-    and an off-git project is a graceful ``dirty: False`` (no repo means no WIP to
-    protect). Best-effort and never raises: the predicate already degrades to False
-    when git is unavailable.
+    The shape is a backward-compatible SUPERSET of the old ``{"dirty": bool}``: the
+    ``dirty`` key stays semantically IDENTICAL to ``commit.has_non_alc_changes`` — the
+    SAME meaning the CLI preflight and the committing-Flow guard use, pinned by an
+    agreement test (tests/ui/test_repostatus.py) so the UI and the CLI can never
+    disagree on "dirty". Alongside it, ``repo_status`` adds branch / upstream /
+    ahead / behind / untracked for the live StatusBar cluster.
+
+    No-auto-fetch: ``ahead``/``behind`` come ONLY from the local remote-tracking ref
+    (as of the operator's last fetch), read out of a single ``git status`` call. This
+    endpoint NEVER runs ``git fetch``. An off-git project degrades to
+    ``available: False`` (and ``dirty: False``) — no repo means no WIP to protect —
+    and this never raises: ``repo_status`` degrades rather than throwing.
     """
-    return {"dirty": has_non_alc_changes(root)}
+    return asdict(repo_status(root))
 
 
 # ---------------------------------------------------------------------------

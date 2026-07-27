@@ -16,6 +16,22 @@ const loopState: LoopState = {
   stopped_reason: null,
 }
 
+// A full WorktreeStatus (RepoStatus superset) with the given dirty flag; the
+// branch/ahead/behind fields are irrelevant to Loops (it reads only `.dirty`),
+// but the shape must be complete now the endpoint returns the enriched status.
+function wt(dirty: boolean): WorktreeStatus {
+  return {
+    available: true,
+    dirty,
+    branch: 'main',
+    detached: false,
+    upstream: null,
+    ahead: null,
+    behind: null,
+    untracked: 0,
+  }
+}
+
 // Route order matters: installFetch matches by substring, first match wins, so
 // the specific `/loops/deliver/state` must precede the `/loops` collection list.
 function routes(worktree: WorktreeStatus) {
@@ -33,7 +49,7 @@ beforeEach(() => {
 
 describe('Loops', () => {
   it('warns but keeps the run controls enabled when the tree is dirty', async () => {
-    installFetch(routes({ dirty: true }))
+    installFetch(routes(wt(true)))
     renderWithProviders(<Loops />)
 
     // The banner sets expectations — it no longer gates the run.
@@ -45,7 +61,7 @@ describe('Loops', () => {
   })
 
   it('renders normally with the run controls enabled when the tree is clean', async () => {
-    installFetch(routes({ dirty: false }))
+    installFetch(routes(wt(false)))
     renderWithProviders(<Loops />)
 
     // The row renders and both run controls are live — no block note in sight.

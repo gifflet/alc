@@ -172,9 +172,12 @@ export const api = {
     request<LoopState>(`${proj(id)}/loops/${encodeURIComponent(name)}/state`),
   getLoopLedger: (id: string, name: string) =>
     request<LoopLedger>(`${proj(id)}/loops/${encodeURIComponent(name)}/ledger`),
-  /** Whether the working tree is dirty outside `.alc/` — an autonomous run
-   * (cycle/loop/tick) refuses to START on a dirty tree, so the Loops view blocks
-   * its run controls when this is true. Off-git degrades to `dirty: false`. */
+  /** The repo / working-tree status (RepoStatus): `dirty` outside `.alc/`, plus
+   * branch / upstream / ahead / behind / untracked. A dirty tree only WARNS (the
+   * run commits just what it produces). Off-git degrades to `available: false`.
+   * Pushed LIVE: watch.py emits a debounced `worktree_changed` that invalidates
+   * this query, so a split-screen edit/commit/stash reflects without a reload.
+   * `ahead`/`behind` are as of the last fetch — the backend never fetches. */
   getWorktree: (id: string) => request<WorktreeStatus>(`${proj(id)}/worktree`),
 
   // Branches (`alc land` / `alc discard`)

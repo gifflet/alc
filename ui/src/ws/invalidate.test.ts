@@ -104,6 +104,25 @@ describe('wsInvalidations', () => {
     ])
   })
 
+  it('invalidates the worktree query on a live worktree_changed push', () => {
+    expect(
+      wsInvalidations({
+        type: 'worktree_changed',
+        project_id: 'p',
+        status: {
+          available: true,
+          dirty: true,
+          branch: 'main',
+          detached: false,
+          upstream: 'origin/main',
+          ahead: 1,
+          behind: 0,
+          untracked: 2,
+        },
+      }),
+    ).toEqual([keys.worktree('p')])
+  })
+
   it('invalidates execs, variants and branches when an exec finishes', () => {
     const out = wsInvalidations({
       type: 'exec_finished',

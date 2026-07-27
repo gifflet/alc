@@ -91,6 +91,13 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
       return [keys.runConfigs(msg.project_id)]
     case 'signals_changed':
       return [keys.signals(msg.project_id)]
+    case 'worktree_changed':
+      // Invalidate-only, on purpose: the WsProvider has ONLY an invalidate
+      // pipeline, so we re-fetch /worktree rather than write the pushed `status`
+      // into the cache. A setQueryData path would need new machinery AND create a
+      // second source of truth (the push vs the endpoint) that could drift; the
+      // extra GET is cheap (one debounced request) and keeps one source of truth.
+      return [keys.worktree(msg.project_id)]
     case 'run_event':
       return RUN_LIST_EVENTS.has(msg.event.event) ? [keys.runs(msg.project_id)] : []
     case 'exec_output':
