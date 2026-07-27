@@ -190,6 +190,29 @@ describe('describeEvent', () => {
     const label = describeEvent({ ts: 't', event: 'check_config_edited', files: ['ruff.toml (check config)'] })
     expect(label).toBe('modified check config: ruff.toml (check config)')
   })
+  it('labels an env-refresh start with the running install command', () => {
+    const label = describeEvent({ ts: 't', event: 'env_refresh_started', path: 'ui', command: ['npm', 'install'] })
+    expect(label).toContain('npm install')
+  })
+  it('labels a finished env-refresh with ok and its duration', () => {
+    const label = describeEvent({
+      ts: 't', event: 'env_refresh_finished', path: 'ui', ok: true, duration_s: 14.83, exit_code: 0, timed_out: false,
+    })
+    expect(label).toContain('ok')
+    expect(label).toContain('(14.8s)')
+  })
+  it('surfaces a timed-out env-refresh distinctly from a plain failure', () => {
+    const label = describeEvent({
+      ts: 't', event: 'env_refresh_finished', path: 'ui', ok: false, duration_s: 900, timed_out: true,
+    })
+    expect(label).toContain('timed out')
+  })
+  it('labels a failed env-refresh', () => {
+    const label = describeEvent({
+      ts: 't', event: 'env_refresh_finished', path: 'ui', ok: false, duration_s: 2.1, exit_code: 1, timed_out: false,
+    })
+    expect(label).toContain('failed')
+  })
   it('labels an aborted run with its reason', () => {
     expect(describeEvent({ ts: 't', event: 'run_aborted', reason: 'interrupted' })).toBe('aborted — interrupted')
     // Falls back to "interrupted" when no reason is carried.

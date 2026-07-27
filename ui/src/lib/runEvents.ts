@@ -269,6 +269,20 @@ export function describeEvent(event: RunEvent): string {
       const files = Array.isArray(event.files) ? event.files.filter((f) => typeof f === 'string') : []
       return `modified check config: ${files.join(', ')}`
     }
+    case 'env_refresh_started': {
+      // env-refresh reinstalls deps before the checks when a manifest changed;
+      // `command` is the install argv (path as a fallback when it is absent).
+      const cmd = Array.isArray(event.command)
+        ? event.command.filter((c): c is string => typeof c === 'string').join(' ')
+        : str(event, 'path')
+      return `Env refresh — ${cmd ?? ''} running…`
+    }
+    case 'env_refresh_finished':
+      // No `command` on finish; carries ok / timed_out / duration_s. A timed-out
+      // refresh is surfaced distinctly from a plain failure, like check_finished.
+      return `Env refresh (${str(event, 'path') ?? ''}) ${
+        event.timed_out ? 'timed out ⏱' : event.ok ? 'ok' : 'failed'
+      } (${num(event, 'duration_s').toFixed(1)}s)`
     case 'mandate_finished':
       return `Mandate finished — ${event.success ? 'success' : 'failure'}`
     case 'flow_started':
