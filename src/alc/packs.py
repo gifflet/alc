@@ -5,9 +5,13 @@
 # class hierarchy, no plugin system. The pack GENERATORS are pure — no filesystem
 # I/O — and writing plus the overwrite-refusal contract live in cli.py's `alc team
 # hire` and the UI service (mirroring how scaffold.py's templates stay separate
-# from scaffold()'s own disk-writing). The ONE read-only exception is
-# `hired_archetypes` below: the shared "is this pack hired?" membership test the
-# CLI and the UI both reuse instead of each re-deriving it.
+# from scaffold()'s own disk-writing). The read-only exceptions are
+# `hired_archetypes` and `split_pack_files` below: `hired_archetypes` is the
+# shared "is this pack hired?" membership test the CLI and the UI both reuse;
+# `split_pack_files` partitions a pack into its already-present vs still-missing
+# files, the computation behind `alc team hire`'s additive default (write the
+# missing, keep the present). Both only READ the tree — every write still lives
+# in cli.py and the UI service.
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -584,6 +588,38 @@ def pack_files(
     except KeyError:
         raise KeyError(f"no pack named '{archetype}' (available: {sorted(PACKS)})") from None
     return build(stacks)
+
+
+def split_pack_files(
+    archetype: str,
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Return ({missing rel-path: content}, {present rel-path: content}) for *archetype*.
+
+    Partitions `pack_files(archetype, stacks)` by whether each file already
+    exists under *project_root*. This is the read-only computation behind `alc
+    team hire`'s additive default: the caller WRITES the ``missing`` half and
+    KEEPS the ``present`` half. Both halves carry the PACK content, so a caller
+    can flag drift by comparing a present file's on-disk bytes against its
+    returned pack content (`--force` is the only path that overwrites it).
+
+    Args:
+        archetype: Pack name — must be a key of PACKS.
+        stacks: detect_stacks() output, threaded through to `pack_files`.
+        project_root: The project directory the rel-paths resolve against.
+
+    Raises:
+        KeyError: If *archetype* is not (yet) a registered pack.
+    """
+    missing: dict[str, str] = {}
+    present: dict[str, str] = {}
+    for rel, content in pack_files(archetype, stacks).items():
+        if (project_root / rel).exists():
+            present[rel] = content
+        else:
+            missing[rel] = content
+    return missing, present
 
 
 def hired_archetypes(project_root: Path) -> list[str]:

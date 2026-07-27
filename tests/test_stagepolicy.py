@@ -114,6 +114,11 @@ class TestLintStageCoreArchetypeMissing:
         messages = [v.message for v in violations if v.rule == "stage-core-archetype-missing"]
         assert any("alc team hire prototyper" in m for m in messages)
         assert any("alc team hire sweeper" in m for m in messages)
+        # The hint is truthful for the not-hired, partially-hired, AND
+        # own-Blueprint cases: additive hire adds only the missing files, and a
+        # Blueprint can instead declare the archetype directly.
+        assert any("adds the pack's missing file(s)" in m for m in messages)
+        assert any("declare `archetype: prototyper`" in m for m in messages)
 
     def test_every_core_archetype_present_yields_no_missing_warning(self) -> None:
         manifest = _manifest(stage="pre-pmf")

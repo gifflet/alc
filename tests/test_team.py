@@ -66,14 +66,62 @@ class TestTeamHire:
         # Nothing was written.
         assert not (project / ".alc" / "blueprints" / "test.md").exists()
 
-    def test_hire_refuses_to_overwrite_without_force(self, project: Path, capsys) -> None:
+    def test_hire_adds_only_missing_files_and_keeps_existing_bytes(
+        self, project: Path, capsys
+    ) -> None:
+        # Additive by default: a partially-present, CUSTOMIZED pack must receive
+        # only the files it lacks — never overwriting the operator's edits. The
+        # custom content is a VALID (but non-default) Blueprint so the layer stays
+        # lint-clean and the exit code proves the additive path, not a lint fail.
+        custom_bytes = (
+            "---\n"
+            "name: test\n"
+            "purpose: My own customized test authoring workflow.\n"
+            "compute_tier: standard\n"
+            "checks:\n"
+            "  - name: smoke\n"
+            '    command: ["true"]\n'
+            "report:\n"
+            "  format: json\n"
+            "  schema:\n"
+            "    status: string\n"
+            "    summary: string\n"
+            "archetype: builder\n"
+            "---\n\n"
+            "## My Custom Test Workflow\n"
+        )
+        customized = project / ".alc" / "blueprints" / "test.md"
+        customized.parent.mkdir(parents=True, exist_ok=True)
+        customized.write_text(custom_bytes)
+
+        assert cmd_team(_ns(team_action="hire", archetype="builder")) == 0
+
+        # The customized file kept its exact bytes; the missing files got written.
+        assert customized.read_text() == custom_bytes
+        assert (project / ".alc" / "blueprints" / "qa.md").is_file()
+        assert (project / ".alc" / "flows" / "ship-hardened.yaml").is_file()
+
+        out = capsys.readouterr().out
+        # Reports the added missing files and the kept (drifted) one by name.
+        assert "added 2 missing file(s)" in out
+        assert ".alc/blueprints/qa.md" in out
+        assert "kept (already on disk): .alc/blueprints/test.md" in out
+        assert "differs from the pack default" in out
+
+    def test_hire_fully_present_is_an_idempotent_no_op(self, project: Path, capsys) -> None:
+        # First hire writes everything; a second hire has nothing to add.
         assert cmd_team(_ns(team_action="hire", archetype="builder")) == 0
         capsys.readouterr()
 
-        assert cmd_team(_ns(team_action="hire", archetype="builder")) == 1
-        err = capsys.readouterr().err
-        assert "[ERROR]" in err
-        assert "--force" in err
+        # Snapshot every pack file's bytes to prove the no-op writes nothing.
+        test_md = project / ".alc" / "blueprints" / "test.md"
+        before = test_md.read_text()
+
+        assert cmd_team(_ns(team_action="hire", archetype="builder")) == 0
+        out = capsys.readouterr().out
+        assert "already fully hired" in out
+        assert "nothing to add" in out
+        assert test_md.read_text() == before  # untouched
 
     def test_hire_force_overwrites_existing_files(self, project: Path) -> None:
         assert cmd_team(_ns(team_action="hire", archetype="builder")) == 0
@@ -320,6 +368,50 @@ class TestInitStage:
 
         assert cmd_init(_init_ns(stage="strong-pmf")) == 0
         assert (tmp_path / ".alc" / "blueprints" / "qa.md").is_file()
+
+    def test_stage_hire_is_additive_and_keeps_a_partially_present_pack(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # `_install_stage_packs` mirrors `alc team hire`: it tops up a pack's
+        # MISSING files and keeps existing ones (byte-for-byte), never refusing.
+        from alc.cli import _install_stage_packs
+
+        scaffold(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        customized = tmp_path / ".alc" / "blueprints" / "test.md"
+        customized.parent.mkdir(parents=True, exist_ok=True)
+        customized.write_text("MY CUSTOM TEST BLUEPRINT")
+
+        _install_stage_packs(tmp_path, "growth", force=False)
+
+        # The customized builder file kept its bytes; its missing sibling landed.
+        assert customized.read_text() == "MY CUSTOM TEST BLUEPRINT"
+        assert (tmp_path / ".alc" / "blueprints" / "qa.md").is_file()
+
+        out = capsys.readouterr().out
+        # builder was partially present: reported as added-with-kept, not refused.
+        assert "builder: hired (added" in out
+        assert "kept 1 existing" in out
+        # sweeper was fully absent: a plain add.
+        assert "sweeper: hired (added" in out
+
+    def test_stage_hire_reports_a_fully_present_pack_as_a_no_op(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        from alc.cli import _install_stage_packs
+
+        scaffold(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        # Hire the whole builder pack, then re-run the stage install.
+        _install_stage_packs(tmp_path, "growth", force=False)
+        capsys.readouterr()
+        _install_stage_packs(tmp_path, "growth", force=False)
+
+        out = capsys.readouterr().out
+        assert "builder: already fully hired" in out
+        assert "nothing to add" in out
 
     def test_stage_hire_produces_a_lint_clean_layer(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

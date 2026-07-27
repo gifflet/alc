@@ -408,9 +408,11 @@ export interface TeamRoster {
   mix_health: MixHealth
 }
 
-/** POST /team/hire's response: the pack files written, and the post-hire lint. */
+/** POST /team/hire's response: the pack files written (additive — only those
+ * missing), the ones kept (already on disk), and the post-hire lint. */
 export interface HireResult {
   written: string[]
+  kept: string[]
   lint: LintResult
 }
 

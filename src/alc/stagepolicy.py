@@ -71,8 +71,10 @@ def lint_stage(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violatio
                                                           defeats the point of
                                                           declaring it.
     2. A stage's CORE archetype with no Blueprint declaring it   (warn) — hint:
-       `alc team hire <archetype>`. A missing SECONDARY member never warns
-       (it was always optional).
+       `alc team hire <archetype>` (additive: adds the pack's missing files) or
+       declare `archetype: <archetype>` on an existing Blueprint — truthful for
+       the not-hired, partially-hired, AND own-Blueprint cases. A missing
+       SECONDARY member never warns (it was always optional).
     3. A `compute_tier: deep` Blueprint whose archetype sits outside the
        stage's mix (core + secondary)                   (warn) — a costly
                                                           tier spent on work
@@ -131,7 +133,8 @@ def lint_stage(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violatio
                     message=(
                         f"Stage '{manifest.stage}' expects a '{archetype}' in the mix, "
                         f"but no Blueprint declares archetype: {archetype} — "
-                        f"hint: alc team hire {archetype}"
+                        f"hint: alc team hire {archetype} (adds the pack's missing file(s)) — "
+                        f"or declare `archetype: {archetype}` on an existing Blueprint"
                     ),
                 )
             )

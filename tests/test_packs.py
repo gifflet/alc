@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from alc.intake import load_all_blueprints, load_manifest
-from alc.packs import PACKS, hired_archetypes, pack_files
+from alc.packs import PACKS, hired_archetypes, pack_files, split_pack_files
 from alc.policy import lint
 from alc.scaffold import detect_stacks, scaffold
 
@@ -66,6 +66,54 @@ class TestHiredArchetypes:
             target.write_text(content)
 
         assert _hired_archetypes(tmp_path) == hired_archetypes(tmp_path) == ["builder"]
+
+
+class TestSplitPackFiles:
+    """`split_pack_files` partitions a pack into (missing, present) — the read-only
+    computation behind `alc team hire`'s additive default (write missing, keep
+    present)."""
+
+    def test_empty_project_is_all_missing_none_present(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        missing, present = split_pack_files("builder", stacks, tmp_path)
+
+        # Nothing of the pack is on disk yet: every file is missing, none present.
+        assert set(missing) == set(pack_files("builder", stacks))
+        assert present == {}
+
+    def test_partial_presence_partitions_exactly(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        files = pack_files("builder", stacks)
+
+        # Put exactly ONE of the pack's files on disk.
+        present_rel = sorted(files)[0]
+        target = tmp_path / present_rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(files[present_rel])
+
+        missing, present = split_pack_files("builder", stacks, tmp_path)
+
+        assert set(present) == {present_rel}
+        assert set(missing) == set(files) - {present_rel}
+        # Both carry the PACK content, so a caller can compare on-disk bytes to
+        # flag drift.
+        assert present[present_rel] == files[present_rel]
+        assert missing == {r: files[r] for r in missing}
+
+    def test_fully_present_has_no_missing(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        for rel, content in pack_files("builder", stacks).items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+
+        missing, present = split_pack_files("builder", stacks, tmp_path)
+
+        assert missing == {}
+        assert set(present) == set(pack_files("builder", stacks))
 
 
 class TestPackFilesBuilder:

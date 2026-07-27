@@ -246,11 +246,13 @@ _STAGE_PACKS: dict[str, list[str]] = {
 def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
     """Hire every pack in `_STAGE_PACKS[stage]`; never hard-fails.
 
-    A pack not yet shipped (a later wave) is reported plainly and skipped rather
-    than raising. A pack whose files already exist on disk is also skipped
-    (reported) unless `force` is set, mirroring `alc team hire`'s own contract.
+    Additive, mirroring `alc team hire`'s own contract: each pack's MISSING files
+    are written and existing ones kept (so a stage that overlaps an already-hired
+    pack, or a re-run, tops up new files instead of refusing). `force` overwrites
+    ALL of a pack's files. A pack not yet shipped (a later wave) is reported
+    plainly and skipped rather than raising.
     """
-    from alc.packs import PACKS, pack_files
+    from alc.packs import PACKS, pack_files, split_pack_files
     from alc.scaffold import detect_stacks
 
     stacks = detect_stacks(project_root)
@@ -260,20 +262,32 @@ def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
             print(f"  {archetype}: not available yet (a later wave adds this pack).")
             continue
 
-        files = pack_files(archetype, stacks)
-        existing = sorted(rel for rel in files if (project_root / rel).exists())
-        if existing and not force:
-            print(
-                f"  {archetype}: already has file(s) on disk "
-                f"({', '.join(existing)}); pass --force to overwrite."
-            )
+        if force:
+            # The one destructive path: overwrite every pack file.
+            files = pack_files(archetype, stacks)
+            for rel_path, content in sorted(files.items()):
+                target = project_root / rel_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+            print(f"  {archetype}: hired ({', '.join(sorted(files))})")
             continue
 
-        for rel_path, content in sorted(files.items()):
+        missing, present = split_pack_files(archetype, stacks, project_root)
+        for rel_path in sorted(missing):
             target = project_root / rel_path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
-        print(f"  {archetype}: hired ({', '.join(sorted(files))})")
+            target.write_text(missing[rel_path])
+
+        if not missing:
+            print(
+                f"  {archetype}: already fully hired "
+                f"({len(present)} file(s)); nothing to add."
+            )
+        else:
+            line = f"  {archetype}: hired (added {', '.join(sorted(missing))})"
+            if present:
+                line += f"; kept {len(present)} existing"
+            print(line)
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -1248,9 +1262,18 @@ def cmd_team(args: argparse.Namespace) -> int:
 
 
 def _team_hire(args: argparse.Namespace) -> int:
-    """`alc team hire <archetype> [--force]`: scaffold a pack's files, then lint."""
+    """`alc team hire <archetype> [--force]`: scaffold a pack's files, then lint.
+
+    Additive by default: writes only the pack files not yet on disk and keeps
+    existing ones (so a partially-present or drifted archetype receives the newer
+    files ALC now ships, and a re-hire is an idempotent no-op). `--force` is the
+    ONE destructive path: it overwrites every pack file. Additive never destroys
+    anything, so there is nothing to refuse — the old whole-pack refusal
+    protected nothing and contradicted the roster, which already counts a
+    partially-present archetype as hired.
+    """
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
-    from alc.packs import PACKS, pack_files
+    from alc.packs import PACKS, pack_files, split_pack_files
     from alc.policy import (
         has_errors,
         lint,
@@ -1272,27 +1295,42 @@ def _team_hire(args: argparse.Namespace) -> int:
     operator_layer = _find_operator_layer()
     project_root = operator_layer.parent
     manifest = load_manifest(operator_layer)
+    stacks = detect_stacks(project_root)
 
-    files = pack_files(args.archetype, detect_stacks(project_root))
+    if args.force:
+        # The one destructive path: overwrite every pack file.
+        files = pack_files(args.archetype, stacks)
+        for rel_path, content in sorted(files.items()):
+            target = project_root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        print(f"Hired '{args.archetype}':")
+        for rel_path in sorted(files):
+            print(f"  {rel_path}")
+    else:
+        missing, present = split_pack_files(args.archetype, stacks, project_root)
+        # Write ONLY the files not yet on disk — additive, never destructive.
+        for rel_path in sorted(missing):
+            target = project_root / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(missing[rel_path])
 
-    if not args.force:
-        existing = sorted(rel for rel in files if (project_root / rel).exists())
-        if existing:
+        if not missing:
             print(
-                f"[ERROR] '{args.archetype}' already has file(s) on disk: "
-                f"{', '.join(existing)}; pass --force to overwrite",
-                file=sys.stderr,
+                f"'{args.archetype}' is already fully hired "
+                f"({len(present)} file(s)); nothing to add."
             )
-            return 1
-
-    for rel_path, content in sorted(files.items()):
-        target = project_root / rel_path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
-
-    print(f"Hired '{args.archetype}':")
-    for rel_path in sorted(files):
-        print(f"  {rel_path}")
+        else:
+            print(f"Hired '{args.archetype}' (added {len(missing)} missing file(s)):")
+            for rel_path in sorted(missing):
+                print(f"  {rel_path}")
+            for rel_path in sorted(present):
+                # Flag drift so the operator knows --force would reconcile it —
+                # present[] carries the pack default, compared to the disk bytes.
+                suffix = ""
+                if (project_root / rel_path).read_text() != present[rel_path]:
+                    suffix = " (differs from the pack default — --force overwrites)"
+                print(f"  kept (already on disk): {rel_path}{suffix}")
 
     blueprints = load_all_blueprints(manifest, operator_layer)
     violations = lint(manifest, blueprints)
@@ -3827,14 +3865,18 @@ def _build_parser() -> argparse.ArgumentParser:
     team_subparsers = team_parser.add_subparsers(dest="team_action")
 
     team_hire_parser = team_subparsers.add_parser(
-        "hire", help="Scaffold an Archetype Pack's files, then run `alc lint`."
+        "hire",
+        help=(
+            "Write an Archetype Pack's MISSING files (keeping existing ones), "
+            "then run `alc lint`."
+        ),
     )
     team_hire_parser.add_argument("archetype", help="Pack name, e.g. 'builder'.")
     team_hire_parser.add_argument(
         "--force",
         action="store_true",
         default=False,
-        help="Overwrite the pack's files even if some already exist.",
+        help="Overwrite ALL of the pack's files, replacing any local edits.",
     )
 
     team_list_parser = team_subparsers.add_parser(

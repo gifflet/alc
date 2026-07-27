@@ -32,7 +32,7 @@ from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
 from alc.manifestedit import validate_manifest_text
 from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
-from alc.packs import PACKS, hired_archetypes, pack_files
+from alc.packs import PACKS, hired_archetypes, pack_files, split_pack_files
 from alc.policy import lint as _lint
 from alc.policy import lint_loops, validate_provisions, validate_prompts
 from alc.prompts import (
@@ -825,35 +825,39 @@ def team_roster(root: Path) -> dict:
 
 
 def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
-    """Write *archetype*'s pack files, then lint; return {written, lint}.
+    """Write *archetype*'s MISSING pack files (additive), then lint; return
+    {written, kept, lint}.
 
-    Mirrors `_team_hire`'s contract exactly: a WHOLE-pack refusal (ApiError
-    409) when any of the pack's files already exists on disk and `force` is
-    False — never a partial write. An unknown archetype is ApiError(404),
-    naming the valid ones (`PACKS`'s keys).
+    Mirrors `_team_hire`'s additive contract: writes only the pack files not yet
+    on disk (`written`) and keeps the ones already present (`kept`), so a
+    partially-present or drifted archetype receives the newer files ALC ships and
+    a re-hire is a no-op — never a whole-pack refusal (the old 409 is gone;
+    additive hire never conflicts). `force` overwrites ALL of a pack's files (the
+    one destructive path), returning them all under `written` with an empty
+    `kept`. An unknown archetype is ApiError(404), naming the valid ones
+    (`PACKS`'s keys).
     """
     if archetype not in PACKS:
         available = ", ".join(sorted(PACKS)) or "none yet"
         raise ApiError(f"no pack named '{archetype}' yet (available: {available})", status=404)
 
-    files = pack_files(archetype, detect_stacks(root))
+    if force:
+        files = pack_files(archetype, detect_stacks(root))
+        written = sorted(files)
+        kept: list[str] = []
+        contents = files
+    else:
+        missing, present = split_pack_files(archetype, detect_stacks(root), root)
+        written = sorted(missing)
+        kept = sorted(present)
+        contents = missing
 
-    if not force:
-        existing = sorted(rel for rel in files if (root / rel).exists())
-        if existing:
-            raise ApiError(
-                f"'{archetype}' already has file(s) on disk: {', '.join(existing)}; "
-                "pass force to overwrite",
-                status=409,
-            )
-
-    written = sorted(files)
     for rel_path in written:
         target = root / rel_path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(files[rel_path])
+        target.write_text(contents[rel_path])
 
-    return {"written": written, "lint": lint_project(root)}
+    return {"written": written, "kept": kept, "lint": lint_project(root)}
 
 
 def team_retire(root: Path, member: str) -> dict:

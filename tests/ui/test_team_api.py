@@ -83,18 +83,45 @@ class TestHire:
         assert resp.status_code == 404
         assert "nosuchpack" in resp.json()["detail"]
 
-    def test_hire_duplicate_without_force_is_409(
+    def test_hire_duplicate_without_force_is_an_additive_no_op(
         self, client, registered: str, project: Path
     ) -> None:
+        # Additive hire never conflicts (no 409): a second hire of a fully-present
+        # pack writes nothing and reports every file as kept.
+        first = client.post(
+            f"/api/projects/{registered}/team/hire", json={"archetype": "builder"}
+        )
+        assert first.status_code == 201
+        all_files = first.json()["written"]
+
+        second = client.post(
+            f"/api/projects/{registered}/team/hire", json={"archetype": "builder"}
+        )
+        assert second.status_code == 201
+        body = second.json()
+        assert body["written"] == []
+        assert sorted(body["kept"]) == sorted(all_files)
+
+    def test_hire_partial_writes_only_the_missing_file(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # A partially-present pack (one file deleted) receives ONLY that file back.
         first = client.post(
             f"/api/projects/{registered}/team/hire", json={"archetype": "builder"}
         )
         assert first.status_code == 201
 
-        second = client.post(
+        removed = project / ".alc" / "blueprints" / "qa.md"
+        removed.unlink()
+
+        resp = client.post(
             f"/api/projects/{registered}/team/hire", json={"archetype": "builder"}
         )
-        assert second.status_code == 409
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["written"] == [".alc/blueprints/qa.md"]
+        assert ".alc/blueprints/test.md" in body["kept"]
+        assert removed.is_file()
 
     def test_hire_with_force_overwrites(self, client, registered: str, project: Path) -> None:
         client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "builder"})
