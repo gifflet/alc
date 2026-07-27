@@ -54,7 +54,7 @@ from alc.stagepolicy import lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
 from alc.ui.repostatus import repo_status
-from alc.variants import read_variant, variant_row
+from alc.variants import list_all_variants
 from alc.worktree import git_toplevel, is_git_repo
 
 
@@ -1050,19 +1050,15 @@ _VARIANT_BRANCH_RE = re.compile(r"^alc/variant-\d+-[0-9a-f]{8}$")
 
 
 def list_variants(root: Path) -> list[dict]:
-    """Return every archived explore variant as a comparable row (mirrors `alc compare`)."""
+    """Return every archived explore variant as a comparable row (mirrors bare `alc compare`).
+
+    Delegates to the ONE shared enumeration ``variants.list_all_variants`` so the
+    UI Compare view and bare ``alc compare`` can never show a different set (or
+    order). This function only resolves the manifest's ``variants_dir``; the seam
+    (dir-missing → [], unreadable archives skipped, sorted by stem) lives there.
+    """
     manifest = load_manifest(operator_layer(root))
-    variants_dir = root / manifest.variants_dir
-    if not variants_dir.is_dir():
-        return []
-    rows = []
-    for path in sorted(variants_dir.glob("*.json")):
-        found = read_variant(variants_dir, path.stem)
-        if found is None:
-            continue
-        unit, engine, tier = found
-        rows.append(variant_row(unit, engine, tier))
-    return rows
+    return list_all_variants(root / manifest.variants_dir)
 
 
 def adopt_variant(root: Path, branch: str) -> dict:

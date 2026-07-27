@@ -92,3 +92,30 @@ def variant_row(unit: UnitResult, engine: str | None = None, tier: str | None = 
         "usage": asdict(rr.usage) if rr.usage is not None else None,
         "diffstat": rr.diffstat.model_dump() if rr.diffstat is not None else None,
     }
+
+
+def list_all_variants(variants_dir: Path) -> list[dict]:
+    """Enumerate EVERY archived variant under *variants_dir* as a comparable row.
+
+    THE one enumeration shared by the UI Compare view (``ui.service.list_variants``)
+    and bare ``alc compare`` — so the CLI read and the UI Compare view can never
+    show a different set. An unreadable/malformed archive is silently SKIPPED: a
+    bulk listing degrades gracefully rather than failing on one bad file (an
+    explicitly-NAMED ref, by contrast, stays an error in ``read_variant``'s
+    caller). Rows come out sorted by archive stem — the UI's order, preserved here
+    for parity. A missing ``variants_dir`` (nothing explored yet) is an empty list.
+
+    Takes ``variants_dir`` (this module's existing seam — ``write_variant`` /
+    ``read_variant`` are already ``variants_dir``-keyed) so this stays ignorant of
+    manifest loading; the caller resolves ``manifest.variants_dir`` and passes it in.
+    """
+    if not variants_dir.is_dir():
+        return []
+    rows = []
+    for path in sorted(variants_dir.glob("*.json")):
+        found = read_variant(variants_dir, path.stem)
+        if found is None:
+            continue
+        unit, engine, tier = found
+        rows.append(variant_row(unit, engine, tier))
+    return rows

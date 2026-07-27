@@ -80,3 +80,13 @@ class TestBuildParserDefaults:
         # No override by default — each task's own engine: still wins.
         args = _build_parser().parse_args(["tick"])
         assert args.engine is None
+
+    def test_bare_compare_defaults_refs_to_empty_list(self) -> None:
+        # No required refs: `alc compare` parses with refs == [], which cmd_compare
+        # routes to the read view over EVERY archived variant (CLI ≡ UI).
+        args = _build_parser().parse_args(["compare"])
+        assert args.refs == []
+
+    def test_compare_captures_an_explicit_ref(self) -> None:
+        args = _build_parser().parse_args(["compare", "variant-1-aaaaaaaa"])
+        assert args.refs == ["variant-1-aaaaaaaa"]

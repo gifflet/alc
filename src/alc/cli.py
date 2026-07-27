@@ -2469,31 +2469,55 @@ def cmd_explore(args: argparse.Namespace) -> int:
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
-    """Run `alc compare <branch|stem>...`: variants side by side (T6's columns).
+    """Run `alc compare [<branch|stem>...]`: variants side by side (T6's columns).
 
-    Reads each ref's archive from ``manifest.variants_dir`` (written by `alc
-    explore`) — either the full ``alc/variant-…`` branch name or its bare stem.
-    A ref with no archive is reported on stderr and the command exits 1.
+    With explicit refs, reads each ref's archive from ``manifest.variants_dir``
+    (written by `alc explore`) — either the full ``alc/variant-…`` branch name or
+    its bare stem. A ref with no archive is reported on stderr and the command
+    exits 1.
+
+    Bare (no refs) lists EVERY archived variant via the one shared lister
+    ``variants.list_all_variants`` — so the CLI's bare read shows exactly the same
+    set (and order) as the UI Compare view (CLI ≡ UI, they can never drift).
     """
     from alc.intake import load_manifest
-    from alc.variants import read_variant, variant_row
+    from alc.variants import list_all_variants, read_variant, variant_row
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
     variants_dir = operator_layer.parent / manifest.variants_dir
 
-    rows = []
-    missing = []
-    for ref in args.refs:
-        found = read_variant(variants_dir, ref)
-        if found is None:
-            missing.append(ref)
-            continue
-        unit, engine, tier = found
-        rows.append(variant_row(unit, engine, tier))
+    missing: list[str] = []
+    if args.refs:
+        rows = []
+        for ref in args.refs:
+            found = read_variant(variants_dir, ref)
+            if found is None:
+                missing.append(ref)
+                continue
+            unit, engine, tier = found
+            rows.append(variant_row(unit, engine, tier))
+        if missing:
+            print(f"[ERROR] no archived variant for: {', '.join(missing)}", file=sys.stderr)
+    else:
+        # Bare `alc compare` = the read view over EVERY archived variant — the same
+        # set (and order) the UI Compare view lists, via the one shared lister.
+        rows = list_all_variants(variants_dir)
+        if not rows:
+            # Empty-state guard sits BEFORE the `--diff` block on purpose: a bare
+            # call on an empty project returns the friendly empty state (rc 0) and
+            # never trips the "not inside a git repository (diffs unavailable)"
+            # rc-1 path below.
+            if getattr(args, "json", False):
+                from alc.output import emit_json
 
-    if missing:
-        print(f"[ERROR] no archived variant for: {', '.join(missing)}", file=sys.stderr)
+                emit_json([])
+                return 0
+            print(
+                "No archived variants yet — run `alc explore <blueprint> <task>` "
+                "to create some."
+            )
+            return 0
 
     # `--diff` enriches each row with its branch's unified diff so metric-tied
     # variants (identical checks/scorecard/cost) can still be told apart. It
@@ -3681,13 +3705,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Print the variant table as JSON (machine-readable).",
     )
 
-    # alc compare <branch|stem>...
+    # alc compare [<branch|stem>...]
     compare_parser = subparsers.add_parser(
         "compare",
         help="Put explored variants side by side (branch, checks, scorecard, usage, diffstat).",
     )
+    # Not required: a bare `alc compare` (refs == []) lists EVERY archived variant
+    # via the one shared lister — the same set the UI Compare view shows — so the
+    # read opens on observation, never a usage error.
     compare_parser.add_argument(
-        "refs", nargs="+", help="Variant branch name(s) or bare stem(s) from `alc explore`."
+        "refs",
+        nargs="*",
+        help=(
+            "Variant branch name(s) or bare stem(s) from `alc explore`; "
+            "omit to list all archived variants."
+        ),
     )
     compare_parser.add_argument(
         "--json",

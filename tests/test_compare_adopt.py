@@ -281,6 +281,125 @@ class TestCompareDiff:
         assert "alc/variant-1-aaaaaaaa" in out  # the table still printed
 
 
+class TestCompareBare:
+    """Bare `alc compare` (no refs) = the read view over EVERY archived variant —
+    the same set (and order) the UI Compare view lists, via the one shared lister.
+    """
+
+    def test_lists_every_archived_variant(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare())  # no refs
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "alc/variant-1-aaaaaaaa" in out
+        assert "alc/variant-2-bbbbbbbb" in out
+
+    def test_orders_by_sorted_archive_stem(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # Seeded in reverse; the listing must sort by archive stem (the UI's order),
+        # so variant-1 precedes variant-2 regardless of write order.
+        repo = _make_git_repo(tmp_path)
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(json=True))
+        assert rc == 0
+        branches = [row["branch"] for row in json.loads(capsys.readouterr().out)]
+        assert branches == ["alc/variant-1-aaaaaaaa", "alc/variant-2-bbbbbbbb"]
+
+    def test_no_variants_is_a_friendly_empty_state_not_an_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_alc_dir(repo)  # no variants archived
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare())
+        assert rc == 0
+        out, err = capsys.readouterr()
+        assert "No archived variants yet" in out
+        assert "alc explore" in out
+        assert "[ERROR]" not in err  # never the missing-ref error path
+
+    def test_json_lists_every_archived_variant(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(json=True))
+        assert rc == 0
+        rows = json.loads(capsys.readouterr().out)
+        assert {row["branch"] for row in rows} == {
+            "alc/variant-1-aaaaaaaa",
+            "alc/variant-2-bbbbbbbb",
+        }
+
+    def test_json_no_variants_is_an_empty_list(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_alc_dir(repo)
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(json=True))
+        assert rc == 0
+        assert json.loads(capsys.readouterr().out) == []
+
+    def test_diff_mixes_a_real_branch_and_a_gone_archive(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # Create the real branch BEFORE .alc exists so its commit never sweeps the
+        # untracked operator layer. The second variant's branch is never created
+        # (mirrors an archive that outlived its branch after adopt).
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/variant-1-aaaaaaaa", "win.txt", "winner\n")
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(alc / "variants", "alc/variant-2-bbbbbbbb")  # branch never created
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(diff=True))  # bare + --diff
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "+winner" in out
+        assert "(no diff available — branch missing)" in out
+
+    def test_json_matches_the_ui_lister_exactly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # One shared lister (`variants.list_all_variants`) backs both bare
+        # `alc compare` and the UI's `service.list_variants`, so the CLI read and
+        # the UI Compare view can never drift — pinned here.
+        from alc.ui import service
+
+        repo = _make_git_repo(tmp_path)
+        alc = _make_alc_dir(repo)
+        _seed_variant(alc / "variants", "alc/variant-1-aaaaaaaa")
+        _seed_variant(
+            alc / "variants", "alc/variant-2-bbbbbbbb", success=False, failed_checks=["smoke"]
+        )
+        monkeypatch.chdir(repo)
+
+        rc = cmd_compare(_ns_compare(json=True))
+        assert rc == 0
+        cli_rows = json.loads(capsys.readouterr().out)
+        assert cli_rows == service.list_variants(repo)
+
+
 # ---------------------------------------------------------------------------
 # alc adopt
 # ---------------------------------------------------------------------------
