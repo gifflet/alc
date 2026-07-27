@@ -61,6 +61,56 @@ _DEFAULT_CHECKS_BLOCK = """\
   - name: smoke
     command: ["true"]"""
 
+# A blueprint's inline check whose binary is not on PATH at `alc init` is scaffolded
+# COMMENTED OUT for the same reason a check_set entry is — a live check that fails on a
+# clean checkout cannot be law — with this hint so the operator knows how to activate it.
+_BLUEPRINT_OFF_PATH_HINT = (
+    "  # A check whose binary was not on PATH at `alc init` is commented out — a live\n"
+    "  # check that fails on a clean checkout cannot be law. Install it (or run\n"
+    "  # `alc onboard` to adopt the checks your project already declares), then\n"
+    "  # uncomment. Until a real check is live this Blueprint verifies via smoke only."
+)
+
+
+def render_blueprint_checks(checks: list[tuple[str, list[str]]]) -> str:
+    """Render a Blueprint's inline `checks:` block, PATH-aware like `render_check_set`.
+
+    Each (name, command) whose binary (``command[0]``) is not on PATH is written
+    COMMENTED OUT — a live check that exits 127 on a clean checkout cannot be law, and
+    a blueprint that shipped one would fail EVERY run on a machine where the tool lives
+    behind a venv/wrapper rather than bare on PATH (e.g. pytest under `uv`). When NO
+    check is live the block falls back to the smoke placeholder, so the Blueprint is
+    honestly *smoke-only* — the exact shape `alc onboard` opts into a harvested
+    `project` check_set. When every check is live the output is byte-identical to the
+    pre-PATH-aware hardcoded block (no hint, no smoke fallback), so an on-PATH scaffold
+    does not move.
+
+    An empty `checks` (no stack detected) returns the default placeholder block
+    unchanged.
+    """
+    if not checks:
+        return _DEFAULT_CHECKS_BLOCK
+    lines: list[str] = []
+    any_live = False
+    any_commented = False
+    for name, command in checks:
+        if shutil.which(command[0]) is None:
+            any_commented = True
+            lines.append(f"  # - name: {name}")
+            lines.append(f"  #   command: {json.dumps(command)}")
+        else:
+            any_live = True
+            lines.append(f"  - name: {name}")
+            lines.append(f"    command: {json.dumps(command)}")
+    if not any_live:
+        # No detectable check is runnable — fall back to the smoke placeholder so the
+        # Blueprint is honestly smoke-only rather than shipping a live check that 127s.
+        lines.append("  - name: smoke")
+        lines.append('    command: ["true"]')
+    if any_commented:
+        lines.insert(0, _BLUEPRINT_OFF_PATH_HINT)
+    return "\n".join(lines)
+
 _CHORE = """\
 ---
 name: chore
@@ -213,65 +263,58 @@ def detect_stack(project_root: Path) -> tuple[str | None, str]:
             no known stack was detected.
           - checks_block is a YAML snippet (correctly indented for blueprint
             front-matter) representing the checks for that stack, or the
-            default placeholder block when no stack was detected.
+            default placeholder block when no stack was detected. A check whose
+            binary is not on PATH at init time is rendered COMMENTED OUT (with a
+            smoke fallback) by render_blueprint_checks — byte-identical to the old
+            hardcoded block only when every command is on PATH.
     """
     if (project_root / "go.mod").exists():
-        return (
-            "Go",
-            "  - name: build\n    command: [\"go\", \"build\", \"./...\"]\n"
-            "  - name: vet\n    command: [\"go\", \"vet\", \"./...\"]",
-        )
+        return ("Go", render_blueprint_checks([
+            ("build", ["go", "build", "./..."]),
+            ("vet", ["go", "vet", "./..."]),
+        ]))
     if (project_root / "pyproject.toml").exists() or (project_root / "setup.py").exists():
-        return (
-            "Python",
-            "  - name: test\n    command: [\"pytest\", \"-q\"]",
-        )
+        return ("Python", render_blueprint_checks([
+            ("test", ["pytest", "-q"]),
+        ]))
     if (project_root / "package.json").exists():
-        return (
-            "Node",
-            "  - name: test\n    command: [\"npm\", \"test\"]",
-        )
+        return ("Node", render_blueprint_checks([
+            ("test", ["npm", "test"]),
+        ]))
     if (project_root / "Cargo.toml").exists():
-        return (
-            "Rust",
-            "  - name: check\n    command: [\"cargo\", \"check\"]",
-        )
+        return ("Rust", render_blueprint_checks([
+            ("check", ["cargo", "check"]),
+        ]))
     if (project_root / "Gemfile").exists():
-        return (
-            "Ruby",
-            "  - name: test\n    command: [\"bundle\", \"exec\", \"rspec\"]\n"
-            "  - name: lint\n    command: [\"bundle\", \"exec\", \"rubocop\"]",
-        )
+        return ("Ruby", render_blueprint_checks([
+            ("test", ["bundle", "exec", "rspec"]),
+            ("lint", ["bundle", "exec", "rubocop"]),
+        ]))
     if (project_root / "composer.json").exists():
-        return (
-            "PHP",
-            "  - name: test\n    command: [\"composer\", \"test\"]\n"
-            "  - name: analyse\n    command: [\"vendor/bin/phpstan\", \"analyse\"]",
-        )
+        return ("PHP", render_blueprint_checks([
+            ("test", ["composer", "test"]),
+            ("analyse", ["vendor/bin/phpstan", "analyse"]),
+        ]))
     if (project_root / "pom.xml").exists():
-        return (
-            "Maven",
-            "  - name: test\n    command: [\"mvn\", \"-q\", \"test\"]\n"
-            "  - name: verify\n    command: [\"mvn\", \"-q\", \"verify\"]",
-        )
+        return ("Maven", render_blueprint_checks([
+            ("test", ["mvn", "-q", "test"]),
+            ("verify", ["mvn", "-q", "verify"]),
+        ]))
     if (project_root / "build.gradle").exists() or (project_root / "build.gradle.kts").exists():
-        return (
-            "Gradle",
-            "  - name: test\n    command: [\"./gradlew\", \"test\"]\n"
-            "  - name: check\n    command: [\"./gradlew\", \"check\"]",
-        )
+        return ("Gradle", render_blueprint_checks([
+            ("test", ["./gradlew", "test"]),
+            ("check", ["./gradlew", "check"]),
+        ]))
     if (project_root / "mix.exs").exists():
-        return (
-            "Elixir",
-            "  - name: test\n    command: [\"mix\", \"test\"]\n"
-            "  - name: credo\n    command: [\"mix\", \"credo\"]",
-        )
+        return ("Elixir", render_blueprint_checks([
+            ("test", ["mix", "test"]),
+            ("credo", ["mix", "credo"]),
+        ]))
     if any(project_root.glob("*.csproj")) or any(project_root.glob("*.sln")):
-        return (
-            ".NET",
-            "  - name: build\n    command: [\"dotnet\", \"build\"]\n"
-            "  - name: test\n    command: [\"dotnet\", \"test\"]",
-        )
+        return (".NET", render_blueprint_checks([
+            ("build", ["dotnet", "build"]),
+            ("test", ["dotnet", "test"]),
+        ]))
     return (None, _DEFAULT_CHECKS_BLOCK)
 
 
@@ -635,9 +678,11 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     Gate (alc lint passes with no error-level violations).
 
     The chore, bug, and feature blueprints receive real stack-specific checks
-    when detect_stack() identifies the project stack; otherwise they keep the
-    placeholder comment + smoke check.  plan.md always keeps the ["true"] smoke
-    check because the planning stage produces no executable code.
+    when detect_stack() identifies the project stack AND the check's binary is on
+    PATH; a detected check whose binary is absent is scaffolded commented-out with
+    a smoke fallback (so the blueprint is honestly smoke-only), and a project with
+    no detected stack keeps the placeholder comment + smoke check.  plan.md always
+    keeps the ["true"] smoke check because the planning stage produces no code.
 
     manifest.yaml's `check_sets` gets one named set per stack detect_stacks()
     finds (fuller batteries than the single-stack path above) plus a `security`
@@ -665,9 +710,11 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
         )
 
     # Detect the project stack to provide real checks. The single-stack path
-    # (detect_stack) stays first-match-wins so the default blueprints keep
-    # their current inline checks byte-identical; detect_stacks() separately
-    # feeds the multi-stack check_sets below.
+    # (detect_stack) stays first-match-wins; its inline checks are byte-identical
+    # to before WHEN THE BINARY IS ON PATH, and are scaffolded commented-out (with
+    # a smoke fallback) when it is not — so a run never 127s on a clean checkout and
+    # `alc onboard` can opt the now-smoke-only blueprint into a harvested set.
+    # detect_stacks() separately feeds the multi-stack check_sets below.
     _stack_label, checks_block = detect_stack(project_root)
     stacks = detect_stacks(project_root)
     check_sets_block = _render_check_sets_block(stacks, project_root)

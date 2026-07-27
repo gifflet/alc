@@ -274,6 +274,32 @@ class TestAssist:
         assert "alc onboard --assist" not in out
 
 
+class TestDetectedStackOffPathCascade:
+    """The whole point of the init PATH-aware fix, end to end: a Python project whose
+    pytest is off PATH at init scaffolds SMOKE-ONLY blueprints (not a live-and-broken
+    inline `pytest -q`), so `alc onboard` opts them into the harvested `project`
+    check_set — the init inline check and the onboard harvest no longer diverge."""
+
+    def test_python_blueprints_off_path_get_opted_into_project_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # pytest off PATH at init -> the Python blueprint degrades to smoke-only,
+        # which is exactly the opt-in candidate onboard wires the harvest into.
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+        (tmp_path / "Makefile").write_text("test:\n\tpytest\n\nlint:\n\truff check\n")
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_onboard(_ns(yes=True)) == 0
+
+        reloaded = load_manifest(tmp_path / ".alc")
+        assert "project" in reloaded.check_sets
+        for name in ("chore", "bug", "feature"):
+            bp = load_blueprint(tmp_path / ".alc" / "blueprints", name)
+            assert bp.check_set == "project", f"{name} was not opted into project"
+
+
 class TestRequiresOperatorLayer:
     def test_no_operator_layer_raises_the_standard_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

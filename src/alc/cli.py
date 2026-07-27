@@ -333,7 +333,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     for path in created:
         print(f"  {path}")
 
-    stack_label, _checks_block = detect_stack(project_root)
+    stack_label, checks_block = detect_stack(project_root)
     if stack_label is not None:
         # Derive a short description of the real checks from the stack label.
         _stack_checks = {
@@ -349,7 +349,26 @@ def cmd_init(args: argparse.Namespace) -> int:
             ".NET": "dotnet build, dotnet test",
         }
         checks_desc = _stack_checks.get(stack_label, "real checks")
-        print(f"Detected {stack_label} — scaffolded real checks ({checks_desc}).")
+        # detect_stack renders a check whose binary is off PATH COMMENTED OUT (a
+        # live check that 127s on a clean checkout cannot be law). Keep the message
+        # honest: a smoke fallback in the block means EVERY detected check was off
+        # PATH; a lone `# - name:` means some were.
+        all_off_path = "- name: smoke" in checks_block
+        some_off_path = "# - name:" in checks_block
+        if all_off_path:
+            print(
+                f"Detected {stack_label}, but its checks ({checks_desc}) were not on "
+                "PATH — scaffolded them commented out with a smoke placeholder. "
+                "Install them and uncomment in .alc/blueprints/, or run `alc onboard` "
+                "to adopt the checks your project already declares."
+            )
+        elif some_off_path:
+            print(
+                f"Detected {stack_label} — scaffolded real checks ({checks_desc}); "
+                "some were not on PATH and were commented out (see .alc/blueprints/)."
+            )
+        else:
+            print(f"Detected {stack_label} — scaffolded real checks ({checks_desc}).")
     else:
         # No stack detected: the scaffold left only the ["true"] smoke placeholder.
         # Say so loudly — ALC's guarantees are only as strong as the checks wired in.

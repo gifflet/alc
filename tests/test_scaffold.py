@@ -395,13 +395,122 @@ _PYTHON_STACK_EXPECTED = {
 
 
 class TestScaffoldBlueprintsStayByteIdenticalWithCheckSets:
-    def test_python_project_blueprints_and_flow_unchanged(self, tmp_path: Path) -> None:
-        """check_sets is new manifest.yaml content only — blueprints/flow don't move."""
+    def test_python_project_blueprints_and_flow_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """check_sets is new manifest.yaml content only — blueprints/flow don't move.
+
+        The snapshot captures the ON-PATH rendering (a live `pytest -q` inline check),
+        so `which` is forced present to keep this hermetic regardless of whether the
+        test host actually has pytest bare on PATH.
+        """
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
         scaffold(tmp_path)
 
         for rel, expected in _PYTHON_STACK_EXPECTED.items():
             assert (tmp_path / rel).read_text() == expected, f"{rel} changed by T5"
+
+
+# ---------------------------------------------------------------------------
+# A detected stack's INLINE blueprint check is PATH-aware, mirroring the
+# check_sets rendering: a check whose binary is off PATH is commented out (with a
+# smoke fallback) rather than shipped live-and-broken. This closes the divergence
+# where init commented the check_set's pytest for the missing binary yet shipped
+# the SAME pytest live in the blueprint (a run then 127s on a clean checkout).
+# ---------------------------------------------------------------------------
+
+
+class TestBlueprintChecksArePathAware:
+    def test_empty_checks_returns_default_placeholder_block(self) -> None:
+        """No detected stack -> the default `# Replace...` + smoke block, unchanged."""
+        from alc.scaffold import _DEFAULT_CHECKS_BLOCK, render_blueprint_checks
+
+        assert render_blueprint_checks([]) == _DEFAULT_CHECKS_BLOCK
+
+    def test_on_path_is_byte_identical_to_hardcoded_block(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every binary on PATH -> live checks, no hint, no smoke fallback (unchanged)."""
+        from alc.scaffold import render_blueprint_checks
+
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        block = render_blueprint_checks(
+            [("build", ["go", "build", "./..."]), ("vet", ["go", "vet", "./..."])]
+        )
+        assert block == (
+            '  - name: build\n    command: ["go", "build", "./..."]\n'
+            '  - name: vet\n    command: ["go", "vet", "./..."]'
+        )
+
+    def test_off_path_is_commented_with_smoke_fallback_and_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No binary on PATH -> every check commented, smoke fallback added, hint shown."""
+        from alc.scaffold import _BLUEPRINT_OFF_PATH_HINT, render_blueprint_checks
+
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        block = render_blueprint_checks([("test", ["pytest", "-q"])])
+        assert block.startswith(_BLUEPRINT_OFF_PATH_HINT)
+        assert '  # - name: test' in block
+        assert '  #   command: ["pytest", "-q"]' in block
+        # The smoke fallback keeps the block a valid, honestly smoke-only check list.
+        assert '  - name: smoke' in block
+        assert '    command: ["true"]' in block
+
+    def test_mixed_availability_keeps_live_and_comments_absent_no_smoke(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One binary present, one absent -> live + commented, hint, NO smoke fallback."""
+        from alc.scaffold import render_blueprint_checks
+
+        monkeypatch.setattr(
+            "alc.scaffold.shutil.which",
+            lambda cmd: "/usr/bin/rspec" if cmd == "bundle" else None,
+        )
+        block = render_blueprint_checks(
+            [("test", ["bundle", "exec", "rspec"]), ("lint", ["ruff", "check", "."])]
+        )
+        assert '  - name: test' in block          # bundle on PATH -> live
+        assert '  # - name: lint' in block         # ruff off PATH -> commented
+        assert '- name: smoke' not in block        # a live check exists -> no fallback
+
+    def test_python_scaffold_off_path_blueprints_are_smoke_only(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The crux: pytest off PATH -> chore/bug/feature scaffold as smoke-only, so a
+        run cannot 127 AND `alc onboard` can opt them into a harvested check_set."""
+        from alc.intake import is_smoke_only
+
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = {bp.name: bp for bp in load_all_blueprints(manifest, operator_layer)}
+        for name in ("chore", "bug", "feature"):
+            assert is_smoke_only(manifest, blueprints[name]), f"{name} should be smoke-only"
+
+        # And the degraded layer still lints clean (smoke is a valid live check).
+        errors = [v for v in lint(manifest, list(blueprints.values())) if v.severity == "error"]
+        assert not errors, f"off-PATH Python layer has lint errors: {errors}"
+
+    def test_python_scaffold_on_path_blueprints_run_pytest(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """pytest on PATH -> the blueprint keeps a real (non-smoke) pytest check."""
+        from alc.intake import is_smoke_only
+
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = {bp.name: bp for bp in load_all_blueprints(manifest, operator_layer)}
+        assert not is_smoke_only(manifest, blueprints["chore"])
+        assert blueprints["chore"].checks[0].command == ["pytest", "-q"]
 
 
 class TestScaffoldWritesCheckSets:
