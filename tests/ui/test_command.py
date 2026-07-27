@@ -156,6 +156,21 @@ class TestValueFlagsGuard:
         assert argv == [sys.executable, "-m", "alc", "spike", "x", "--engine", "mock"]
 
 
+class TestTickEngine:
+    """GAP 1: the UI Run Config form must pick up `alc tick --engine` — the exec
+    whitelist now allows a scalar `engine` value flag on `tick`."""
+
+    def test_tick_emits_engine_flag(self) -> None:
+        argv = build_argv("tick", {"concurrency": 1, "engine": "mock"})
+        assert argv == [
+            sys.executable, "-m", "alc", "tick", "--concurrency", "1", "--engine", "mock",
+        ]
+
+    def test_tick_omits_engine_when_unset(self) -> None:
+        argv = build_argv("tick", {"concurrency": 2})
+        assert "--engine" not in argv
+
+
 class TestConductStrictStage:
     def test_accepts_strict_stage_flag(self) -> None:
         argv = build_argv("conduct", {"goal": "ship it", "strict-stage": True})

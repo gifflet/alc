@@ -239,6 +239,18 @@ class TestChecksAuditCli:
         assert "- name: gitleaks" in out
         assert 'command: ["gitleaks", "detect"]' in out
 
+    def test_bare_checks_action_none_prints_audit_not_history(
+        self, operator_layer: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # GAP 1: a bare `alc checks` (checks_action None) opens on the audit read
+        # view, never a usage error. The fixture's stackless smoke-only `chore`
+        # prints audit's honest "no stack was detected" nudge — a message unique
+        # to the audit path (history aggregates run logs, never says this).
+        monkeypatch.chdir(operator_layer.parent)
+        assert cmd_checks(_ns(checks_action=None)) == 0
+        out = capsys.readouterr().out
+        assert "no stack was detected" in out
+
 
 # ---------------------------------------------------------------------------
 # Policy Gate — advisory smoke-only-execution-blueprint rule (T13)

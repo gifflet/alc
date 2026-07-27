@@ -852,6 +852,18 @@ def cmd_tick(args: argparse.Namespace) -> int:
 
     manifest = load_manifest(operator_layer)
 
+    # A hard --engine override wins over every task's own engine: for this drain.
+    # Fail fast on an undeclared engine so a typo doesn't poison every demand and
+    # archive the whole queue as engine-error failures instead of running the work.
+    engine_override = getattr(args, "engine", None)
+    if engine_override is not None and engine_override not in manifest.engines:
+        print(
+            f"[ERROR] unknown engine '{engine_override}'. "
+            f"Available: {', '.join(sorted(manifest.engines))}",
+            file=sys.stderr,
+        )
+        return 1
+
     queue_dir = operator_layer.parent / manifest.queue_dir
     if not queue_dir.exists():
         print("No pending tasks.")
@@ -867,7 +879,17 @@ def cmd_tick(args: argparse.Namespace) -> int:
         # interrupt closes the in-flight run with run_aborted. Parallel workers
         # bind in their own worker context (unseen here) and degrade to staleness.
         with abort_event_on_interrupt():
-            results = process_queue(manifest, operator_layer, max_workers=args.concurrency)
+            # Thread the override through only when set, so a drain WITHOUT --engine
+            # calls process_queue exactly as before (the flag is purely additive —
+            # this also keeps monkeypatched process_queue doubles byte-compatible).
+            drain_kwargs = (
+                {"engine_override": engine_override}
+                if engine_override is not None
+                else {}
+            )
+            results = process_queue(
+                manifest, operator_layer, max_workers=args.concurrency, **drain_kwargs
+            )
 
     if not results:
         print("No pending tasks.")
@@ -1214,6 +1236,10 @@ def cmd_team(args: argparse.Namespace) -> int:
     brought), ``retire`` archives a member's loop definition(s) instead of
     deleting them.
     """
+    # Bare `alc team` = the read view: default to `status` (roster + Mix Health)
+    # so the command family opens on observation, never a usage error.
+    if args.team_action is None:
+        args.team_action = "status"
     if args.team_action == "hire":
         return _team_hire(args)
     if args.team_action == "retire":
@@ -2629,6 +2655,8 @@ def cmd_checks(args: argparse.Namespace) -> int:
     """Run `alc checks <action>`: dispatch to `audit` or `history`."""
     if args.checks_action == "history":
         return _checks_history(args)
+    # Bare `alc checks` (checks_action None) = the audit read view — never a usage
+    # error. Both handlers read `--json` via getattr, so the missing attr is safe.
     return _checks_audit(args)
 
 
@@ -3102,11 +3130,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def main() -> None:
-    """Console-script entrypoint."""
-    # A broken stderr pipe (cancelled exec / disconnected client) must never crash
-    # the work — only the progress output is lost. Guard every stderr write once.
-    sys.stderr = _ResilientStderr(sys.stderr)  # type: ignore[assignment]
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the fully-configured `alc` argument parser.
+
+    Extracted from ``main()`` as a pure, behavior-neutral move so tests can
+    introspect the argparse defaults — e.g. that a bare ``audit`` defaults
+    ``--since`` to ``7d`` — without executing any command. ``main()`` holds the
+    returned parser so ``parser.error(...)`` still reports usage against it.
+    """
     parser = argparse.ArgumentParser(
         prog="alc",
         description="ALC — Agentic Layer Compiler & Runtime",
@@ -3304,6 +3335,14 @@ def main() -> None:
             "Silence the dirty working-tree notice. The run proceeds either way "
             "and never commits your uncommitted work; this flag only quiets the "
             "warning."
+        ),
+    )
+    tick_parser.add_argument(
+        "--engine",
+        default=None,
+        help=(
+            "Override the engine for every demand in this drain "
+            "(wins over each task's own engine:)."
         ),
     )
 
@@ -3783,7 +3822,9 @@ def main() -> None:
         "team",
         help="Hire, list, retire, or check the status of Archetype Packs (team roster).",
     )
-    team_subparsers = team_parser.add_subparsers(dest="team_action", required=True)
+    # Not required: a bare `alc team` (team_action None) is normalized to `status`
+    # in cmd_team so the command family opens on observation, never a usage error.
+    team_subparsers = team_parser.add_subparsers(dest="team_action")
 
     team_hire_parser = team_subparsers.add_parser(
         "hire", help="Scaffold an Archetype Pack's files, then run `alc lint`."
@@ -3979,9 +4020,9 @@ def main() -> None:
     )
     audit_parser.add_argument(
         "--since",
-        required=True,
+        default="7d",
         metavar="WINDOW",
-        help="Trailing window to aggregate, e.g. '7d', '24h', '30m'.",
+        help="Trailing window to aggregate, e.g. '7d', '24h', '30m' (default: 7d).",
     )
     audit_parser.add_argument(
         "--json",
@@ -4060,9 +4101,14 @@ def main() -> None:
     # alc checks audit [--json]
     checks_parser = subparsers.add_parser(
         "checks",
-        help="Re-detect stacks and PROPOSE check_set upgrades against the Manifest.",
+        help=(
+            "Re-detect stacks and PROPOSE check_set upgrades against the Manifest "
+            "(bare `alc checks` = the audit read view)."
+        ),
     )
-    checks_subparsers = checks_parser.add_subparsers(dest="checks_action", required=True)
+    # Not required: a bare `alc checks` (checks_action None) routes to the audit
+    # read view (see cmd_checks) so the command family opens on observation.
+    checks_subparsers = checks_parser.add_subparsers(dest="checks_action")
 
     checks_audit_parser = checks_subparsers.add_parser(
         "audit",
@@ -4256,6 +4302,15 @@ def main() -> None:
         ),
     )
 
+    return parser
+
+
+def main() -> None:
+    """Console-script entrypoint."""
+    # A broken stderr pipe (cancelled exec / disconnected client) must never crash
+    # the work — only the progress output is lost. Guard every stderr write once.
+    sys.stderr = _ResilientStderr(sys.stderr)  # type: ignore[assignment]
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "init":

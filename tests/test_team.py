@@ -131,6 +131,14 @@ class TestTeamListStatus:
         out = capsys.readouterr().out
         assert "Mix Health: no data yet" in out
 
+    def test_bare_team_action_none_behaves_as_status(self, project: Path, capsys) -> None:
+        # GAP 1: a bare `alc team` (team_action None) opens on the read view —
+        # `status` — so the command family never greets the operator with a usage
+        # error. Mix Health (status-only) is the tell that it routed to status.
+        assert cmd_team(_ns(team_action=None)) == 0
+        out = capsys.readouterr().out
+        assert "Mix Health: no data yet" in out
+
     def test_json_payload_lists_the_pack_files_and_empty_loops(
         self, project: Path, capsys
     ) -> None:

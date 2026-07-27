@@ -67,7 +67,7 @@ _COMMANDS: dict[str, _Spec] = {
         value_flags=("variants",),
         list_flags=("engine", "tier"),
     ),
-    "tick": _Spec(value_flags=("concurrency",)),
+    "tick": _Spec(value_flags=("concurrency", "engine")),
     "conduct": _Spec(
         positionals=("goal",),
         value_flags=("engine", "tier", "concurrency"),

@@ -2,6 +2,7 @@
 # All tests use the mock engine and isolate: false so no git repository is needed.
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -36,6 +37,15 @@ task: "document the area"
 engine: mock
 isolate: false
 """
+
+
+def _add_second_mock_engine(operator_layer: Path, name: str = "mock2") -> None:
+    """Declare a second mock engine so an --engine override has a distinct,
+    DECLARED target to switch to (the flag beats the task's own engine:)."""
+    manifest_path = operator_layer / "manifest.yaml"
+    data = yaml.safe_load(manifest_path.read_text())
+    data["engines"][name] = {"type": "mock"}
+    manifest_path.write_text(yaml.safe_dump(data, sort_keys=True))
 
 
 def _write_specialist(operator_layer: Path, name: str = "db") -> None:
@@ -231,6 +241,79 @@ class TestArchetypeTagPropagation:
 
         health = mix_health(queue_dir / "done", manifest)
         assert None in {e.archetype for e in health.by_archetype}
+
+
+class TestProcessQueueEngineOverride:
+    """`process_queue(engine_override=...)` is the hard --engine override wired by
+    `alc tick --engine`: the flag wins over each task's own engine: for every
+    demand in the drain (flag > qt.engine > manifest.default_engine). A no-override
+    drain is byte-identical to before (each task keeps its own engine)."""
+
+    def test_override_beats_the_per_task_engine(self, operator_layer: Path) -> None:
+        _add_second_mock_engine(operator_layer)
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(_TASK_YAML)  # engine: mock
+
+        process_queue(manifest, operator_layer, engine_override="mock2")
+
+        raw = json.loads((queue_dir / "done" / "t1.report.json").read_text())
+        assert raw["engine"] == "mock2"  # the flag beat the task's `engine: mock`
+
+    def test_no_override_keeps_the_per_task_engine(self, operator_layer: Path) -> None:
+        # Regression: without an override the archived report keeps the task's engine.
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(_TASK_YAML)  # engine: mock
+
+        process_queue(manifest, operator_layer)
+
+        raw = json.loads((queue_dir / "done" / "t1.report.json").read_text())
+        assert raw["engine"] == "mock"
+
+    def test_override_applies_to_a_specialist_task(self, operator_layer: Path) -> None:
+        # The specialist drain path resolves the effective engine the same way.
+        _add_second_mock_engine(operator_layer)
+        _write_specialist(operator_layer, "db")
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "spec.yaml").write_text(_SPECIALIST_TASK_YAML)  # engine: mock
+
+        process_queue(manifest, operator_layer, engine_override="mock2")
+
+        raw = json.loads((queue_dir / "done" / "spec.report.json").read_text())
+        assert raw["engine"] == "mock2"
+
+
+class TestCmdTickUnknownEngine:
+    """`alc tick --engine <name>` fails fast on an UNDECLARED engine so a typo
+    doesn't archive the whole queue as engine-error failures instead of running
+    the work. The queue is left untouched for a retry with the right name."""
+
+    def test_unknown_engine_exits_1_names_available_and_leaves_queue(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        from alc.cli import cmd_tick
+
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(_TASK_YAML)
+        monkeypatch.chdir(operator_layer.parent)
+
+        args = argparse.Namespace(concurrency=1, allow_dirty=False, engine="nosuch")
+        assert cmd_tick(args) == 1
+
+        err = capsys.readouterr().err
+        assert "[ERROR]" in err
+        assert "nosuch" in err
+        assert "mock" in err  # the available engines are named
+
+        # The queue is untouched — nothing was drained or archived.
+        assert (queue_dir / "t1.yaml").exists()
+        assert not (queue_dir / "done").exists()
 
 
 class TestProcessQueueSpecialistTask:

@@ -224,8 +224,14 @@ def _run_specialist_task(
     name: str,
     workdir: Path | None,
     env: dict[str, str] | None = None,
+    engine: str | None = None,
 ) -> FlowReport:
-    """Run one specialist queue task, threading ``workdir``/``env`` when isolated."""
+    """Run one specialist queue task, threading ``workdir``/``env`` when isolated.
+
+    ``engine`` is the effective engine the caller already resolved (a --engine
+    override winning over ``qt.engine``, else ``qt.engine`` itself); it drives the
+    Act turn and the archived report's engine. None keeps the manifest default.
+    """
     specialists_dir = operator_layer.parent / manifest.specialists_dir
     specialist = load_specialist(specialists_dir, name)
     report = run_specialist(
@@ -233,11 +239,11 @@ def _run_specialist_task(
         operator_layer=operator_layer,
         specialist=specialist,
         task=qt.task,
-        engine_override=qt.engine,
+        engine_override=engine,
         workdir=workdir,
         env=env,
     )
-    engine_name = qt.engine or manifest.default_engine
+    engine_name = engine or manifest.default_engine
     return _specialist_flow_report(name, engine_name, report.act)
 
 
@@ -247,6 +253,7 @@ def _process_task(
     flows_dir: Path,
     queue_dir: Path,
     task_file: Path,
+    engine_override: str | None = None,
 ) -> TickResult:
     """Run one pending task file under a per-task run log, then archive it.
 
@@ -254,11 +261,15 @@ def _process_task(
     serial), so every event the task emits — its flow/mandate/act/check events
     included, via the reentrant binding — lands in ONE file. The log path is
     resolved against the ORIGINAL project (``operator_layer``), never a worktree.
+
+    ``engine_override`` (``alc tick --engine``) hard-overrides every task's own
+    engine: for this drain; None (default) leaves each task on its own engine.
     """
     runs_dir = operator_layer.parent / manifest.runs_dir
     with bind_run_log(new_run_log_path(runs_dir, "task", task_file.stem)):
         return _process_task_body(
-            manifest, operator_layer, flows_dir, queue_dir, task_file
+            manifest, operator_layer, flows_dir, queue_dir, task_file,
+            engine_override=engine_override,
         )
 
 
@@ -268,6 +279,7 @@ def _process_task_body(
     flows_dir: Path,
     queue_dir: Path,
     task_file: Path,
+    engine_override: str | None = None,
 ) -> TickResult:
     """Run one pending task file and archive it to done/, returning its Gate record.
 
@@ -286,7 +298,10 @@ def _process_task_body(
         qt = QueueTask.model_validate(raw)
         unit_name = qt.unit_name()
         flow_name = unit_name  # TickResult.flow carries the unit name (flow or specialist)
-        engine_name = qt.engine or manifest.default_engine
+        # A --engine override wins over the task's own engine: (hard override),
+        # falling back to the task's engine and finally the manifest default.
+        effective_engine = engine_override or qt.engine
+        engine_name = effective_engine or manifest.default_engine
 
         # Announce the active unit so operator output is grouped under a header.
         print(f"▶ {task_file.name} — {qt.kind}:{unit_name}", file=sys.stderr, flush=True)
@@ -324,13 +339,15 @@ def _process_task_body(
                     wt_ol = workdir / operator_layer.name
                     if wt_ol.is_dir():
                         ol = wt_ol
-                return _run_specialist_task(manifest, ol, qt, unit_name, workdir, env)
+                return _run_specialist_task(
+                    manifest, ol, qt, unit_name, workdir, env, engine=effective_engine
+                )
             flow = load_flow(flows_dir, unit_name)
             runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
             return runner.run(
                 flow=flow,
                 task=qt.task,
-                engine_override=qt.engine,
+                engine_override=effective_engine,
                 workdir=workdir,
                 env=env,
                 skip_commit=skip_commit,
@@ -373,7 +390,7 @@ def _process_task_body(
                 operator_layer=operator_layer,
                 workdir=repo_root,
                 fallback=demand_message,
-                engine_override=qt.engine,
+                engine_override=effective_engine,
             )
             wt = IsolatedWorktree(
                 repo_root,
@@ -553,6 +570,7 @@ def _run_wave(
     flows_dir: Path,
     queue_dir: Path,
     max_workers: int,
+    engine_override: str | None = None,
 ) -> dict[Path, TickResult]:
     """Run exactly ``wave_files`` and return a ``{file: TickResult}`` map.
 
@@ -561,6 +579,9 @@ def _run_wave(
     ``> 1`` only isolated tasks (isolate:true + git repo) run concurrently in a
     ThreadPoolExecutor while all others share the workdir and run serially. The
     map is order-independent — the caller restores the original pending order.
+
+    ``engine_override`` (``alc tick --engine``) is threaded to every task body so
+    the drain-wide override reaches both the serial and the parallel paths.
     """
     project_root = operator_layer.parent
 
@@ -568,7 +589,8 @@ def _run_wave(
         # Serial path — behaviourally identical to the original drain loop.
         return {
             task_file: _process_task(
-                manifest, operator_layer, flows_dir, queue_dir, task_file
+                manifest, operator_layer, flows_dir, queue_dir, task_file,
+                engine_override=engine_override,
             )
             for task_file in wave_files
         }
@@ -595,6 +617,7 @@ def _run_wave(
                     flows_dir,
                     queue_dir,
                     task_file,
+                    engine_override=engine_override,
                 ): task_file
                 for task_file in parallel_tasks
             }
@@ -604,7 +627,8 @@ def _run_wave(
     # Run serial tasks one by one.
     for task_file in serial_tasks:
         results[task_file] = _process_task(
-            manifest, operator_layer, flows_dir, queue_dir, task_file
+            manifest, operator_layer, flows_dir, queue_dir, task_file,
+            engine_override=engine_override,
         )
 
     return results
@@ -688,6 +712,7 @@ def process_queue(
     manifest: Manifest,
     operator_layer: Path,
     max_workers: int = 1,
+    engine_override: str | None = None,
 ) -> list[TickResult]:
     """Drain the task queue: run each pending Flow and archive the task file.
 
@@ -721,6 +746,9 @@ def process_queue(
         max_workers: Number of tasks to process in parallel (default 1, serial).
             When > 1 the per-task bodies run in a ThreadPoolExecutor; each task's
             worktree isolation and distinct done/ filenames keep this thread-safe.
+        engine_override: ``alc tick --engine`` — a drain-wide hard override that
+            wins over every task's own engine: for this drain. None (default) is
+            byte-identical to before: each task keeps its own engine.
 
     Returns:
         List of TickResult, one per pending task found, in the original pending
@@ -751,7 +779,8 @@ def process_queue(
         pass_count += 1
         for wave in _topological_waves(pending):
             wave_results = _run_wave(
-                wave, manifest, operator_layer, flows_dir, queue_dir, max_workers
+                wave, manifest, operator_layer, flows_dir, queue_dir, max_workers,
+                engine_override=engine_override,
             )
             results_by_file.update(wave_results)
 
