@@ -211,6 +211,23 @@ def _count_queue_files(manifest: Manifest, operator_layer: Path) -> int:
     return len(list(queue_dir.glob("*.yaml")))
 
 
+def _new_paths_since(
+    before: dict[str, str] | None, after: dict[str, str] | None
+) -> list[str]:
+    """Return the paths present in *after* but ABSENT from *before*.
+
+    The planner runs in-place on the operator's own working tree, so its commit
+    must be scoped to what IT produced. A path is the planner's own only when it
+    is new to the tree since the before-snapshot; a path the operator already had
+    dirty stays out of the set even if the planner also touched it (never sweep
+    the operator's uncommitted work — the operator stays in sole control of their
+    tree). Correctness over an always-clean tree: any residue the planner leaves on
+    a pre-existing dirty path is handled by the flow-level clean-tree guard, not by
+    widening this commit to sweep the operator's work back in.
+    """
+    return sorted(p for p in (after or {}) if p not in (before or {}))
+
+
 def run_replenish(
     manifest: Manifest,
     operator_layer: Path,
@@ -225,8 +242,10 @@ def run_replenish(
 
     - specialist: load the Specialist, run it (its Act may self-enqueue work).
     - conduct: plan the goal and enqueue the resulting units.
-    - plan: run a planner Specialist, commit its roadmap change, then reuse the
-      Conductor's parse + enqueue on the structured plan it returns.
+    - plan: run a planner Specialist, commit ONLY the paths the planner itself
+      dirtied (its roadmap/knowledge products — never the operator's pre-existing
+      uncommitted work), then reuse the Conductor's parse + enqueue on the
+      structured plan it returns.
     - signals: read every pending signal (``alc.signals``) and dispatch-enqueue
       one demand per signal — no planning turn, the same direct write
       ``alc enqueue`` uses — then archive each consumed signal.
@@ -335,11 +354,15 @@ def run_replenish(
         _flow_usage(flow_report, delta)
         replenish_ok = flow_report.success
     elif replenish.kind == "plan":
-        from alc.commit import commit_workdir
+        from alc.commit import commit_paths
         from alc.conduct import build_catalog, dispatch_enqueue, finalize_plan
         from alc.engines.registry import resolve_engine
         from alc.intake import load_blueprint
         from alc.prompts import render_plan_contract, resolve_prompt
+        # Cross-module private import (has precedent: specialist.py imports
+        # prompts._LEARN_DIRECTIVE_TEMPLATE) — reuse the runner's porcelain-status
+        # snapshot to bound the planner's commit to its OWN products.
+        from alc.runner import _git_state
         from alc.specialist import run_specialist
 
         specialists_dir = operator_layer.parent / manifest.specialists_dir
@@ -352,6 +375,12 @@ def run_replenish(
         with bind_run_log(
             new_run_log_path(runs_dir, "replenish", f"plan {replenish.ref}")
         ):
+            # Snapshot the operator's working tree IMMEDIATELY before the planner
+            # runs. Everything already dirty here is the operator's own work; only
+            # paths that first appear AFTER this point are the planner's products.
+            # The window spans Act + Learn (both inside run_specialist) so anything
+            # either turn writes is attributed to the planner, not the operator.
+            tree_before = _git_state(operator_layer.parent)
             report = run_specialist(
                 manifest=manifest,
                 operator_layer=operator_layer,
@@ -376,10 +405,20 @@ def run_replenish(
                 flush=True,
             )
         else:
-            # Commit the planner's roadmap change so the tree is clean for the
-            # demand-flows' clean-tree guard (this replaces the old plan-flow commit).
-            # Corrective turns below are file-free, so this stays before the parse.
-            commit_workdir(operator_layer.parent, "chore(roadmap): plan next version")
+            # Commit ONLY the paths the planner itself dirtied — its roadmap/knowledge
+            # products — so the tree is clean for the demand-flows' clean-tree guard.
+            # Scoped by design: the planner runs in-place on the operator's own tree,
+            # so an unscoped `git add -A` (the old commit_workdir call here) would
+            # sweep the operator's pre-existing uncommitted work + untracked cruft
+            # into a machine commit. The autonomous loop must be safe on a real,
+            # dirty repo — it commits what it produced and nothing else; the operator
+            # stays in sole control of their working tree. Corrective turns below are
+            # file-free, so this stays before the parse.
+            commit_paths(
+                operator_layer.parent,
+                _new_paths_since(tree_before, _git_state(operator_layer.parent)),
+                "chore(roadmap): plan next version",
+            )
             # Resolve the engine + model for any format-only corrective turns. The
             # model comes from the planner blueprint's compute_tier so the retry
             # matches the planner's tier.

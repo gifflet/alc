@@ -1363,6 +1363,32 @@ def _init_git_repo(repo: Path) -> None:
     )
 
 
+def _rev_count(repo: Path) -> int:
+    """Number of commits reachable from HEAD (for asserting no new commit was made)."""
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "-C", str(repo), "rev-list", "--count", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return int(out.strip())
+
+
+def _head_committed_files(repo: Path) -> list[str]:
+    """Files touched by the HEAD commit (git show --name-only)."""
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "-C", str(repo), "show", "--name-only", "--format=", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return out.split()
+
+
 class TestPlanReplenish:
     """run_replenish with kind: plan runs a planner Specialist, commits its roadmap
     change, then reuses the Conductor's parse_plan + dispatch_enqueue."""
@@ -1828,6 +1854,191 @@ class TestPlanReplenish:
         assert contract is not None
         assert "JSON array" in contract
         assert "demand (flow)" in contract  # the catalog was rendered in
+
+
+    def test_dirty_wip_is_never_swept_by_plan_replenish(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """HEADLINE: the plan replenish must commit ONLY the planner's own product,
+        never the operator's pre-existing uncommitted work. A modified tracked file
+        (with a sentinel) and an untracked cruft file must survive untouched, and
+        the roadmap commit must list ONLY docs/ROADMAP.md."""
+        import subprocess
+
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+
+        repo = operator_layer.parent
+        # Operator WIP: a tracked file modified with a sentinel + untracked cruft.
+        (repo / "README.md").write_text("OPERATOR SENTINEL WIP\n")
+        (repo / "cruft.log").write_text("scratch noise\n")
+
+        self._fake_planner('[{"kind":"flow","name":"demand","task":"First\\n\\nd"}]', monkeypatch)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta, _ok = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 1
+
+        # The roadmap commit lists ONLY the planner's own file — nothing swept in.
+        assert _head_committed_files(repo) == ["docs/ROADMAP.md"]
+
+        status = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        # The operator's tracked WIP is still modified (unstaged), sentinel intact.
+        assert " M README.md" in status
+        assert (repo / "README.md").read_text() == "OPERATOR SENTINEL WIP\n"
+        # The untracked cruft is still untracked — never swept in.
+        assert "?? cruft.log" in status
+
+    def test_planner_changes_nothing_makes_no_commit(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A planner that writes no file makes no new commit, but the enqueue still
+        happens (the parse operates on the returned plan text, not on any file)."""
+        from alc import loop as loop_mod
+        from alc.models import RunReport, Scorecard, SpecialistReport
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+
+        repo = operator_layer.parent
+
+        def _run(
+            *, manifest, operator_layer, specialist, task, engine_override, workdir,
+            output_contract=None,
+        ):
+            # Writes NO file (nothing new in the tree) but returns a valid plan.
+            act = RunReport(
+                blueprint="chore", engine="mock", success=True, attempts=[],
+                scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+                output_text='[{"kind":"flow","name":"demand","task":"A\\n\\nx"}]',
+            )
+            return SpecialistReport(specialist=specialist.name, act=act, knowledge_updated=False)
+
+        monkeypatch.setattr("alc.specialist.run_specialist", _run)
+
+        before = _rev_count(repo)
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        enqueued, _delta, _ok = loop_mod.run_replenish(
+            manifest, operator_layer, loop_def, engine_override="mock"
+        )
+
+        assert enqueued == 1          # the enqueue still happens
+        assert _rev_count(repo) == before  # but no new commit was created
+
+    def test_planner_touch_of_operator_dirty_file_is_not_committed(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A file the operator already had dirty BEFORE the planner ran must NOT be
+        committed even when the planner also touches it — only the planner's own
+        new file (the roadmap) is committed."""
+        import subprocess
+
+        from alc import loop as loop_mod
+        from alc.models import RunReport, Scorecard, SpecialistReport
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+
+        repo = operator_layer.parent
+        # The operator already had README.md dirty BEFORE the planner ran.
+        (repo / "README.md").write_text("operator WIP\n")
+
+        def _run(
+            *, manifest, operator_layer, specialist, task, engine_override, workdir,
+            output_contract=None,
+        ):
+            # The planner ALSO touches the operator's dirty file AND writes its roadmap.
+            (operator_layer.parent / "README.md").write_text("planner also touched this\n")
+            docs = operator_layer.parent / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            (docs / "ROADMAP.md").write_text("# roadmap\n")
+            act = RunReport(
+                blueprint="chore", engine="mock", success=True, attempts=[],
+                scorecard=Scorecard(span=0, passes=0, streak=0, touch=0),
+                output_text='[{"kind":"flow","name":"demand","task":"A\\n\\nx"}]',
+            )
+            return SpecialistReport(specialist=specialist.name, act=act, knowledge_updated=False)
+
+        monkeypatch.setattr("alc.specialist.run_specialist", _run)
+
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+        # Only the roadmap was committed; the pre-existing dirty README.md was not.
+        assert _head_committed_files(repo) == ["docs/ROADMAP.md"]
+        status = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert " M README.md" in status
+
+    def test_act_failure_makes_no_commit(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        """A failed planner Act creates no commit (the commit lives in the success
+        branch only), even though the fake planner wrote a roadmap file."""
+        from alc import loop as loop_mod
+
+        _init_git_repo(operator_layer.parent)
+        self._write_pm(operator_layer)
+        self._write_demand_flow(operator_layer)
+        self._write_plan_replenish_loop(operator_layer)
+        self._fake_planner("[]", monkeypatch, success=False)
+
+        repo = operator_layer.parent
+        before = _rev_count(repo)
+        manifest = load_manifest(operator_layer)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "deliver")
+        loop_mod.run_replenish(manifest, operator_layer, loop_def, engine_override="mock")
+
+        assert _rev_count(repo) == before
+
+
+class TestNewPathsSince:
+    """Unit tests for the pure _new_paths_since helper."""
+
+    def test_new_path_included(self) -> None:
+        from alc.loop import _new_paths_since
+
+        before = {"a.py": " M"}
+        after = {"a.py": " M", "b.py": "??"}
+        assert _new_paths_since(before, after) == ["b.py"]
+
+    def test_preexisting_excluded_even_with_changed_status(self) -> None:
+        from alc.loop import _new_paths_since
+
+        # The path pre-existed in `before`; a changed status must NOT re-include it.
+        before = {"a.py": " M"}
+        after = {"a.py": "MM"}
+        assert _new_paths_since(before, after) == []
+
+    def test_none_snapshots_yield_empty(self) -> None:
+        from alc.loop import _new_paths_since
+
+        assert _new_paths_since(None, None) == []
+        # after None -> nothing to add, regardless of before.
+        assert _new_paths_since({"a": "??"}, None) == []
+        # before None -> a clean tree beforehand -> everything in after is new.
+        assert _new_paths_since(None, {"a": "??"}) == ["a"]
 
 
 class TestPlanReplenishValidation:

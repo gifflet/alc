@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 
@@ -214,7 +214,33 @@ def commit_workdir(
                 ["git", "-C", str(root), "reset", "-q", "--", entry],
                 capture_output=True,
             )
+    except FileNotFoundError:
+        # git not installed — never raise out of a terminal commit.
+        print("[commit] git not found; skipping terminal commit.", file=sys.stderr)
+        return None
 
+    return _commit_staged(root, message, message_provider)
+
+
+def _commit_staged(
+    root: Path,
+    message: str,
+    message_provider: Callable[[str], str] | None = None,
+) -> str | None:
+    """Commit whatever is already staged in *root* and return the new sha.
+
+    The shared tail of the two staging strategies — commit_workdir's whole-tree
+    ``git add -A`` + unstage-excludes, and commit_paths' explicit pathspec stage.
+    It: refuses an empty commit (``git diff --cached --quiet`` -> nothing staged
+    -> None); optionally regenerates *message* from the staged diff via
+    *message_provider* (a provider failure keeps the original message); commits;
+    and returns the resulting HEAD sha.
+
+    Returns None — never raises — when nothing is staged or any git step fails, so
+    a commit failure never crashes a Flow. *root* is assumed to already be the git
+    toplevel (both callers resolve it via ``_resolve_workdir`` first).
+    """
+    try:
         # Nothing staged -> exit 0 -> skip the commit (no empty commits).
         diff_check = subprocess.run(
             ["git", "-C", str(root), "diff", "--cached", "--quiet"],
@@ -259,3 +285,79 @@ def commit_workdir(
         # git not installed — never raise out of a terminal commit.
         print("[commit] git not found; skipping terminal commit.", file=sys.stderr)
         return None
+
+
+def commit_paths(
+    workdir: Path,
+    paths: Sequence[str],
+    message: str,
+    exclude: tuple[str, ...] = (".alc/",),
+) -> str | None:
+    """Stage and commit ONLY the given *paths* (except *exclude*), return the sha.
+
+    The sibling of commit_workdir for a caller that ran an agent IN-PLACE on the
+    operator's own working tree rather than in an isolated worktree. Where
+    commit_workdir sweeps the whole tree (``git add -A`` — everything but
+    *exclude*), this stages an EXPLICIT pathspec: only the run's OWN products. So
+    the operator's pre-existing uncommitted work is never swept into a machine
+    commit — the autonomous loop stays safe on a real, dirty repo, committing what
+    it produced and nothing else, and the operator keeps sole control of their
+    working tree.
+
+    Args:
+        workdir: Directory to commit in (resolved to the git toplevel, like the
+            sibling helpers).
+        paths: The exact paths to stage. Porcelain rename spellings
+            (``"old -> new"``) are normalized to their destination, mirroring
+            has_non_alc_changes' parsing.
+        message: The commit message, passed to git verbatim.
+        exclude: Path prefixes to keep out of the commit (default: the ``.alc/``
+            control-plane state). Filtered BEFORE staging — an excluded path is
+            never added to the index in the first place.
+
+    Returns:
+        The new commit's sha, or None when *workdir* is not inside a git repo, the
+        path list is empty after filtering, nothing is actually staged (no empty
+        commit), or any git step fails (a commit failure must never crash a Flow).
+    """
+    root = _resolve_workdir(workdir)
+    if root is None:
+        return None
+
+    # Normalize rename entries and drop excluded prefixes BEFORE staging, so an
+    # excluded path is never added to the index (filter-before-stage, not
+    # stage-then-unstage — we own exactly which paths reach git).
+    staged: list[str] = []
+    for entry in paths:
+        path = entry
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if any(path.startswith(prefix) for prefix in exclude):
+            continue
+        staged.append(path)
+    if not staged:
+        # Nothing of ours to commit -> no empty commit. Also the guard that keeps
+        # this from ever degenerating into a bare `git add` with no pathspec, which
+        # would sweep the whole tree exactly like commit_workdir.
+        return None
+
+    try:
+        # Explicit pathspec: stage ONLY our own paths. ``-A`` so a deletion among
+        # them is staged too (a removed file is as much our product as a written one).
+        add = subprocess.run(
+            ["git", "-C", str(root), "add", "-A", "--", *staged],
+            capture_output=True,
+            text=True,
+        )
+        if add.returncode != 0:
+            print(
+                f"[commit] git add failed in {root}: {add.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return None
+    except FileNotFoundError:
+        # git not installed — never raise out of a terminal commit.
+        print("[commit] git not found; skipping terminal commit.", file=sys.stderr)
+        return None
+
+    return _commit_staged(root, message)
