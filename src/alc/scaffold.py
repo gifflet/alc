@@ -545,41 +545,81 @@ def _render_check_sets_block(
     return "\n\n".join(blocks)
 
 
-# Per-stack gitignored dependency directory to auto-provision into every isolated
-# worktree. Only Node's node_modules is the confirmed near-universal always-
-# gitignored dep dir — a git worktree checks out only tracked files, so without a
-# provision a Node check (tsc/eslint/vitest) exits 127. Other stacks have no single
-# such directory to link in by default, so `alc init` scaffolds a live provision
-# only for the stacks listed here (keyed by check_set name).
-_STACK_PROVISION_DIRS: dict[str, str] = {
-    "node": "node_modules",
+# Per-stack gitignored dependency to auto-provision into every isolated worktree,
+# plus the ecosystem install that keeps it fresh across a dependency bump. Only
+# Node's node_modules is the confirmed near-universal always-gitignored dep dir — a
+# git worktree checks out only tracked files, so without a provision a Node check
+# (tsc/eslint/vitest) exits 127. Other stacks have no single such directory to link
+# in by default, so `alc init` scaffolds a live provision only for the stacks listed
+# here (keyed by check_set name). `refresh`/`when_changed` close the deps-bump false
+# green — see `_render_worktree_provision_block`.
+_STACK_PROVISIONS: dict[str, dict] = {
+    "node": {
+        "path": "node_modules",
+        "refresh": ["npm", "install"],
+        "when_changed": ["package.json", "package-lock.json"],
+    },
+}
+
+# Alternative Node package managers, keyed by the lockfile that proves the project
+# uses one. `alc init` sniffs the project root; when a lockfile is present it swaps
+# npm's install command AND its lockfile trigger for the real tool, so the isolated
+# reinstall matches how the project actually installs. Absent -> npm (the default).
+_NODE_MANAGERS: dict[str, tuple[list[str], str]] = {
+    "pnpm-lock.yaml": (["pnpm", "install"], "pnpm-lock.yaml"),
+    "yarn.lock": (["yarn", "install"], "yarn.lock"),
 }
 
 
 def _render_worktree_provision_block(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path | None = None,
 ) -> str:
-    """Render a `worktree_provision:` block linking each detected stack's gitignored
-    dep dir into every isolated worktree, or "" when no detected stack has one.
+    """Render a `worktree_provision:` block for each detected stack's gitignored dep
+    dir, or "" when no detected stack has one.
+
+    Each entry links the dep dir into every isolated worktree AND declares a
+    `refresh` (the ecosystem install) fired by `when_changed` (the dependency
+    manifests). That pair closes the deps-bump false green: when a run edits a
+    dependency manifest, ALC reinstalls in an ISOLATED deps dir BEFORE the checks,
+    so type-check/build/test see the NEW versions — not the stale symlinked
+    node_modules a bare `link:` would otherwise leave in place (a breaking major
+    bump would pass green against the already-installed old packages).
 
     An empty result is byte-identical to before this block existed (the manifest
     simply carries no worktree_provision key). A trailing blank line separates the
     block from the `blueprints_dir` line that follows in the template.
     """
-    links = [
-        _STACK_PROVISION_DIRS[set_name]
+    entries = [
+        (set_name, _STACK_PROVISIONS[set_name])
         for _label, set_name, _checks in stacks
-        if set_name in _STACK_PROVISION_DIRS
+        if set_name in _STACK_PROVISIONS
     ]
-    if not links:
+    if not entries:
         return ""
     lines = [
         "# Gitignored runtime deps symlinked into each isolated worktree before a run.",
         "# A git worktree checks out only tracked files, so these dirs would be absent",
         "# and a check like tsc/eslint/vitest would exit 127 — link them in.",
+        "#",
+        "# `refresh` + `when_changed` close the deps-bump false green: when a run edits a",
+        "# dependency manifest, ALC runs the install in an ISOLATED deps dir BEFORE the",
+        "# checks, so type-check/build/test see the NEW versions — not the stale linked",
+        "# node_modules (against which a breaking major bump would pass green).",
         "worktree_provision:",
     ]
-    lines += [f"  - link: {path}" for path in links]
+    for set_name, entry in entries:
+        refresh = list(entry["refresh"])
+        when_changed = list(entry["when_changed"])
+        if set_name == "node" and project_root is not None:
+            for lockfile, (cmd, lock) in _NODE_MANAGERS.items():
+                if (project_root / lockfile).exists():
+                    refresh = cmd
+                    when_changed = ["package.json", lock]
+                    break
+        lines.append(f"  - link: {entry['path']}")
+        lines.append(f"    refresh: [{', '.join(refresh)}]")
+        lines.append(f"    when_changed: [{', '.join(when_changed)}]")
     return "\n".join(lines) + "\n\n"
 
 
@@ -634,7 +674,7 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     # Node's node_modules is gitignored, so a fresh worktree lacks it — scaffold a
     # live `worktree_provision` for it (and any future stack with a known dep dir)
     # so the default setup does not 127. Empty for stacks without one.
-    worktree_provision_block = _render_worktree_provision_block(stacks)
+    worktree_provision_block = _render_worktree_provision_block(stacks, project_root)
 
     # Create directory structure.
     (alc_dir / "blueprints").mkdir(parents=True, exist_ok=True)

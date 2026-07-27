@@ -176,6 +176,24 @@ class ProvisionSpec(BaseModel):
     # shadowing the deprecated BaseModel.copy (the ReportSpec.schema_ precedent).
     copy_: str | None = Field(default=None, alias="copy")
     clone: str | None = None
+    # Ecosystem install to run (argv, same shape as Check.command, e.g.
+    # ["npm", "install"]) BEFORE the checks whenever this run changed a file
+    # matching `when_changed` — so type-check/build/test see the NEW dependency
+    # versions instead of the stale symlinked ones a `link:` would otherwise
+    # leave in place. This is what closes the deps-bump false green: a breaking
+    # major bump can no longer pass green against already-installed old packages.
+    # `link` + `refresh` is LEGAL — the refresh materializes isolation lazily
+    # (the symlink is COW-cloned into the worktree the first time the install
+    # would write into it, so a mutating install never corrupts the operator's
+    # shared deps). Argv-only for v1 (no shell-parsing; ["sh","-c","..."] covers
+    # shell needs — mirrors Check.command). None (default) -> no refresh, an
+    # entry that declares neither new field round-trips byte-identically.
+    refresh: list[str] | None = None
+    # fnmatch globs (workdir-relative, same semantics as Blueprint.protect) that
+    # TRIGGER the refresh: when a path changed by this run matches one of these,
+    # `refresh` runs. Meaningless without `refresh` (rejected below). Empty
+    # (default) -> no trigger, byte-identical.
+    when_changed: list[str] = []
 
     model_config = {"populate_by_name": True}
 
@@ -192,6 +210,36 @@ class ProvisionSpec(BaseModel):
             raise ValueError(
                 f"ProvisionSpec path '{self.path}' must be a relative path within the "
                 "project (no absolute paths, no '..') — it is provisioned INTO a worktree."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _refresh_needs_trigger(self) -> "ProvisionSpec":
+        """A refresh and its trigger are only meaningful together (fail fast at intake).
+
+        Rejected configurations, each dead config in a distinct way:
+          - ``refresh`` with an EMPTY argv — there is no command to run.
+          - ``refresh`` with no ``when_changed`` — a refresh with no trigger would
+            never fire (or fire on every run — either way not what was meant).
+          - ``when_changed`` with no ``refresh`` — a trigger with no action does nothing.
+        Both fields default off, so an entry declaring neither passes untouched
+        (opt-in, like the codebase's other guard bindings).
+        """
+        if self.refresh is not None:
+            if not self.refresh:
+                raise ValueError(
+                    "ProvisionSpec 'refresh' must be a non-empty argv "
+                    "(e.g. ['npm', 'install'])."
+                )
+            if not self.when_changed:
+                raise ValueError(
+                    "ProvisionSpec 'refresh' requires a non-empty 'when_changed' — "
+                    "a refresh with no trigger would never fire correctly."
+                )
+        elif self.when_changed:
+            raise ValueError(
+                "ProvisionSpec 'when_changed' requires a 'refresh' — a trigger with "
+                "no action is dead config."
             )
         return self
 

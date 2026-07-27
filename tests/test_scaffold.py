@@ -561,6 +561,35 @@ class TestScaffoldNodeWorktreeProvision:
         errors = [v for v in violations if v.severity == "error"]
         assert not errors, f"Policy Gate errors on Node layer: {errors}"
 
+    def test_node_provision_declares_refresh(self, tmp_path: Path) -> None:
+        """The scaffolded Node provision carries the deps-refresh trigger + install
+        so a dependency bump can never land a false green against stale packages."""
+        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        spec = manifest.worktree_provision[0]
+        assert spec.refresh == ["npm", "install"]
+        assert spec.when_changed == ["package.json", "package-lock.json"]
+
+    def test_node_provision_sniffs_pnpm(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 6.0\n")
+        scaffold(tmp_path)
+
+        spec = load_manifest(tmp_path / ".alc").worktree_provision[0]
+        assert spec.refresh == ["pnpm", "install"]
+        assert spec.when_changed == ["package.json", "pnpm-lock.yaml"]
+
+    def test_node_provision_sniffs_yarn(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text('{"name": "x"}\n')
+        (tmp_path / "yarn.lock").write_text("# yarn lockfile v1\n")
+        scaffold(tmp_path)
+
+        spec = load_manifest(tmp_path / ".alc").worktree_provision[0]
+        assert spec.refresh == ["yarn", "install"]
+        assert spec.when_changed == ["package.json", "yarn.lock"]
+
 
 # ---------------------------------------------------------------------------
 # The Node check_set must reflect the project's REAL package.json scripts. A

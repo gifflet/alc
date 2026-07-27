@@ -7,7 +7,7 @@ import contextlib
 import subprocess
 from pathlib import Path
 
-from alc import checkconfig
+from alc import checkconfig, envrefresh
 from alc.assurance import AssuranceLoop
 from alc.engine import Engine, EngineRequest
 from alc.engines.registry import resolve_engine
@@ -390,6 +390,26 @@ def execute_mandate(
             )
 
         loop_kwargs["check_config_guard"] = _check_config_guard
+    if envrefresh.has_refresh(manifest.worktree_provision):
+        # "Checks are law" for dependency bumps: when this run changed a dep
+        # manifest in its workdir, refresh the environment (run the ecosystem
+        # install, in an isolated deps dir) BEFORE the checks so type-check/build/
+        # test see the NEW versions — not the stale symlinked node_modules a
+        # `link:` provision would otherwise leave in place (a breaking major bump
+        # would pass green against the already-installed old packages). Reuses the
+        # SAME captured `state_before` + `_changed_so_far` callable `protect` and
+        # the check-config guard use, so a non-deps run lists nothing matching and
+        # the refresh never fires; outside a git repo `state_before` is None ->
+        # `_changed_so_far` returns [] -> the refresh never fires (graceful, like
+        # `protect`). Not bound when no provision declares a refresh ->
+        # `loop_kwargs` unchanged -> byte-identical.
+        loop_kwargs["env_refresh"] = envrefresh.make_env_refresh(
+            provisions=manifest.worktree_provision,
+            workdir=effective_workdir,
+            changed_files=lambda: _changed_so_far(effective_workdir, state_before),
+            timeout_s=manifest.check_timeout_s,
+            max_output_chars=manifest.check_output_chars,
+        )
     if manifest.quarantined_checks:
         # T11: a manifest-declared quarantine still runs but can never fail the
         # run or spend a repair turn (see AssuranceLoop.__init__).

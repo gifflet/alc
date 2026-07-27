@@ -10,7 +10,7 @@ from alc.assurance import AssuranceLoop
 from alc.engine import Capabilities, EngineRequest, EngineResult
 from alc.engines.mock import MockEngine
 from alc.models import Check
-from alc.verifier import Verifier
+from alc.verifier import CheckResult, Verifier
 
 
 class _FailingEngine:
@@ -104,6 +104,124 @@ class TestAssuranceLoopOneShot:
         assert report.scorecard.streak == 1
         # passes == 1 (one engine turn).
         assert report.scorecard.passes == 1
+
+
+# ---------------------------------------------------------------------------
+# env_refresh seam — reinstall the ecosystem AFTER Act, BEFORE Verify, when a
+# run bumped a dependency manifest (the deps-bump false green fix).
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEngine:
+    """An engine that records the order of its turns and every directive it saw."""
+
+    name = "rec"
+
+    def __init__(self, log: list[str], directives: list[str]) -> None:
+        self._log = log
+        self._directives = directives
+
+    def capabilities(self) -> Capabilities:
+        return Capabilities()
+
+    def health_check(self) -> bool:
+        return True
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        self._log.append("act")
+        self._directives.append(request.directive)
+        return EngineResult(ok=True, output_text="[rec] done")
+
+
+class _RecordingVerifier:
+    """A Verifier stand-in that records each call and returns canned results."""
+
+    def __init__(self, log: list[str], results: list[CheckResult]) -> None:
+        self._log = log
+        self._results = results
+        self.calls = 0
+
+    def run(self, checks, workdir, on_check_start=None, on_check_done=None):
+        self._log.append("verify")
+        self.calls += 1
+        return list(self._results)
+
+
+class TestAssuranceLoopEnvRefresh:
+    def test_refresh_runs_after_act_before_verify(self, tmp_path: Path) -> None:
+        log: list[str] = []
+        directives: list[str] = []
+
+        def _refresh() -> CheckResult | None:
+            log.append("refresh")
+            return None
+
+        loop = AssuranceLoop(
+            engine=_RecordingEngine(log, directives),
+            verifier=_RecordingVerifier(log, [CheckResult("smoke", True, "")]),
+            max_repairs=0,
+            env_refresh=_refresh,
+        )
+        report = loop.run(_make_request(tmp_path), checks=[Check(name="smoke", command=["true"])])
+
+        assert report.success is True
+        # The refresh sits strictly between the Act turn and the Verify pass.
+        assert log == ["act", "refresh", "verify"]
+
+    def test_refresh_failure_skips_verify_and_feeds_repair(self, tmp_path: Path) -> None:
+        log: list[str] = []
+        directives: list[str] = []
+
+        class _AlwaysFailingRefresh:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __call__(self) -> CheckResult | None:
+                self.calls += 1
+                log.append("refresh")
+                return CheckResult(
+                    name="env-refresh",
+                    passed=False,
+                    output="npm ERR! peer dep conflict during install",
+                    exit_code=1,
+                )
+
+        refresh = _AlwaysFailingRefresh()
+        verifier = _RecordingVerifier(log, [CheckResult("smoke", True, "")])
+        loop = AssuranceLoop(
+            engine=_RecordingEngine(log, directives),
+            verifier=verifier,
+            max_repairs=1,
+            env_refresh=refresh,
+        )
+        report = loop.run(_make_request(tmp_path), checks=[Check(name="smoke", command=["true"])])
+
+        # A broken refresh is a red attempt: the run must fail, never a false green.
+        assert report.success is False
+        # env-refresh is recorded as the failing check on every attempt.
+        assert "env-refresh" in report.attempts[0].failed_checks
+        assert "env-refresh" in report.attempts[1].failed_checks
+        # The Verifier was SKIPPED on both failing attempts — its only call is the
+        # final post-budget re-verify (span accounting), not the two attempts. So a
+        # would-be-passing check never masqueraded as passed inside a red attempt.
+        assert verifier.calls == 1
+        # Two attempts -> the refresh was re-invoked on the repair attempt.
+        assert refresh.calls == 2
+        # The repair addendum carried the install's stderr into the next turn.
+        assert "peer dep conflict" in directives[1]
+
+    def test_env_refresh_none_is_byte_identical(self, tmp_path: Path) -> None:
+        # With no env_refresh bound the loop behaves exactly as before: a real
+        # Verifier runs the checks directly on every attempt.
+        behaviors = [lambda wd: (wd / "done.txt").write_text("ok")]
+        loop = AssuranceLoop(
+            engine=MockEngine(behaviors=behaviors),
+            verifier=Verifier(),
+            max_repairs=3,
+        )
+        report = loop.run(_make_request(tmp_path), checks=_marker_checks())
+        assert report.success is True
+        assert report.scorecard.streak == 1
 
 
 class TestAssuranceLoopBudgetExhausted:

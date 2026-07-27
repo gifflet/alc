@@ -341,6 +341,33 @@ def _cow_copy(src: Path, dst: Path) -> None:
     _deep_copy(src, dst)
 
 
+def materialize_isolated(dst: Path) -> None:
+    """Replace a symlinked provision with an isolated COW clone of its target, so a
+    mutating refresh (e.g. npm install) can never write through the link into the
+    operator's shared dependency dir.
+
+    Only meaningful for a SYMLINK *dst* (a ``link:`` provision) — callers guard on
+    that, and a non-symlink *dst* (an already-isolated ``copy:``/``clone:`` result,
+    or an absent path) is left untouched. The symlink's target is resolved FIRST
+    (before the link is removed), then the link is unlinked and the target COW-cloned
+    into its place via the same clone-with-deep-copy fallback the ``copy:``/``clone:``
+    strategies use. A dangling/missing target is handled gracefully: the link is
+    removed and *dst* is left ABSENT so the install materializes it fresh — never a
+    crash.
+    """
+    if not dst.is_symlink():
+        return
+    # Resolve the target while the link still exists (resolve() is non-strict, so a
+    # dangling link yields a path that simply does not exist below).
+    target = dst.resolve()
+    # Remove the symlink itself — unlink never follows into the target.
+    dst.unlink()
+    if not target.exists():
+        # Dangling/missing target: leave dst absent, let the install create it fresh.
+        return
+    _cow_copy(target, dst)
+
+
 def provision_worktree(
     worktree: Path, project_root: Path, provisions: list[ProvisionSpec]
 ) -> None:

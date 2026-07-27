@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 from alc.models import ProvisionSpec
-from alc.worktree import IsolatedWorktree, is_git_repo
+from alc.worktree import IsolatedWorktree, is_git_repo, materialize_isolated
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +133,63 @@ class TestIsolatedWorktreeProvisions:
             # Byte-identical to today: nothing provisioned, so the gitignored dep
             # is simply absent from the fresh worktree.
             assert not (wt / "node_modules").exists()
+
+
+class TestMaterializeIsolated:
+    """`materialize_isolated` replaces a symlinked provision with an ISOLATED clone
+    so a mutating refresh (npm install) can never write through the link into the
+    operator's shared dependency dir."""
+
+    def test_symlink_becomes_isolated_clone(self, tmp_path: Path) -> None:
+        # Operator's shared dep dir with a marker file.
+        source = tmp_path / "node_modules"
+        (source / "pkg").mkdir(parents=True)
+        (source / "pkg" / "lib.txt").write_text("oldAPI\n")
+
+        # A worktree carrying node_modules as a SYMLINK to the operator's dir.
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        dst = worktree / "node_modules"
+        dst.symlink_to(source)
+        assert dst.is_symlink()
+
+        materialize_isolated(dst)
+
+        # dst is now a real directory (an isolated clone), not a symlink.
+        assert dst.is_dir() and not dst.is_symlink()
+        assert (dst / "pkg" / "lib.txt").read_text() == "oldAPI\n"
+
+        # Writing into the clone does NOT touch the operator's source (the whole point).
+        (dst / "pkg" / "lib.txt").write_text("newAPI\n")
+        assert (source / "pkg" / "lib.txt").read_text() == "oldAPI\n"
+
+    def test_dangling_target_leaves_dst_absent_no_crash(self, tmp_path: Path) -> None:
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        dst = worktree / "node_modules"
+        # A symlink whose target does not exist (dangling).
+        dst.symlink_to(tmp_path / "does-not-exist")
+
+        materialize_isolated(dst)  # must not raise
+
+        # The dangling link is gone; nothing was materialized (the install
+        # creates it fresh).
+        assert not dst.exists()
+        assert not dst.is_symlink()
+
+    def test_non_symlink_dst_is_left_untouched(self, tmp_path: Path) -> None:
+        # Callers guard on is_symlink, but the helper must be safe if called on a
+        # copy:/clone: dst (already isolated) — it leaves it exactly as is.
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        dst = worktree / "node_modules"
+        (dst / "pkg").mkdir(parents=True)
+        (dst / "pkg" / "lib.txt").write_text("copy\n")
+
+        materialize_isolated(dst)
+
+        assert dst.is_dir() and not dst.is_symlink()
+        assert (dst / "pkg" / "lib.txt").read_text() == "copy\n"
 
 
 class TestIsolatedWorktreeNoChangesCleanup:

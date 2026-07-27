@@ -74,6 +74,95 @@ class TestManifestWorktreeProvisionDefault:
 
 
 # ---------------------------------------------------------------------------
+# ProvisionSpec.refresh / when_changed — the deps-refresh opt-in (env-refresh fix)
+# ---------------------------------------------------------------------------
+
+
+class TestProvisionSpecRefreshSchema:
+    def test_refresh_and_when_changed_default_off(self) -> None:
+        # A legacy `- link: node_modules` entry declares neither and round-trips
+        # byte-identically: both new fields default off (opt-in).
+        spec = ProvisionSpec(link="node_modules")
+        assert spec.refresh is None
+        assert spec.when_changed == []
+
+    def test_link_plus_refresh_is_legal(self) -> None:
+        # link + refresh is LEGAL — the refresh materializes isolation lazily.
+        spec = ProvisionSpec(
+            link="node_modules",
+            refresh=["npm", "install"],
+            when_changed=["package.json", "package-lock.json"],
+        )
+        assert spec.kind == "link"
+        assert spec.refresh == ["npm", "install"]
+        assert spec.when_changed == ["package.json", "package-lock.json"]
+
+    def test_refresh_without_when_changed_is_rejected(self) -> None:
+        # A refresh with no trigger is wrong — fail fast at intake.
+        with pytest.raises(ValidationError):
+            ProvisionSpec(link="node_modules", refresh=["npm", "install"])
+
+    def test_when_changed_without_refresh_is_rejected(self) -> None:
+        # A trigger with no action is dead config.
+        with pytest.raises(ValidationError):
+            ProvisionSpec(link="node_modules", when_changed=["package.json"])
+
+    def test_empty_refresh_argv_is_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            ProvisionSpec(
+                link="node_modules", refresh=[], when_changed=["package.json"]
+            )
+
+    def test_refresh_round_trips_through_load_manifest(self, tmp_path: Path) -> None:
+        alc = tmp_path / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(
+            "version: 1\n"
+            "default_engine: mock\n"
+            "compute_tiers:\n"
+            "  standard:\n"
+            "    mock: mock-small\n"
+            "engines:\n"
+            "  mock:\n"
+            "    type: mock\n"
+            "worktree_provision:\n"
+            "  - link: node_modules\n"
+            "    refresh: [npm, install]\n"
+            "    when_changed: [package.json, package-lock.json]\n"
+        )
+        manifest = load_manifest(alc)
+        assert len(manifest.worktree_provision) == 1
+        spec = manifest.worktree_provision[0]
+        assert spec.kind == "link"
+        assert spec.path == "node_modules"
+        assert spec.refresh == ["npm", "install"]
+        assert spec.when_changed == ["package.json", "package-lock.json"]
+
+    def test_legacy_link_entry_round_trips_unchanged(self, tmp_path: Path) -> None:
+        alc = tmp_path / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "flows").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(
+            "version: 1\n"
+            "default_engine: mock\n"
+            "compute_tiers:\n"
+            "  standard:\n"
+            "    mock: mock-small\n"
+            "engines:\n"
+            "  mock:\n"
+            "    type: mock\n"
+            "worktree_provision:\n"
+            "  - link: node_modules\n"
+        )
+        manifest = load_manifest(alc)
+        spec = manifest.worktree_provision[0]
+        assert spec.kind == "link"
+        assert spec.refresh is None
+        assert spec.when_changed == []
+
+
+# ---------------------------------------------------------------------------
 # provision_worktree — link (shared) vs copy/clone (isolated)
 # ---------------------------------------------------------------------------
 

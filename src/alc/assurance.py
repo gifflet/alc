@@ -94,6 +94,22 @@ class AssuranceLoop:
                      one is still recorded (visible in the run log/report as
                      failed), just excluded from what blocks success. Empty
                      (default) -> no-op, byte-identical.
+        env_refresh: Callable run AFTER the Act and BEFORE the Verify. When this
+                     attempt bumped a dependency manifest, it reinstalls the
+                     ecosystem (in an isolated deps dir) so the checks below test
+                     the NEW versions, not stale symlinked ones (the deps-bump
+                     false green). Returns None when nothing needed refreshing (the
+                     common case) — proceed to Verify exactly as today; a failed
+                     ``env-refresh`` CheckResult when the install itself failed, so
+                     this attempt SKIPS the Verifier (checks against a broken/stale
+                     env are a false signal — recording them as passed would be a
+                     false green inside a red attempt), records the synthetic
+                     failure, and feeds its output to the repair turn. Bound
+                     fully-formed by the caller (runner.py): all the git/subprocess
+                     knowledge lives in that closure — like ``changed_files`` and
+                     ``check_config_guard`` — so this loop only knows "call it,
+                     honour what it returns". None (default) -> no-op,
+                     byte-identical.
     """
 
     def __init__(
@@ -106,6 +122,7 @@ class AssuranceLoop:
         changed_files: Callable[[], list[str]] | None = None,
         check_config_guard: Callable[[], CheckResult | None] | None = None,
         quarantined: list[str] | None = None,
+        env_refresh: Callable[[], CheckResult | None] | None = None,
     ) -> None:
         self._engine = engine
         self._verifier = verifier
@@ -115,6 +132,7 @@ class AssuranceLoop:
         self._changed_files = changed_files
         self._check_config_guard = check_config_guard
         self._quarantined = set(quarantined or [])
+        self._env_refresh = env_refresh
 
     def run(self, request: EngineRequest, checks: list[Check]) -> RunReport:
         """Execute the loop and return a RunReport with a Scorecard.
@@ -175,6 +193,14 @@ class AssuranceLoop:
                     usage=usage_total,
                 )
 
+            # --- Env refresh (post-Act, pre-Verify) ---
+            # When this attempt bumped a dependency manifest, reinstall the
+            # ecosystem (in an isolated deps dir) BEFORE the checks so type-check/
+            # build/test see the NEW versions, not stale symlinked ones — the
+            # deps-bump false green this fix kills. None (unbound, or nothing needed
+            # refreshing) -> proceed to Verify exactly as before (byte-identical).
+            refresh_failure = self._env_refresh() if self._env_refresh is not None else None
+
             # --- Verify ---
             print(f"→ Verify ({len(checks)} check(s))…", file=sys.stderr, flush=True)
             emit(
@@ -182,26 +208,51 @@ class AssuranceLoop:
                 attempt=attempt_index,
                 checks=[c.name for c in checks],
             )
-            # Emit check_started/check_finished in REAL TIME (per check) so a slow or
-            # HUNG check is visible as it runs — which check, and whether it timed out
-            # — instead of a silent freeze while it blocks the drain.
-            check_results = self._verifier.run(
-                checks,
-                request.workdir,
-                on_check_start=lambda name, a=attempt_index: emit(
-                    "check_started", attempt=a, name=name
-                ),
-                on_check_done=lambda cr, a=attempt_index: emit(
+            if refresh_failure is not None:
+                # The install itself failed: running the checks now would judge a
+                # broken/stale env and recording them as passed would be a FALSE
+                # GREEN inside a red attempt. SKIP the Verifier this attempt, record
+                # the synthetic env-refresh failure, and emit its check_finished so
+                # it is as visible in the run log as any real check. The env-
+                # INDEPENDENT guards (protect, check-config) still run below, and the
+                # failure feeds the standard repair addendum (the install's stderr).
+                print(
+                    "  ✗ env refresh failed — skipping checks this attempt",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                check_results = [refresh_failure]
+                emit(
                     "check_finished",
-                    attempt=a,
-                    name=cr.name,
-                    passed=cr.passed,
-                    output_tail=cr.output,
-                    timed_out=cr.timed_out,
-                    duration_s=cr.duration_s,
-                    exit_code=cr.exit_code,
-                ),
-            )
+                    attempt=attempt_index,
+                    name=refresh_failure.name,
+                    passed=refresh_failure.passed,
+                    output_tail=refresh_failure.output,
+                    timed_out=refresh_failure.timed_out,
+                    duration_s=refresh_failure.duration_s,
+                    exit_code=refresh_failure.exit_code,
+                )
+            else:
+                # Emit check_started/check_finished in REAL TIME (per check) so a slow or
+                # HUNG check is visible as it runs — which check, and whether it timed out
+                # — instead of a silent freeze while it blocks the drain.
+                check_results = self._verifier.run(
+                    checks,
+                    request.workdir,
+                    on_check_start=lambda name, a=attempt_index: emit(
+                        "check_started", attempt=a, name=name
+                    ),
+                    on_check_done=lambda cr, a=attempt_index: emit(
+                        "check_finished",
+                        attempt=a,
+                        name=cr.name,
+                        passed=cr.passed,
+                        output_tail=cr.output,
+                        timed_out=cr.timed_out,
+                        duration_s=cr.duration_s,
+                        exit_code=cr.exit_code,
+                    ),
+                )
             # Synthetic guards run AFTER the Verifier and have no subprocess of
             # their own, so the Verifier never emitted a check_finished for them.
             # Append each and emit one, so BOTH synthetic checks (protected-paths
