@@ -106,7 +106,10 @@ export function Metrics() {
       </header>
 
       {checks.length === 0 ? (
-        <EmptyState icon={LineChart} message="No metric measurements recorded yet." />
+        <EmptyState
+          icon={LineChart}
+          message="No metric measurements yet — add a metric check (direction + tolerance_pct) to a Blueprint to start tracking regressions. The grow Blueprint ships a commented example."
+        />
       ) : (
         checks.map(([check, points]) => <MetricSection key={check} check={check} points={points} />)
       )}

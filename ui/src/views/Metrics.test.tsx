@@ -34,10 +34,11 @@ describe('Metrics', () => {
     expect(screen.getByText('p95-latency')).toBeInTheDocument()
   })
 
-  it('shows an empty state when no check has been measured yet', async () => {
+  it('shows an empty state that guides the operator to add a metric check', async () => {
     installFetch({ '/metrics': {} })
     renderWithProviders(<Metrics />)
 
-    expect(await screen.findByText(/no metric measurements recorded/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no metric measurements yet/i)).toBeInTheDocument()
+    expect(screen.getByText(/grow blueprint ships a commented example/i)).toBeInTheDocument()
   })
 })

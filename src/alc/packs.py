@@ -404,9 +404,10 @@ stop:
 # Grower pack — a DIY signal-gathering Specialist plus a `grow` Blueprint that
 # declares `archetype: grower`, so hiring the pack clears the stage-mix warning
 # exactly like every other archetype (the Grower's loop is hypothesis -> change
-# -> measurement). STILL PARTIAL (roadmap-phase-2.md T12): automated signal
-# intake (issue trackers, APM, crash reports), metric checks, and the
-# `regression` replenish kind are Phases 4-5.
+# -> measurement). Metric checks and the `regression` replenish kind now exist,
+# so `grow` ships a commented metric-check example — uncomment it to track a
+# number and fail the run on regression. STILL PARTIAL (roadmap-phase-2.md T12):
+# automated signal intake (issue trackers, APM, crash reports) is not yet wired.
 # ---------------------------------------------------------------------------
 
 _GROWER_LISTEN = """\
@@ -434,6 +435,22 @@ compute_tier: standard
   # checks and fail Policy Gate rule 1. This inline check keeps it lint-clean.
   - name: smoke
     command: ["true"]
+  # OPT-IN — the Grower's own law: a METRIC CHECK. Uncomment this block and
+  # replace the command with one that prints YOUR tracked number (bundle
+  # size, coverage %, p95 latency, …) as a single number on stdout. The
+  # engine never judges the number: the Verifier records it in the metric
+  # ledger and FAILS the run when it regresses beyond tolerance_pct vs the
+  # last ACCEPTED measurement — direction says which way is better, and a
+  # check with no history yet always passes (recorded as the baseline). The
+  # series then shows in `alc metrics` and the UI Metrics view. Until one
+  # is live, the Grower is conduct/enqueue-driven: route work via
+  # `alc conduct "<goal>"` or `alc enqueue`; once measurements accumulate,
+  # a Loop with a `regression` replenish can auto-enqueue a fix demand
+  # whenever a metric regresses.
+  # - name: bundle-size
+  #   metric: ["scripts/bundle_size.py"]  # any argv/shell that prints a number
+  #   direction: lower_is_better          # or higher_is_better (e.g. coverage)
+  #   tolerance_pct: 5.0                  # % slack absorbing benchmark noise
 report:
   format: json
   schema:
@@ -469,8 +486,11 @@ def _grower_files(
     (exactly like the other packs' Blueprints). `grow` opts into the primary
     detected stack's check_set (`_check_set_line`) plus an inline smoke check, so
     its checks are real when a stack is present and still lint-clean when none
-    is. Automated signal intake, metric checks, and the `regression` replenish
-    kind still land in Phases 4-5 (see docs/roadmap-phase-2.md).
+    is; it also ships a commented metric-check example (uncomment to track a
+    number and fail on regression — the Grower's own law). Automated signal
+    intake (issue trackers, APM, crash reports) is the remaining partial piece
+    (see docs/roadmap-phase-2.md); metric checks and the `regression` replenish
+    kind now exist.
     """
     return {
         ".alc/specialists/listen.yaml": _GROWER_LISTEN,

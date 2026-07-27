@@ -2,8 +2,10 @@
 # (packs.py's `grower` entry): a DIY issue/error-sweep Specialist whose
 # Knowledge File accumulates what users keep hitting, plus a `grow` Blueprint
 # that declares `archetype: grower` so hiring the pack clears the stage-mix
-# warning like every other archetype. Automated signal intake, metric checks,
-# and the `regression` replenish kind still land in Phases 4-5 (T12).
+# warning like every other archetype. Metric checks and the `regression`
+# replenish kind now exist, so `grow` ships a commented metric-check example
+# (uncomment to track a number and fail on regression); automated signal intake
+# (issue trackers, APM, crash reports) is the remaining partial piece (T12).
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +20,21 @@ from alc.packs import PACKS, pack_files
 from alc.policy import lint
 from alc.scaffold import scaffold
 from alc.stagepolicy import lint_stage
+
+
+def _uncomment_metric_example(content: str) -> str:
+    """Strip the leading `# ` from the grow Blueprint's commented metric-check
+    example, turning the inert block into a live second check.
+
+    Mirrors what an operator does by hand (delete the comment markers). The two
+    replaces target exactly the example-body lines: the `- name: bundle-size`
+    bullet (re-indented to the check list) and its `#   ` field lines (re-indented
+    to four spaces under the bullet). The prose intro lines keep their `# ` and
+    stay comments — proof the block's boundaries are unambiguous.
+    """
+    return content.replace(
+        "\n  # - name: bundle-size", "\n  - name: bundle-size"
+    ).replace("\n  #   ", "\n    ")
 
 
 class TestPackRegistration:
@@ -159,3 +176,53 @@ class TestHiringGrowerClearsTheStageMixWarning:
             if v.rule == "stage-core-archetype-missing" and "grower" in v.message
         ]
         assert missing == []
+
+
+class TestGrowShipsACommentedMetricCheckExample:
+    """The Grower's Boris-distinctive motion is grow WITHOUT regressing via a
+    METRIC CHECK. `grow` ships that check as a commented, uncomment-me example:
+    inert by default (checks resolve to just the smoke), schema-valid the moment
+    an operator strips the `# ` markers."""
+
+    def test_grow_carries_a_commented_metric_check_example(self) -> None:
+        content = pack_files("grower", stacks=[])[".alc/blueprints/grow.md"]
+        assert "# - name: bundle-size" in content
+        assert "metric:" in content
+        assert "direction: lower_is_better" in content
+        assert "tolerance_pct:" in content
+        # The example must stay INERT while shipped: every line that mentions
+        # tolerance_pct (the example field AND the prose that names it) is a
+        # comment, so YAML never parses a live metric check into the default.
+        for line in content.splitlines():
+            if "tolerance_pct" in line:
+                assert line.lstrip().startswith("#")
+
+    def test_commented_example_is_inert_when_loaded(self, tmp_path: Path) -> None:
+        # Default: the block is commented, so `grow` still resolves to exactly
+        # the inline smoke check — the pack is lint-clean out of the box.
+        operator_layer = _hire(tmp_path)
+        bp = load_blueprint(operator_layer / "blueprints", "grow")
+        assert [c.name for c in bp.checks] == ["smoke"]
+
+    def test_metric_example_is_schema_valid_when_uncommented(
+        self, tmp_path: Path
+    ) -> None:
+        # Uncommenting the example must yield a real, schema-valid metric check
+        # that satisfies Policy Gate rule 14 (metric-requires-direction) — proof
+        # the shipped field names and shape are correct, not just illustrative.
+        operator_layer = _hire(tmp_path)
+        content = pack_files("grower", stacks=[])[".alc/blueprints/grow.md"]
+        (operator_layer / "blueprints" / "grow.md").write_text(
+            _uncomment_metric_example(content)
+        )
+
+        bp = load_blueprint(operator_layer / "blueprints", "grow")
+        metric_check = bp.checks[1]
+        assert metric_check.metric == ["scripts/bundle_size.py"]
+        assert metric_check.direction == "lower_is_better"
+        assert metric_check.tolerance_pct == 5.0
+
+        manifest = load_manifest(operator_layer)
+        blueprints = load_all_blueprints(manifest, operator_layer)
+        errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
+        assert errors == []
