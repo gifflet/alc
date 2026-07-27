@@ -580,8 +580,14 @@ def cmd_onboard(args: argparse.Namespace) -> int:
 
 def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
-    from alc.intake import load_all_blueprints, load_manifest
-    from alc.policy import has_errors, lint, validate_provisions, validate_prompts
+    from alc.intake import load_all_blueprints, load_all_loops, load_manifest
+    from alc.policy import (
+        has_errors,
+        lint,
+        lint_loops,
+        validate_provisions,
+        validate_prompts,
+    )
     from alc.stagepolicy import lint_stage
 
     operator_layer = _find_operator_layer()
@@ -591,6 +597,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     violations += validate_prompts(manifest, operator_layer, blueprints)
     violations += validate_provisions(manifest, operator_layer.parent)
     violations += lint_stage(manifest, blueprints)
+    violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
     if getattr(args, "json", False):
         from alc.output import emit_json
@@ -1216,9 +1223,15 @@ def cmd_team(args: argparse.Namespace) -> int:
 
 def _team_hire(args: argparse.Namespace) -> int:
     """`alc team hire <archetype> [--force]`: scaffold a pack's files, then lint."""
-    from alc.intake import load_all_blueprints, load_manifest
+    from alc.intake import load_all_blueprints, load_all_loops, load_manifest
     from alc.packs import PACKS, pack_files
-    from alc.policy import has_errors, lint, validate_prompts, validate_provisions
+    from alc.policy import (
+        has_errors,
+        lint,
+        lint_loops,
+        validate_prompts,
+        validate_provisions,
+    )
     from alc.scaffold import detect_stacks
     from alc.stagepolicy import lint_stage
 
@@ -1260,6 +1273,11 @@ def _team_hire(args: argparse.Namespace) -> int:
     violations += validate_prompts(manifest, operator_layer, blueprints)
     violations += validate_provisions(manifest, project_root)
     violations += lint_stage(manifest, blueprints)
+    # Hiring the maintainer pack onto a manifest with no env-refresh provision is
+    # the exact "existing project adopts a deps loop" moment this rule targets:
+    # the deps-refresh Loop it just wrote would run its checks against stale,
+    # already-installed packages — warn immediately so the operator adds a refresh.
+    violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
     if not violations:
         print("No violations found. Operator Layer is conformant.")

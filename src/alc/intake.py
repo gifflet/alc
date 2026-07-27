@@ -252,3 +252,23 @@ def load_all_specialists(manifest: Manifest, operator_layer: Path) -> list[Speci
     for yaml_file in sorted(specialists_dir.glob("*.yaml")):
         specialists.append(load_specialist(specialists_dir, yaml_file.stem))
     return specialists
+
+
+def load_all_loops(manifest: Manifest, operator_layer: Path) -> list[LoopDefinition]:
+    """Load every .yaml file from the loops directory.
+
+    `manifest.loops_dir` is relative to the project root (the parent of the
+    Operator Layer), e.g. ".alc/loops". Returns an empty list when the directory
+    is missing. The ``*.yaml`` glob naturally skips a loop's ``.state.json`` and
+    ``.ledger.jsonl`` siblings (they share the loops directory), so only real
+    loop definitions are loaded. A malformed loop YAML propagates its
+    ValidationError, consistent with ``load_all_blueprints``/``load_all_flows``.
+    """
+    loops_dir = operator_layer.parent / manifest.loops_dir
+    if not loops_dir.exists():
+        return []
+
+    loops = []
+    for yaml_file in sorted(loops_dir.glob("*.yaml")):
+        loops.append(load_loop(loops_dir, yaml_file.stem))
+    return loops

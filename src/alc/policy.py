@@ -710,3 +710,96 @@ def validate_provisions(manifest: Manifest, project_root: Path) -> list[Violatio
             )
 
     return violations
+
+
+# The Maintainer pack's canonical deps names (packs.py). The rule below matches a
+# deps-bumping loop by these names because nothing on Specialist/LoopDefinition
+# marks a loop as "bumps dependencies" — there is no archetype/role field to key
+# on (the pack's deps specialist acts through the archetype-less default `chore`
+# Blueprint, so even the archetype signal `lint_stage` uses is absent here). Name-
+# matching is the only structural signal available; kept as named constants (not
+# inline literals) so the drift-guard test can pin them against the pack.
+_DEPS_SPECIALIST_CANONICAL = "deps"      # packs.py's maintainer deps specialist name
+_DEPS_LOOP_CANONICAL = "deps-refresh"    # packs.py's maintainer deps-refresh loop name
+
+
+def lint_loops(manifest: Manifest, loop_defs: list[LoopDefinition]) -> list[Violation]:
+    """Policy Gate rule over the Autonomous Loops: a deps-bumping loop with no
+    env-refresh provision (roadmap env-refresh fix, commit f394f0b).
+
+    THE FALSE GREEN THIS GUARDS: a `link:` provision shares the operator's
+    already-installed packages into every worktree. A loop that bumps dependency
+    manifests (the Maintainer pack's deps-refresh Loop) whose `worktree_provision`
+    declares NO `refresh` would run its checks against those STALE packages — a
+    breaking major bump passes green because type-check/build/test never saw the
+    new versions (a vacuous check). The run-time fix (`envrefresh.py`) closes this
+    for a provision that DOES declare a `refresh`; `alc init` scaffolds one for new
+    Node projects. This WARN is the lint-time complement: it catches an EXISTING
+    project that adopted a deps loop without declaring a refresh.
+
+    Detection — a loop is deps-bumping when EITHER arm holds:
+      - its replenish is a `specialist`/`plan`-kind replenish naming the canonical
+        deps Specialist (these two kinds group together in `validate_loop` because
+        both name a Specialist; the other kinds — flow/signals/regression — name a
+        Flow, so a ref reading "deps" under one of those is NOT a deps specialist
+        and must not match), OR
+      - the loop carries the canonical `deps-refresh` name (which needs no
+        replenish, so a Mode B drain-only loop with that name is still caught —
+        the `replenish is None` deref is guarded).
+    The OR means renaming ONE of the two (the loop or the specialist) still trips
+    the other arm; renaming BOTH is a KNOWN, accepted false negative — acceptable
+    for a WARN, since there is no role marker to key on instead.
+
+    The rule fires once per matching loop when NO provision declares a refresh —
+    ``not any(spec.refresh is not None ...)``. An EMPTY `worktree_provision`
+    satisfies that too: an ABSENT config IS the vacuous state (a deps loop that
+    provisions and refreshes nothing before its checks), not an exemption.
+
+    Pure over already-loaded models (like `lint`/`lint_stage`) — no filesystem,
+    no engine. Deliberately LINT-ONLY and NOT wired into `validate_loop`: that
+    function's caller (`_resolve_loop`) treats ANY violation as fatal and would
+    hard-block `alc cycle`/`alc loop`, whereas this is advisory (a warn) — a stale-
+    deps check is a false green worth surfacing, never a reason to refuse the run.
+
+    Args:
+        manifest: The loaded Manifest (provides worktree_provision).
+        loop_defs: Every LoopDefinition in the Operator Layer.
+
+    Returns:
+        List of Violations (may be empty).
+    """
+    violations: list[Violation] = []
+
+    # A single provision entry declaring a refresh closes the false green for the
+    # whole worktree (the install runs before the checks), so the guard is
+    # manifest-wide: any refresh anywhere silences the rule for every loop.
+    if any(spec.refresh is not None for spec in manifest.worktree_provision):
+        return violations
+
+    for loop in loop_defs:
+        replenish = loop.replenish
+        deps_bumping = (
+            replenish is not None
+            and replenish.kind in ("specialist", "plan")
+            and replenish.ref == _DEPS_SPECIALIST_CANONICAL
+        ) or loop.name == _DEPS_LOOP_CANONICAL
+        if not deps_bumping:
+            continue
+        violations.append(
+            Violation(
+                rule="deps-loop-without-env-refresh",
+                severity="warn",
+                message=(
+                    f"Loop '{loop.name}' bumps dependency manifests, but no "
+                    "manifest.worktree_provision entry declares a refresh — its "
+                    "checks run against the already-installed packages, so a "
+                    "breaking bump can pass green (a vacuous check). — hint: add "
+                    "refresh: [<install>] + when_changed: [<dependency manifests>] "
+                    "to the dep dir's provision entry (what alc init scaffolds for "
+                    "Node: refresh: [npm, install], when_changed: [package.json, "
+                    "package-lock.json])."
+                ),
+            )
+        )
+
+    return violations

@@ -27,14 +27,14 @@ from alc.checks import audit_checks, check_history
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
 from alc.harvest import harvest
-from alc.intake import load_all_blueprints, load_manifest
+from alc.intake import load_all_blueprints, load_all_loops, load_manifest
 from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
 from alc.manifestedit import validate_manifest_text
 from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
 from alc.packs import PACKS, hired_archetypes, pack_files
 from alc.policy import lint as _lint
-from alc.policy import validate_provisions, validate_prompts
+from alc.policy import lint_loops, validate_provisions, validate_prompts
 from alc.prompts import (
     _DEFAULT_PROMPTS,
     list_prompts,
@@ -153,6 +153,7 @@ def lint_project(root: Path) -> dict:
     violations += validate_prompts(manifest, ol, blueprints)
     violations += validate_provisions(manifest, root)
     violations += lint_stage(manifest, blueprints)
+    violations += lint_loops(manifest, load_all_loops(manifest, ol))
     return {
         "violations": [
             {"rule": v.rule, "severity": v.severity, "message": v.message}

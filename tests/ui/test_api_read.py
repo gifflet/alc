@@ -252,6 +252,28 @@ class TestLintAndEngines:
         rules = {v["rule"] for v in body["violations"]}
         assert "stage-core-archetype-missing" in rules
 
+    def test_lint_surfaces_deps_loop_without_env_refresh_warning(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # A deps-refresh loop whose manifest declares no worktree_provision
+        # refresh must surface policy.lint_loops's warn through the same endpoint
+        # `alc lint --json` runs it through -- the scaffolded project declares no
+        # provision at all, so the loop's checks would run against stale packages.
+        from alc.packs import pack_files
+
+        loops = project / ".alc" / "loops"
+        loops.mkdir(parents=True, exist_ok=True)
+        (loops / "deps-refresh.yaml").write_text(
+            pack_files("maintainer", stacks=[])[".alc/loops/deps-refresh.yaml"]
+        )
+
+        body = client.get(f"/api/projects/{registered}/lint").json()
+        rules = {v["rule"] for v in body["violations"]}
+        assert "deps-loop-without-env-refresh" in rules
+        # Still a warn — the scaffolded project keeps its no-errors invariant.
+        errors = [v for v in body["violations"] if v["severity"] == "error"]
+        assert errors == []
+
     def test_engines_reports_mock_default_and_health(self, client, registered: str) -> None:
         engines = client.get(f"/api/projects/{registered}/engines").json()
         by_name = {e["name"]: e for e in engines}
