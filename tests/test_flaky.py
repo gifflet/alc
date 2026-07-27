@@ -105,13 +105,20 @@ class TestVerifierFlakyRerun:
         self, tmp_path: Path
     ) -> None:
         marker = tmp_path / "calls.txt"
-        shell = f"echo x >> {marker}; echo attempt-$(wc -l < {marker}) 1>&2; exit 1"
+        # `tr -dc 0-9` keeps only the digit so the tag is byte-identical across
+        # `wc` implementations — BSD/macOS right-justifies the count with leading
+        # spaces (`attempt- 3`) while GNU/Linux does not (`attempt-3`); without this
+        # the assertion below is coupled to the host's `wc`.
+        shell = (
+            f"echo x >> {marker}; "
+            f"echo attempt-$(wc -l < {marker} | tr -dc 0-9) 1>&2; exit 1"
+        )
         [result] = Verifier(timeout_s=30).run(
             [Check(name="always-fails", shell=shell, flaky=2)], tmp_path
         )
         assert result.passed is False
         assert len(marker.read_text().splitlines()) == 3  # 1 initial + 2 reruns
-        assert "attempt- 3" in result.output  # LAST attempt's output, not the first
+        assert "attempt-3" in result.output  # LAST attempt's output (3rd), not the first
 
     def test_flaky_duration_sums_every_attempt(self, tmp_path: Path) -> None:
         [once] = Verifier(timeout_s=30).run(
