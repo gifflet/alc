@@ -1,6 +1,8 @@
 # test_scaffold.py — Hermetic tests for scaffold.py and the `alc init` command.
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 from pathlib import Path
 
@@ -33,36 +35,64 @@ class TestScaffoldCreatesDefaultFiles:
 
 
 class TestScaffoldGitignoresRuntimeDirs:
-    def test_gitignore_ignores_the_runtime_state(self, tmp_path: Path) -> None:
-        """`.alc/.gitignore` keeps run-generated state out of git so it is never
-        accidentally tracked: the wholly-runtime dirs (runs/queue/metrics) AND the
-        runtime files that live alongside config in loops/ and specialists/ (a loop's
-        cycle state/ledger, a specialist's accumulated knowledge). Without the latter,
-        a `git add -A` after `alc cycle` would commit loop/specialist runtime; and an
-        `--isolate` metric run writes the canonical ledger into the MAIN .alc/ (would
-        dirty a tracked tree)."""
-        scaffold(tmp_path)
+    """`.alc/.gitignore` is an ALLOWLIST: track the CONFIG (a bounded, known set),
+    ignore all other `.alc/` content — run-generated state — by default. This closes
+    the whole class of "a new runtime dir was forgotten" gaps (a denylist leaked as
+    features added runs/ → metrics/ → loop state → specialist knowledge → variants/)."""
 
-        gitignore = tmp_path / ".alc" / ".gitignore"
-        assert gitignore.is_file()
-        # Only the actual ignore RULES (non-comment, non-blank lines) — the comment
-        # legitimately names the tracked config to explain what is NOT ignored.
-        rules = {
-            line.strip()
-            for line in gitignore.read_text().splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
-        }
-        assert rules == {
-            "runs/",
-            "queue/",
-            "metrics/",
-            "loops/*.state.json",
-            "loops/*.ledger.jsonl",
-            "specialists/*.knowledge.md",
-        }, rules
-        # The config that shares loops/ and specialists/ must NOT be swept by the
-        # runtime patterns — only *.state.json/*.ledger.jsonl/*.knowledge.md are.
-        assert "loops/" not in rules and "specialists/" not in rules
+    @staticmethod
+    def _is_ignored(repo: Path, rel: str) -> bool:
+        return (
+            subprocess.run(
+                ["git", "-C", str(repo), "check-ignore", "-q", rel],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
+
+    def _scaffolded_git_repo(self, tmp_path: Path) -> Path:
+        scaffold(tmp_path)
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, capture_output=True)
+        return tmp_path
+
+    def test_config_is_tracked_runtime_is_ignored_including_a_future_dir(
+        self, tmp_path: Path
+    ) -> None:
+        repo = self._scaffolded_git_repo(tmp_path)
+        alc = repo / ".alc"
+        # CONFIG (bounded, known) — plus a runtime file sharing loops/ & specialists/.
+        for rel in ("loops", "specialists", "primers", "runs", "variants", "brandnewdir"):
+            (alc / rel).mkdir(parents=True, exist_ok=True)
+        (alc / "loops" / "sweep.yaml").write_text("name: sweep\n")
+        (alc / "loops" / "sweep.state.json").write_text("{}")
+        (alc / "specialists" / "deps.yaml").write_text("name: deps\n")
+        (alc / "specialists" / "janitor.knowledge.md").write_text("learned\n")
+        (alc / "primers" / "p.md").write_text("x\n")
+        (alc / "runs" / "r.jsonl").write_text("{}\n")
+        (alc / "variants" / "v.json").write_text("{}")
+        (alc / "brandnewdir" / "f.dat").write_text("x")  # a HYPOTHETICAL future runtime dir
+
+        # Config stays tracked — including the .gitignore itself and the mixed-dir .yaml.
+        for rel in (
+            ".alc/.gitignore",
+            ".alc/manifest.yaml",
+            ".alc/blueprints/chore.md",
+            ".alc/flows/ship.yaml",
+            ".alc/loops/sweep.yaml",
+            ".alc/specialists/deps.yaml",
+            ".alc/primers/p.md",
+        ):
+            assert not self._is_ignored(repo, rel), f"config wrongly ignored: {rel}"
+
+        # Runtime is ignored — incl. the loop/specialist runtime AND a dir no rule names.
+        for rel in (
+            ".alc/runs/r.jsonl",
+            ".alc/variants/v.json",
+            ".alc/brandnewdir/f.dat",
+            ".alc/loops/sweep.state.json",
+            ".alc/specialists/janitor.knowledge.md",
+        ):
+            assert self._is_ignored(repo, rel), f"runtime wrongly tracked: {rel}"
 
 
 class TestScaffoldOutputIsConformant:
