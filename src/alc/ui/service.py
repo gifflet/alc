@@ -50,7 +50,7 @@ from alc.queue import (
 )
 from alc.scaffold import detect_stacks
 from alc.schedule import has_crontab, list_entries, read_crontab
-from alc.stagepolicy import lint_stage, mix_health
+from alc.stagepolicy import MIX_HEALTH_WINDOW_S, lint_stage, mix_health
 from alc.textutil import slugify
 from alc.ui.errors import ApiError
 from alc.ui.repostatus import repo_status
@@ -835,7 +835,11 @@ def team_roster(root: Path) -> dict:
         m["archetype"]: [lp["name"] for lp in m["loops"]] for m in members
     }
     health = mix_health(
-        done_dir, manifest, roster=member_roster, extra_report_dir=root / manifest.runs_dir
+        done_dir,
+        manifest,
+        roster=member_roster,
+        extra_report_dir=root / manifest.runs_dir,
+        since_epoch=time.time() - MIX_HEALTH_WINDOW_S,
     )
     return {"members": members, "mix_health": asdict(health)}
 
@@ -1041,7 +1045,9 @@ def discard_branches(
             raise ApiError("not inside a git repository", status=409)
         repo_root = git_toplevel(root)
         if branches:
-            result["deleted"] = delete_branches(repo_root, branches)
+            result["deleted"] = delete_branches(
+                repo_root, branches, runs_dir=_runs_dir(root)
+            )
         if worktrees:
             result["pruned_worktrees"] = prune_worktrees(repo_root)
 
@@ -1102,7 +1108,9 @@ def adopt_variant(root: Path, branch: str) -> dict:
         if not b.merged and b.name != branch and _VARIANT_BRANCH_RE.match(b.name)
     ]
     merge_report = auto_merge_branches(repo_root, [branch])
-    discarded = delete_branches(repo_root, losers) if losers else []
+    discarded = (
+        delete_branches(repo_root, losers, runs_dir=_runs_dir(root)) if losers else []
+    )
     return {
         "merged": merge_report.merged,
         "conflicted": merge_report.conflicted,

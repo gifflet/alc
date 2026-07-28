@@ -15,6 +15,7 @@ from alc.branches import (
     list_alc_branches,
     live_variant_branches,
     prune_worktrees,
+    run_report_filename,
 )
 
 
@@ -227,6 +228,35 @@ class TestDeleteBranches:
         assert deleted == ["alc/run-orphan0"]
         assert not _branch_exists(repo, "alc/run-orphan0")
         assert not wt.exists()  # the orphaned worktree was force-removed
+
+    def test_runs_dir_drops_the_discarded_branch_report(self, tmp_path: Path) -> None:
+        """A direct isolated run archived `runs/<branch-dashed>.report.json`; discarding
+        the branch (with runs_dir passed) deletes that report so it stops counting in
+        audit / Mix Health — no orphaned advisory data on a long-lived project."""
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/run-deadbeef", "x.txt", "x\n")
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        report = runs_dir / run_report_filename("alc/run-deadbeef")
+        report.write_text("{}")
+        assert report.name == "alc-run-deadbeef.report.json"  # slashes -> dashes
+
+        deleted = delete_branches(repo, ["alc/run-deadbeef"], runs_dir=runs_dir)
+
+        assert deleted == ["alc/run-deadbeef"]
+        assert not report.exists()  # the report was cleaned up with the branch
+
+    def test_runs_dir_omitted_leaves_reports_untouched(self, tmp_path: Path) -> None:
+        """Byte-identical legacy behavior: no runs_dir -> no report cleanup."""
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/run-deadbeef", "x.txt", "x\n")
+        runs_dir = tmp_path / "runs"
+        runs_dir.mkdir()
+        report = runs_dir / run_report_filename("alc/run-deadbeef")
+        report.write_text("{}")
+
+        delete_branches(repo, ["alc/run-deadbeef"])
+        assert report.exists()
 
     def test_never_removes_the_main_worktree(self, tmp_path: Path) -> None:
         """The current branch (held by the MAIN worktree) is skipped, so the main

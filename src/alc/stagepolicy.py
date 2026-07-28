@@ -221,21 +221,32 @@ class MixHealthReport:
     idle_core: list[IdleCoreArchetype] = field(default_factory=list)
 
 
+MIX_HEALTH_WINDOW_S: float = 30 * 86400
+"""Default trailing window for Mix Health — the archetype MIX is a picture of RECENT
+work, not all-time history, and bounding it keeps the aggregation from parsing every
+report a long-lived project ever accumulated (the `runs/` + `done/` scan is O(n))."""
+
+
 def mix_health(
     done_dir: Path,
     manifest: Manifest,
     roster: Mapping[str, Sequence[str]] | None = None,
     extra_report_dir: Path | None = None,
+    since_epoch: float | None = None,
 ) -> MixHealthReport:
     """Aggregate archived reports (`*.report.json`) by `RunReport.archetype`.
 
     Reads the queue's `done/` reports and, when *extra_report_dir* is given, the
     `runs/` reports a direct `alc run` archives there — so a landed interactive run
     (e.g. `alc run refactor`, archetype: sweeper) counts, instead of reading as
-    "sweeper never exercised" when only `alc tick` work was tracked. Mirrors
-    `audit.audit_window`'s read pattern: an unreadable or invalid archive is skipped,
-    never fatal; absent dirs contribute nothing (so `total_runs == 0` means no data
-    yet, not zeroed stats for archetypes never attempted).
+    "sweeper never exercised" when only `alc tick` work was tracked. When
+    *since_epoch* is given, a report whose archive-file mtime is older is skipped —
+    Mix Health reflects the RECENT mix and a long-lived project's ancient reports are
+    not parsed every load (production callers pass a trailing window; tests and legacy
+    callers omit it for all-time). Mirrors `audit.audit_window`'s read pattern: an
+    unreadable or invalid archive is skipped, never fatal; absent dirs contribute
+    nothing (so `total_runs == 0` means no data yet, not zeroed stats for archetypes
+    never attempted).
 
     ``roster`` maps each hired archetype to the loop names its pack brought; it
     is what turns a bare "core X never ran" into the correct hint (hire it /
@@ -251,6 +262,8 @@ def mix_health(
         f for d in report_dirs if d.is_dir() for f in d.glob("*.report.json")
     )
     for report_file in report_files:
+        if since_epoch is not None and report_file.stat().st_mtime < since_epoch:
+            continue
         try:
             report = FlowReport.model_validate_json(report_file.read_text())
         except (ValidationError, OSError):

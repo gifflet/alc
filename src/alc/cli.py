@@ -676,17 +676,20 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return 0
 
 
-def _archive_run_report(run_log: Path, blueprint, report, engine: str) -> None:
-    """Archive a direct `alc run`'s RunReport as a FlowReport `*.report.json` next to
-    its event log, so `alc audit` and Mix Health — which aggregate the FlowReports in
+def _archive_run_report(report_path: Path, blueprint, report, engine: str) -> None:
+    """Archive a direct `alc run`'s RunReport as a FlowReport `*.report.json` under
+    `runs/`, so `alc audit` and Mix Health — which aggregate the FlowReports in
     `done/` and `runs/` — count INTERACTIVE runs too, not only queue-drained
     (`alc tick`) work. Without this a landed `alc run refactor` (archetype: sweeper)
     still read as "sweeper never exercised". Wrapped as a single-stage FlowReport,
     mirroring the queue's own specialist archive; the stage carries
     `Blueprint.archetype`, so Mix Health buckets it correctly.
 
-    Best-effort: a write failure never fails the run. A `spike` is never archived (it
-    is throwaway, always discarded) — the caller gates on that.
+    An isolated run names the report after its BRANCH (see
+    `branches.run_report_filename`) so `alc discard` can delete it when the branch is
+    discarded; a non-isolated run (no branch) names it after its event log. Best-effort:
+    a write failure never fails the run. A `spike` is never archived (throwaway) — the
+    caller gates on that.
     """
     from alc.models import FlowReport
 
@@ -698,7 +701,7 @@ def _archive_run_report(run_log: Path, blueprint, report, engine: str) -> None:
         scorecard=report.scorecard,
     )
     try:
-        run_log.with_suffix(".report.json").write_text(flow.model_dump_json(indent=2))
+        report_path.write_text(flow.model_dump_json(indent=2))
     except OSError:
         pass
 
@@ -825,7 +828,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         _print_run_report(report)
         _print_isolation_result(wt)
         if report.success and blueprint.mode != "spike":
-            _archive_run_report(run_log, blueprint, report, args.engine or manifest.default_engine)
+            from alc.branches import run_report_filename
+
+            runs_dir = operator_layer.parent / manifest.runs_dir
+            # Name the report after the branch when the run committed one, so
+            # `alc discard <branch>` can delete it; else after the event log.
+            report_path = (
+                runs_dir / run_report_filename(wt.branch)
+                if wt.committed
+                else run_log.with_suffix(".report.json")
+            )
+            _archive_run_report(
+                report_path, blueprint, report, args.engine or manifest.default_engine
+            )
         if args.bundle:
             bundles_dir = operator_layer.parent / manifest.bundles_dir
             path = write_bundle(bundles_dir, args.blueprint, args.task, report)
@@ -847,7 +862,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     _print_run_report(report)
     if report.success and blueprint.mode != "spike":
-        _archive_run_report(run_log, blueprint, report, args.engine or manifest.default_engine)
+        _archive_run_report(
+            run_log.with_suffix(".report.json"),
+            blueprint,
+            report,
+            args.engine or manifest.default_engine,
+        )
     if args.bundle:
         bundles_dir = operator_layer.parent / manifest.bundles_dir
         path = write_bundle(bundles_dir, args.blueprint, args.task, report)
@@ -1521,7 +1541,9 @@ def _team_roster(args: argparse.Namespace) -> int:
 
     health = None
     if args.team_action == "status":
-        from alc.stagepolicy import mix_health
+        import time
+
+        from alc.stagepolicy import MIX_HEALTH_WINDOW_S, mix_health
 
         done_dir = project_root / manifest.queue_dir / "done"
         # Map each hired archetype to the loop names its pack brought, so
@@ -1536,6 +1558,7 @@ def _team_roster(args: argparse.Namespace) -> int:
             manifest,
             roster=member_roster,
             extra_report_dir=project_root / manifest.runs_dir,
+            since_epoch=time.time() - MIX_HEALTH_WINDOW_S,
         )
 
     if getattr(args, "json", False):
@@ -2433,7 +2456,22 @@ def cmd_discard(args: argparse.Namespace) -> int:
         return 1
 
     if wants_branches:
-        deleted = delete_branches(repo_root, branch_targets) if branch_targets else []
+        # runs_dir lets delete_branches drop a discarded isolated run's archived
+        # report so it stops counting in audit / Mix Health. Best-effort: if the
+        # operator layer can't be resolved, skip the report cleanup, never fail.
+        runs_dir = None
+        try:
+            from alc.intake import load_manifest
+
+            ol = _find_operator_layer()
+            runs_dir = ol.parent / load_manifest(ol).runs_dir
+        except Exception:  # noqa: BLE001 — cleanup is best-effort, never fatal
+            runs_dir = None
+        deleted = (
+            delete_branches(repo_root, branch_targets, runs_dir=runs_dir)
+            if branch_targets
+            else []
+        )
         if deleted:
             print(f"Deleted {len(deleted)} branch(es): {', '.join(deleted)}")
         else:

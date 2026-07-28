@@ -129,6 +129,26 @@ class TestMixHealthCountsDirectRuns:
         assert health.total_runs == 0
         assert "sweeper" in [ic.archetype for ic in health.idle_core]
 
+    def test_since_epoch_skips_reports_older_than_the_window(self, tmp_path: Path) -> None:
+        """Mix Health reflects the RECENT mix: a report older than since_epoch is not
+        parsed/counted — bounding the O(n) scan on a long-lived project."""
+        import os
+        import time
+
+        done_dir = tmp_path / "done"
+        recent = _write_report(done_dir, "recent", stages=[{"archetype": "builder"}])
+        old = _write_report(done_dir, "old", stages=[{"archetype": "sweeper"}])
+        # Backdate the old report well beyond the window.
+        os.utime(old, (time.time() - 90 * 86400, time.time() - 90 * 86400))
+
+        health = mix_health(
+            done_dir, _manifest(), since_epoch=time.time() - 30 * 86400
+        )
+        by = {b.archetype: b.runs for b in health.by_archetype}
+        assert by == {"builder": 1}  # only the recent one; the old is windowed out
+        assert health.total_runs == 1
+        assert recent.exists() and old.exists()  # skipped, not deleted
+
 
 class TestMixHealthAggregation:
     def test_buckets_by_archetype_across_reports(self, tmp_path: Path) -> None:

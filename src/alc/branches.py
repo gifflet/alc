@@ -214,7 +214,21 @@ def _worktrees_by_branch(repo_root: Path) -> dict[str, Path]:
     return mapping
 
 
-def delete_branches(repo_root: Path, names: list[str]) -> list[str]:
+def run_report_filename(branch: str) -> str:
+    """The archived-report filename a direct isolated `alc run` writes for *branch*.
+
+    An isolated run names its `*.report.json` after the branch (slashes → dashes)
+    so `alc discard` can find and delete it when the branch is discarded — otherwise
+    a rejected run's report would linger and keep inflating audit / Mix Health, a
+    real drift on a long-lived project. The single source of truth for the name,
+    shared by the archiver (`cli._archive_run_report`) and the remover here.
+    """
+    return branch.replace("/", "-") + ".report.json"
+
+
+def delete_branches(
+    repo_root: Path, names: list[str], runs_dir: Path | None = None
+) -> list[str]:
     """Force-delete each of *names* that is an `alc/` branch and not the current one.
 
     A ref outside the `alc/` prefix, or the currently checked-out branch, is
@@ -226,8 +240,13 @@ def delete_branches(repo_root: Path, names: list[str]) -> list[str]:
     `git worktree prune` can't clear — that worktree is force-removed first (never
     the main worktree) and the delete retried, so `alc discard` (and the UI's
     discard, which shares this function) actually cleans up instead of reporting
-    "Deleted 0 branches" and leaving the mess. Never raises: a missing ``git``
-    binary yields an empty result.
+    "Deleted 0 branches" and leaving the mess.
+
+    When *runs_dir* is given, the archived report a direct isolated run wrote for a
+    deleted branch (``runs/<branch-dashed>.report.json``) is removed too, so a
+    discarded run stops counting in audit / Mix Health — no orphaned advisory data
+    accumulating on a long-lived project. Never raises: a missing ``git`` binary
+    yields an empty result.
     """
     try:
         current = subprocess.run(
@@ -266,6 +285,9 @@ def delete_branches(repo_root: Path, names: list[str]) -> list[str]:
                 result = _branch_d(name)
         if result.returncode == 0:
             deleted.append(name)
+            if runs_dir is not None:
+                # Drop the discarded run's archived report so it stops counting.
+                (runs_dir / run_report_filename(name)).unlink(missing_ok=True)
     return deleted
 
 

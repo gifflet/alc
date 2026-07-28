@@ -437,6 +437,9 @@ class TestCmdRunArchivesRunReport:
 
         reports = list((repo / ".alc" / "runs").glob("*.report.json"))
         assert len(reports) == 1, reports
+        # An ISOLATED run names the report after its branch (alc/run-<hex> ->
+        # alc-run-<hex>.report.json) so `alc discard` can delete it on discard.
+        assert reports[0].name.startswith("alc-run-")
         data = json.loads(reports[0].read_text())
         assert data["success"] is True
         assert data["flow"] == "chore"

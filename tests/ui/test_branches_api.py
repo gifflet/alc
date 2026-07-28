@@ -363,6 +363,28 @@ class TestDiscardBranches:
         assert not _branch_exists(git_project, "alc/run-orphan0")
         assert not wt.exists()
 
+    def test_discard_removes_the_branch_run_report(
+        self, client, git_registered: str, git_project: Path
+    ) -> None:
+        """The UI discard shares delete_branches + passes runs_dir, so discarding a
+        branch also deletes the isolated run's archived report — it stops counting in
+        audit / Mix Health, same as the CLI."""
+        from alc.branches import run_report_filename
+
+        _make_branch(git_project, "alc/run-abc12345", "x.txt", "x\n")
+        runs = git_project / ".alc" / "runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        report = runs / run_report_filename("alc/run-abc12345")
+        report.write_text("{}")
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/discard",
+            json={"branches": ["alc/run-abc12345"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == ["alc/run-abc12345"]
+        assert not report.exists()
+
     def test_non_alc_branch_is_silently_skipped_by_delete_branches(
         self, client, git_registered: str, git_project: Path
     ) -> None:
