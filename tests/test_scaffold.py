@@ -17,6 +17,7 @@ _EXPECTED_PATHS = sorted([
     ".alc/blueprints/feature.md",
     ".alc/blueprints/plan.md",
     ".alc/flows/ship.yaml",
+    ".alc/.gitignore",
 ])
 
 
@@ -29,6 +30,26 @@ class TestScaffoldCreatesDefaultFiles:
 
         for rel in _EXPECTED_PATHS:
             assert (tmp_path / rel).is_file(), f"Missing: {rel}"
+
+
+class TestScaffoldGitignoresRuntimeDirs:
+    def test_gitignore_ignores_the_runtime_subdirs(self, tmp_path: Path) -> None:
+        """`.alc/.gitignore` keeps the run-generated dirs (runs/queue/metrics) out of
+        git so they are never accidentally tracked — and so an `--isolate` metric run
+        (which writes the canonical ledger into the MAIN .alc/) never dirties a tracked
+        tree."""
+        scaffold(tmp_path)
+
+        gitignore = tmp_path / ".alc" / ".gitignore"
+        assert gitignore.is_file()
+        # Only the actual ignore RULES (non-comment, non-blank lines) — the comment
+        # legitimately names the tracked config to explain what is NOT ignored.
+        rules = {
+            line.strip()
+            for line in gitignore.read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+        assert rules == {"runs/", "queue/", "metrics/"}, rules
 
 
 class TestScaffoldOutputIsConformant:
