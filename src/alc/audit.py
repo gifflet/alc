@@ -56,13 +56,17 @@ class AuditWindow:
     cost_usd_total: float
 
 
-def audit_window(done_dir: Path, since_epoch: float) -> AuditWindow:
-    """Aggregate the archived queue reports (``done/*.report.json``) at/after *since_epoch*.
+def audit_window(
+    done_dir: Path, since_epoch: float, extra_report_dir: Path | None = None
+) -> AuditWindow:
+    """Aggregate the archived reports (``*.report.json``) at/after *since_epoch*.
 
-    A report's archive-file mtime (the Gate write time) decides whether it
-    falls inside the window. Mirrors ``ui.service.scorecard``'s read pattern:
-    an unreadable or invalid archive is skipped, not fatal. An absent
-    ``done_dir`` yields an all-zero window.
+    Reads the queue's ``done/`` reports and, when *extra_report_dir* is given, the
+    ``runs/`` reports a direct ``alc run`` archives there — so the window counts
+    INTERACTIVE runs too, not only queue-drained (``alc tick``) work. A report's
+    archive-file mtime (the Gate write time) decides whether it falls inside the
+    window. Mirrors ``ui.service.scorecard``'s read pattern: an unreadable or invalid
+    archive is skipped, not fatal. Absent dirs contribute nothing.
 
     Per-task totals come from the FlowReport's own aggregate ``scorecard``
     (already summed across stages, like ``ui.service.scorecard``); changed
@@ -74,36 +78,39 @@ def audit_window(done_dir: Path, since_epoch: float) -> AuditWindow:
     input_tokens_total = output_tokens_total = 0
     cost_usd_total = 0.0
 
-    if done_dir.is_dir():
-        for report_file in sorted(done_dir.glob("*.report.json")):
-            if report_file.stat().st_mtime < since_epoch:
-                continue
-            try:
-                report = FlowReport.model_validate_json(report_file.read_text())
-            except (ValidationError, OSError):
-                continue
+    report_dirs = [done_dir] + ([extra_report_dir] if extra_report_dir is not None else [])
+    report_files = sorted(
+        f for d in report_dirs if d.is_dir() for f in d.glob("*.report.json")
+    )
+    for report_file in report_files:
+        if report_file.stat().st_mtime < since_epoch:
+            continue
+        try:
+            report = FlowReport.model_validate_json(report_file.read_text())
+        except (ValidationError, OSError):
+            continue
 
-            tasks_total += 1
-            if report.success:
-                tasks_ok += 1
-            else:
-                tasks_failed += 1
-            span_total += report.scorecard.span
-            passes_total += report.scorecard.passes
-            streak_total += report.scorecard.streak
-            touch_total += report.scorecard.touch
+        tasks_total += 1
+        if report.success:
+            tasks_ok += 1
+        else:
+            tasks_failed += 1
+        span_total += report.scorecard.span
+        passes_total += report.scorecard.passes
+        streak_total += report.scorecard.streak
+        touch_total += report.scorecard.touch
 
-            for stage in report.stages:
-                changed_files_total += len(stage.changed_files)
-                usage = stage.usage
-                if usage is None:
-                    continue
-                if usage.input_tokens is not None:
-                    input_tokens_total += usage.input_tokens
-                if usage.output_tokens is not None:
-                    output_tokens_total += usage.output_tokens
-                if usage.cost_usd is not None:
-                    cost_usd_total += usage.cost_usd
+        for stage in report.stages:
+            changed_files_total += len(stage.changed_files)
+            usage = stage.usage
+            if usage is None:
+                continue
+            if usage.input_tokens is not None:
+                input_tokens_total += usage.input_tokens
+            if usage.output_tokens is not None:
+                output_tokens_total += usage.output_tokens
+            if usage.cost_usd is not None:
+                cost_usd_total += usage.cost_usd
 
     def _avg(total: int) -> float:
         return total / tasks_total if tasks_total else 0.0

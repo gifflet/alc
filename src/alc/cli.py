@@ -676,6 +676,33 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return 0
 
 
+def _archive_run_report(run_log: Path, blueprint, report, engine: str) -> None:
+    """Archive a direct `alc run`'s RunReport as a FlowReport `*.report.json` next to
+    its event log, so `alc audit` and Mix Health — which aggregate the FlowReports in
+    `done/` and `runs/` — count INTERACTIVE runs too, not only queue-drained
+    (`alc tick`) work. Without this a landed `alc run refactor` (archetype: sweeper)
+    still read as "sweeper never exercised". Wrapped as a single-stage FlowReport,
+    mirroring the queue's own specialist archive; the stage carries
+    `Blueprint.archetype`, so Mix Health buckets it correctly.
+
+    Best-effort: a write failure never fails the run. A `spike` is never archived (it
+    is throwaway, always discarded) — the caller gates on that.
+    """
+    from alc.models import FlowReport
+
+    flow = FlowReport(
+        flow=blueprint.name,
+        engine=engine,
+        success=report.success,
+        stages=[report],
+        scorecard=report.scorecard,
+    )
+    try:
+        run_log.with_suffix(".report.json").write_text(flow.model_dump_json(indent=2))
+    except OSError:
+        pass
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Run `alc run <blueprint> "<task>" [--engine NAME] [--isolate]`."""
     from alc.bundle import summarize_bundle, write_bundle
@@ -797,6 +824,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         _print_run_report(report)
         _print_isolation_result(wt)
+        if report.success and blueprint.mode != "spike":
+            _archive_run_report(run_log, blueprint, report, args.engine or manifest.default_engine)
         if args.bundle:
             bundles_dir = operator_layer.parent / manifest.bundles_dir
             path = write_bundle(bundles_dir, args.blueprint, args.task, report)
@@ -817,6 +846,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     _print_run_report(report)
+    if report.success and blueprint.mode != "spike":
+        _archive_run_report(run_log, blueprint, report, args.engine or manifest.default_engine)
     if args.bundle:
         bundles_dir = operator_layer.parent / manifest.bundles_dir
         path = write_bundle(bundles_dir, args.blueprint, args.task, report)
@@ -1500,7 +1531,12 @@ def _team_roster(args: argparse.Namespace) -> int:
         member_roster = {
             m["archetype"]: [lp["name"] for lp in m["loops"]] for m in roster
         }
-        health = mix_health(done_dir, manifest, roster=member_roster)
+        health = mix_health(
+            done_dir,
+            manifest,
+            roster=member_roster,
+            extra_report_dir=project_root / manifest.runs_dir,
+        )
 
     if getattr(args, "json", False):
         from dataclasses import asdict
@@ -3167,8 +3203,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
     done_dir = operator_layer.parent / manifest.queue_dir / "done"
+    runs_dir = operator_layer.parent / manifest.runs_dir
 
-    window = audit_window(done_dir, time.time() - seconds)
+    window = audit_window(done_dir, time.time() - seconds, extra_report_dir=runs_dir)
 
     if getattr(args, "json", False):
         from alc.output import emit_json

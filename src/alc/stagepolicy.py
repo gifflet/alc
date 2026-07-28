@@ -225,13 +225,17 @@ def mix_health(
     done_dir: Path,
     manifest: Manifest,
     roster: Mapping[str, Sequence[str]] | None = None,
+    extra_report_dir: Path | None = None,
 ) -> MixHealthReport:
-    """Aggregate archived reports (`done_dir/*.report.json`) by `RunReport.archetype`.
+    """Aggregate archived reports (`*.report.json`) by `RunReport.archetype`.
 
-    Mirrors `audit.audit_window`'s read pattern: an unreadable or invalid
-    archive is skipped, never fatal; a missing/empty `done_dir` yields a
-    report with `total_runs == 0` (no data yet, not zeroed statistics for
-    archetypes that were never even attempted).
+    Reads the queue's `done/` reports and, when *extra_report_dir* is given, the
+    `runs/` reports a direct `alc run` archives there — so a landed interactive run
+    (e.g. `alc run refactor`, archetype: sweeper) counts, instead of reading as
+    "sweeper never exercised" when only `alc tick` work was tracked. Mirrors
+    `audit.audit_window`'s read pattern: an unreadable or invalid archive is skipped,
+    never fatal; absent dirs contribute nothing (so `total_runs == 0` means no data
+    yet, not zeroed stats for archetypes never attempted).
 
     ``roster`` maps each hired archetype to the loop names its pack brought; it
     is what turns a bare "core X never ran" into the correct hint (hire it /
@@ -242,24 +246,27 @@ def mix_health(
     buckets: dict[str | None, ArchetypeSpend] = {}
     total_runs = 0
 
-    if done_dir.is_dir():
-        for report_file in sorted(done_dir.glob("*.report.json")):
-            try:
-                report = FlowReport.model_validate_json(report_file.read_text())
-            except (ValidationError, OSError):
-                continue
+    report_dirs = [done_dir] + ([extra_report_dir] if extra_report_dir is not None else [])
+    report_files = sorted(
+        f for d in report_dirs if d.is_dir() for f in d.glob("*.report.json")
+    )
+    for report_file in report_files:
+        try:
+            report = FlowReport.model_validate_json(report_file.read_text())
+        except (ValidationError, OSError):
+            continue
 
-            for stage in report.stages:
-                bucket = buckets.setdefault(
-                    stage.archetype, ArchetypeSpend(archetype=stage.archetype)
-                )
-                bucket.runs += 1
-                bucket.span += stage.scorecard.span
-                if stage.usage is not None and stage.usage.cost_usd is not None:
-                    bucket.cost_usd += stage.usage.cost_usd
-                if stage.diffstat is not None:
-                    bucket.net_lines += stage.diffstat.adds - stage.diffstat.dels
-                total_runs += 1
+        for stage in report.stages:
+            bucket = buckets.setdefault(
+                stage.archetype, ArchetypeSpend(archetype=stage.archetype)
+            )
+            bucket.runs += 1
+            bucket.span += stage.scorecard.span
+            if stage.usage is not None and stage.usage.cost_usd is not None:
+                bucket.cost_usd += stage.usage.cost_usd
+            if stage.diffstat is not None:
+                bucket.net_lines += stage.diffstat.adds - stage.diffstat.dels
+            total_runs += 1
 
     mix = effective_mix(manifest)
     by_archetype = sorted(buckets.values(), key=lambda b: (-b.runs, b.archetype or ""))

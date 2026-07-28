@@ -96,6 +96,40 @@ class TestMixHealthEmpty:
         assert health.total_runs == 0
 
 
+class TestMixHealthCountsDirectRuns:
+    def test_extra_report_dir_runs_count_and_clear_never_exercised(
+        self, tmp_path: Path
+    ) -> None:
+        """A direct `alc run` archives its report under runs/, not the queue done/.
+        Passed as extra_report_dir, those reports count too — so a sweeper run there
+        buckets under 'sweeper' and clears it from idle_core (no false 'never
+        exercised')."""
+        done_dir = tmp_path / "done"
+        runs_dir = tmp_path / "runs"
+        # queue done/ has one builder task; runs/ has a direct sweeper run.
+        _write_report(done_dir, "task-a", stages=[{"archetype": "builder"}])
+        _write_report(runs_dir, "run-b", stages=[{"archetype": "sweeper"}])
+
+        manifest = _manifest(stage="pre-pmf")  # core includes sweeper
+        health = mix_health(done_dir, manifest, extra_report_dir=runs_dir)
+
+        by = {b.archetype: b.runs for b in health.by_archetype}
+        assert by.get("sweeper") == 1  # the runs/ report counted
+        assert by.get("builder") == 1  # the done/ report still counted
+        assert health.total_runs == 2
+        assert "sweeper" not in [ic.archetype for ic in health.idle_core]
+
+    def test_without_extra_report_dir_runs_are_ignored(self, tmp_path: Path) -> None:
+        """Byte-identical legacy behavior: omit extra_report_dir and runs/ is unseen."""
+        done_dir = tmp_path / "done"
+        runs_dir = tmp_path / "runs"
+        _write_report(runs_dir, "run-b", stages=[{"archetype": "sweeper"}])
+
+        health = mix_health(done_dir, _manifest(stage="pre-pmf"))
+        assert health.total_runs == 0
+        assert "sweeper" in [ic.archetype for ic in health.idle_core]
+
+
 class TestMixHealthAggregation:
     def test_buckets_by_archetype_across_reports(self, tmp_path: Path) -> None:
         done_dir = tmp_path / "done"

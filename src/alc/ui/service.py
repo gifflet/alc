@@ -215,10 +215,15 @@ def scorecard(root: Path) -> dict:
         "net_lines_total": None,
         "runs_with_warnings": 0,
     }
-    if not done_dir.is_dir():
-        return totals
-
-    for report_file in sorted(done_dir.glob("*.report.json")):
+    # Both sources: the queue's done/ AND runs/ (where a direct `alc run` archives its
+    # report) — so the Dashboard Scorecard counts interactive runs like audit/Mix Health.
+    report_files = sorted(
+        f
+        for d in (done_dir, _runs_dir(root))
+        if d.is_dir()
+        for f in d.glob("*.report.json")
+    )
+    for report_file in report_files:
         try:
             report = FlowReport.model_validate_json(report_file.read_text())
         except (ValidationError, OSError):
@@ -246,6 +251,13 @@ def scorecard(root: Path) -> dict:
 def _queue_dir(root: Path) -> Path:
     manifest = load_manifest(operator_layer(root))
     return root / manifest.queue_dir
+
+
+def _runs_dir(root: Path) -> Path:
+    """The run-log dir where a direct `alc run` archives its `*.report.json` — the
+    second source (besides queue `done/`) that audit + mix_health aggregate."""
+    manifest = load_manifest(operator_layer(root))
+    return root / manifest.runs_dir
 
 
 def read_queue(root: Path) -> dict:
@@ -613,7 +625,9 @@ def audit(root: Path, since: str) -> dict:
     except ValueError as exc:
         raise ApiError(str(exc), status=422) from exc
     done_dir = _queue_dir(root) / "done"
-    return asdict(audit_window(done_dir, time.time() - seconds))
+    return asdict(
+        audit_window(done_dir, time.time() - seconds, extra_report_dir=_runs_dir(root))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -820,7 +834,9 @@ def team_roster(root: Path) -> dict:
     member_roster = {
         m["archetype"]: [lp["name"] for lp in m["loops"]] for m in members
     }
-    health = mix_health(done_dir, manifest, roster=member_roster)
+    health = mix_health(
+        done_dir, manifest, roster=member_roster, extra_report_dir=root / manifest.runs_dir
+    )
     return {"members": members, "mix_health": asdict(health)}
 
 

@@ -88,6 +88,30 @@ class TestAuditWindowEmpty:
         assert window.cost_usd_total == 0.0
 
 
+class TestAuditWindowCountsDirectRuns:
+    def test_extra_report_dir_reports_are_counted_too(self, tmp_path: Path) -> None:
+        """A direct `alc run` archives its report under runs/, not the queue done/.
+        Passed as extra_report_dir, it joins the window — so audit counts interactive
+        runs, not only queue-drained (`alc tick`) work."""
+        done_dir = tmp_path / "done"
+        runs_dir = tmp_path / "runs"
+        _write_report(done_dir, "task-a", span=2)
+        _write_report(runs_dir, "run-b", span=3)
+
+        window = audit_window(done_dir, since_epoch=0.0, extra_report_dir=runs_dir)
+        assert window.tasks_total == 2
+        assert window.span_total == 5
+
+    def test_without_extra_report_dir_runs_are_ignored(self, tmp_path: Path) -> None:
+        """Byte-identical legacy behavior when extra_report_dir is omitted."""
+        done_dir = tmp_path / "done"
+        runs_dir = tmp_path / "runs"
+        _write_report(runs_dir, "run-b", span=3)
+
+        window = audit_window(done_dir, since_epoch=0.0)
+        assert window.tasks_total == 0
+
+
 class TestAuditWindowAggregation:
     def test_counts_and_totals_across_reports(self, tmp_path: Path) -> None:
         done_dir = tmp_path / "done"

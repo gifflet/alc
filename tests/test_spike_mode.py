@@ -403,6 +403,59 @@ checks:
         assert _list_branches(repo, "alc/run-*") != []
 
 
+class TestCmdRunArchivesRunReport:
+    """A direct `alc run` archives its RunReport as a FlowReport `*.report.json` in
+    runs/, so `alc audit` + Mix Health (which aggregate FlowReports) count interactive
+    runs — a spike, being throwaway, is never archived."""
+
+    def _chore_repo(self, tmp_path: Path) -> Path:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_git_repo(repo)
+        alc = repo / ".alc"
+        (alc / "blueprints").mkdir(parents=True)
+        (alc / "manifest.yaml").write_text(_MANIFEST_YAML)
+        (alc / "blueprints" / "chore.md").write_text(
+            "---\nname: chore\npurpose: Apply a low-risk change.\n"
+            "compute_tier: standard\narchetype: builder\nchecks:\n"
+            '  - name: smoke\n    command: ["true"]\n---\n# Workflow\n1. Make the change.\n'
+        )
+        _commit_all(repo, "seed operator layer")
+        return repo
+
+    def test_non_spike_run_archives_a_flowreport_with_the_archetype(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        import json
+
+        repo = self._chore_repo(tmp_path)
+        engine = _write_files_engine({"feature.txt": "the feature\n"})
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine())
+        monkeypatch.chdir(repo)
+
+        assert cmd_run(_run_ns(blueprint="chore", isolate=True)) == 0
+
+        reports = list((repo / ".alc" / "runs").glob("*.report.json"))
+        assert len(reports) == 1, reports
+        data = json.loads(reports[0].read_text())
+        assert data["success"] is True
+        assert data["flow"] == "chore"
+        # The stage carries Blueprint.archetype, so Mix Health buckets it correctly.
+        assert data["stages"][0]["archetype"] == "builder"
+
+    def test_spike_run_is_never_archived(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        repo = _build_repo(tmp_path)  # ships the spike blueprint
+        engine = _write_files_engine({"spike_notes.txt": "learned\n"})
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine())
+        monkeypatch.chdir(repo)
+
+        assert cmd_run(_run_ns(blueprint="spike", isolate=False)) == 0
+
+        assert list((repo / ".alc" / "runs").glob("*.report.json")) == []
+
+
 # ---------------------------------------------------------------------------
 # T2: `alc spike "<task>"` sugar over cmd_run
 # ---------------------------------------------------------------------------
