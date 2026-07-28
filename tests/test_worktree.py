@@ -125,6 +125,32 @@ class TestIsolatedWorktreeProvisions:
             assert dep.is_symlink()
             assert dep.resolve() == (repo / "node_modules").resolve()
 
+    def test_provisioned_symlink_is_not_committed(self, tmp_path: Path) -> None:
+        """`node_modules/` (trailing slash) gitignores a DIRECTORY, not the provisioned
+        SYMLINK — so `git add -A` would stage it. The exit-commit must exclude every
+        provision path so a machine-specific absolute-path link never lands on the
+        branch (would break any other checkout + pollute the diff)."""
+        repo = _make_git_repo(tmp_path)
+        _add_gitignored_node_modules(repo)
+        wt_obj = IsolatedWorktree(
+            repo, "test", provisions=[ProvisionSpec(link="node_modules")]
+        )
+        with wt_obj as wt:
+            (wt / "feature.txt").write_text("the feature\n")
+
+        assert wt_obj.committed is True
+        tree = subprocess.run(
+            ["git", "-C", str(repo), "ls-tree", "-r", "--name-only", wt_obj.branch],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert "feature.txt" in tree  # the real edit landed
+        assert "node_modules" not in tree  # the provisioned symlink did NOT
+        subprocess.run(
+            ["git", "-C", str(repo), "branch", "-D", wt_obj.branch], capture_output=True
+        )
+
     def test_empty_provisions_leaves_the_worktree_bare(self, tmp_path: Path) -> None:
         repo = _make_git_repo(tmp_path)
         _add_gitignored_node_modules(repo)

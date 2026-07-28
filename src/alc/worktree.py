@@ -242,6 +242,17 @@ class IsolatedWorktree:
                         capture_output=True,
                     )
 
+                # Unstage the runtime deps ALC provisioned into this worktree — they
+                # must NEVER land in the exit-commit. A project's `.gitignore` may not
+                # match them: `node_modules/` (trailing slash = DIRECTORY) does NOT
+                # ignore the `link:` SYMLINK, so `git add -A` would otherwise commit a
+                # machine-specific absolute-path link.
+                for spec in self._provisions:
+                    subprocess.run(
+                        ["git", "-C", str(self.path), "reset", "-q", "--", spec.path],
+                        capture_output=True,
+                    )
+
                 # Detect whether there is anything staged.
                 diff_check = subprocess.run(
                     ["git", "-C", str(self.path), "diff", "--cached", "--quiet"],
