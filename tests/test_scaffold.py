@@ -33,11 +33,14 @@ class TestScaffoldCreatesDefaultFiles:
 
 
 class TestScaffoldGitignoresRuntimeDirs:
-    def test_gitignore_ignores_the_runtime_subdirs(self, tmp_path: Path) -> None:
-        """`.alc/.gitignore` keeps the run-generated dirs (runs/queue/metrics) out of
-        git so they are never accidentally tracked — and so an `--isolate` metric run
-        (which writes the canonical ledger into the MAIN .alc/) never dirties a tracked
-        tree."""
+    def test_gitignore_ignores_the_runtime_state(self, tmp_path: Path) -> None:
+        """`.alc/.gitignore` keeps run-generated state out of git so it is never
+        accidentally tracked: the wholly-runtime dirs (runs/queue/metrics) AND the
+        runtime files that live alongside config in loops/ and specialists/ (a loop's
+        cycle state/ledger, a specialist's accumulated knowledge). Without the latter,
+        a `git add -A` after `alc cycle` would commit loop/specialist runtime; and an
+        `--isolate` metric run writes the canonical ledger into the MAIN .alc/ (would
+        dirty a tracked tree)."""
         scaffold(tmp_path)
 
         gitignore = tmp_path / ".alc" / ".gitignore"
@@ -49,7 +52,17 @@ class TestScaffoldGitignoresRuntimeDirs:
             for line in gitignore.read_text().splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         }
-        assert rules == {"runs/", "queue/", "metrics/"}, rules
+        assert rules == {
+            "runs/",
+            "queue/",
+            "metrics/",
+            "loops/*.state.json",
+            "loops/*.ledger.jsonl",
+            "specialists/*.knowledge.md",
+        }, rules
+        # The config that shares loops/ and specialists/ must NOT be swept by the
+        # runtime patterns — only *.state.json/*.ledger.jsonl/*.knowledge.md are.
+        assert "loops/" not in rules and "specialists/" not in rules
 
 
 class TestScaffoldOutputIsConformant:
