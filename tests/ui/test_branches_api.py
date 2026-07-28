@@ -342,6 +342,27 @@ class TestDiscardBranches:
         assert not _branch_exists(git_project, "alc/tick-aaa")
         assert _branch_exists(git_project, "alc/tick-bbb")
 
+    def test_discard_removes_an_orphaned_worktree_holding_the_branch(
+        self, client, git_registered: str, git_project: Path, tmp_path: Path
+    ) -> None:
+        """The UI discard (POST /branches/discard) shares delete_branches with the
+        CLI, so it too force-removes an isolated worktree left by an INTERRUPTED run
+        (branch checked out + uncommitted changes) before deleting the branch —
+        instead of returning deleted=[] and leaving the mess."""
+        wt = tmp_path / "alc-wt-orphan"
+        _git(git_project, "worktree", "add", "-b", "alc/run-orphan0", str(wt), "main")
+        (wt / "dirty.txt").write_text("uncommitted work from an interrupted run\n")
+        assert _git(git_project, "branch", "-D", "alc/run-orphan0").returncode != 0
+
+        resp = client.post(
+            f"/api/projects/{git_registered}/branches/discard",
+            json={"branches": ["alc/run-orphan0"]},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == ["alc/run-orphan0"]
+        assert not _branch_exists(git_project, "alc/run-orphan0")
+        assert not wt.exists()
+
     def test_non_alc_branch_is_silently_skipped_by_delete_branches(
         self, client, git_registered: str, git_project: Path
     ) -> None:

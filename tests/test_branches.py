@@ -207,6 +207,39 @@ class TestDeleteBranches:
         monkeypatch.setattr("alc.branches.subprocess.run", _raise)
         assert delete_branches(repo, ["alc/tick-aaaaaaaa"]) == []
 
+    def test_removes_orphaned_worktree_then_deletes_the_held_branch(
+        self, tmp_path: Path
+    ) -> None:
+        """An INTERRUPTED isolated run leaves a worktree (with uncommitted changes)
+        holding an `alc/*` branch, which plain `git branch -D` refuses. delete_branches
+        force-removes that worktree first, then deletes the branch — so `alc discard`
+        and the UI discard (both call this) actually clean up."""
+        repo = _make_git_repo(tmp_path)
+        wt = tmp_path / "alc-wt-orphan"
+        _git(repo, "worktree", "add", "-b", "alc/run-orphan0", str(wt), "main")
+        (wt / "dirty.txt").write_text("uncommitted work from an interrupted run\n")
+        # Precondition: the branch is worktree-locked, so a plain delete fails.
+        assert _git(repo, "branch", "-D", "alc/run-orphan0").returncode != 0
+        assert _branch_exists(repo, "alc/run-orphan0")
+
+        deleted = delete_branches(repo, ["alc/run-orphan0"])
+
+        assert deleted == ["alc/run-orphan0"]
+        assert not _branch_exists(repo, "alc/run-orphan0")
+        assert not wt.exists()  # the orphaned worktree was force-removed
+
+    def test_never_removes_the_main_worktree(self, tmp_path: Path) -> None:
+        """The current branch (held by the MAIN worktree) is skipped, so the main
+        worktree is never force-removed even if named."""
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "checkout", "-b", "alc/run-current0")
+
+        deleted = delete_branches(repo, ["alc/run-current0"])
+
+        assert deleted == []
+        assert repo.exists() and (repo / "seed.txt").exists()
+        assert _branch_exists(repo, "alc/run-current0")
+
 
 # ---------------------------------------------------------------------------
 # prune_worktrees

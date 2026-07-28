@@ -184,12 +184,50 @@ def branch_diff(
     return BranchDiff(text, False)
 
 
+def _worktrees_by_branch(repo_root: Path) -> dict[str, Path]:
+    """Map each branch checked out in a worktree to that worktree's path.
+
+    Parses ``git worktree list --porcelain``. Used to find the ISOLATED worktree
+    holding an `alc/*` run branch so `delete_branches` can force-remove an orphaned
+    one (left by an interrupted run) before deleting the branch. Never raises: a
+    missing ``git`` binary or a non-zero exit yields an empty map.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return {}
+    if result.returncode != 0:
+        return {}
+    mapping: dict[str, Path] = {}
+    current_path: Path | None = None
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            current_path = Path(line[len("worktree "):])
+        elif line.startswith("branch ") and current_path is not None:
+            ref = line[len("branch "):].strip()
+            name = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+            mapping[name] = current_path
+    return mapping
+
+
 def delete_branches(repo_root: Path, names: list[str]) -> list[str]:
     """Force-delete each of *names* that is an `alc/` branch and not the current one.
 
     A ref outside the `alc/` prefix, or the currently checked-out branch, is
     silently skipped — never deleted. Returns the names actually deleted.
-    Never raises: a missing ``git`` binary yields an empty result.
+
+    When ``git branch -D`` fails because the branch is still checked out in an
+    ISOLATED worktree — the state an INTERRUPTED run leaves (Ctrl-C, crash,
+    timeout): a worktree with uncommitted changes holding the branch, which plain
+    `git worktree prune` can't clear — that worktree is force-removed first (never
+    the main worktree) and the delete retried, so `alc discard` (and the UI's
+    discard, which shares this function) actually cleans up instead of reporting
+    "Deleted 0 branches" and leaving the mess. Never raises: a missing ``git``
+    binary yields an empty result.
     """
     try:
         current = subprocess.run(
@@ -201,16 +239,31 @@ def delete_branches(repo_root: Path, names: list[str]) -> list[str]:
         print("[branches] git not found; nothing deleted.", file=sys.stderr)
         return []
     current_branch = current.stdout.strip() if current.returncode == 0 else None
+    worktrees = _worktrees_by_branch(repo_root)
+
+    def _branch_d(name: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(repo_root), "branch", "-D", name],
+            capture_output=True,
+            text=True,
+        )
 
     deleted: list[str] = []
     for name in names:
         if not name.startswith("alc/") or name == current_branch:
             continue
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "branch", "-D", name],
-            capture_output=True,
-            text=True,
-        )
+        result = _branch_d(name)
+        if result.returncode != 0 and name in worktrees:
+            # The branch is held by an isolated worktree (an interrupted run).
+            # Force-remove that worktree — but NEVER the main one — then retry.
+            wt = worktrees[name]
+            if wt.resolve() != repo_root.resolve():
+                subprocess.run(
+                    ["git", "-C", str(repo_root), "worktree", "remove", "--force", str(wt)],
+                    capture_output=True,
+                    text=True,
+                )
+                result = _branch_d(name)
         if result.returncode == 0:
             deleted.append(name)
     return deleted
