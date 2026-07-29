@@ -3,7 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "alc"
+# DISTRIBUTION name (PyPI): the bare `alc` was rejected as too similar to an
+# existing project. The import package and the CLI command are still `alc`.
+name = "alc-runtime"
 version = "0.39.7"
 description = "ALC — Agentic Layer Compiler & Runtime: a control plane for agentic coding."
 readme = "README.md"

@@ -37,12 +37,14 @@ A ideia central: boas práticas deixam de ser disciplina que você precisa lembr
 **Instalar**
 
 ```bash
-uv tool install alc          # `alc` global
-uv tool install "alc[ui]"    # …com a UI web (dashboard, runs ao vivo)
+uv tool install alc-runtime          # instala o comando `alc`
+uv tool install "alc-runtime[ui]"    # …com a UI web (dashboard, runs ao vivo)
 ```
 
+> O pacote no PyPI é **`alc-runtime`**; ele coloca o comando **`alc`** no seu PATH.
+>
 > **Ainda não está no PyPI?** Instale o build atual direto do git:
-> `uv tool install "alc[ui] @ git+https://github.com/gifflet/alc.git"`.
+> `uv tool install "alc-runtime[ui] @ git+https://github.com/gifflet/alc.git"`.
 > Desenvolvendo o próprio ALC? `uv sync` num clone e prefixe os comandos com `uv run`.
 
 **Preparar um projeto** — três passos de zero a um Operator Layer validado:
@@ -131,8 +133,8 @@ projeto registrado: dashboard, fila, runs ao vivo (timeline do Assurance Loop), 
 tudo atualizado em tempo real via WebSocket (sem refresh, nunca).
 
 ```bash
-uv tool install "alc[ui]"   # ou: uv sync --extra ui
-alc ui                      # http://127.0.0.1:8642 — frontend servido por default
+uv tool install "alc-runtime[ui]"   # ou: uv sync --extra ui
+alc ui                              # http://127.0.0.1:8642 — frontend servido por default
 ```
 
 O frontend vive em [`ui/`](ui/) (React + Vite + TypeScript). Fluxo de desenvolvimento:

@@ -18,9 +18,13 @@ except ImportError:  # Python < 3.8 shim (should never occur for us)
 # ---------------------------------------------------------------------------
 
 def _resolve_version() -> str:
-    """Return the installed distribution version for 'alc', or '0.0.0' as fallback."""
+    """Return the installed distribution version, or '0.0.0' as fallback.
+
+    The DISTRIBUTION name is `alc-runtime` (the bare `alc` was too similar to an
+    existing PyPI project); the import package and the CLI command stay `alc`.
+    """
     try:
-        return _pkg_version("alc")
+        return _pkg_version("alc-runtime")
     except Exception:
         return "0.0.0"
 

@@ -37,12 +37,14 @@ The point: best practices stop being discipline you have to remember, and become
 **Install**
 
 ```bash
-uv tool install alc          # global `alc`
-uv tool install "alc[ui]"    # …with the web UI (dashboard, live runs)
+uv tool install alc-runtime          # installs the `alc` command
+uv tool install "alc-runtime[ui]"    # …with the web UI (dashboard, live runs)
 ```
 
+> The PyPI package is **`alc-runtime`**; it puts the **`alc`** command on your PATH.
+>
 > **Not on PyPI yet?** Install the current build straight from git:
-> `uv tool install "alc[ui] @ git+https://github.com/gifflet/alc.git"`.
+> `uv tool install "alc-runtime[ui] @ git+https://github.com/gifflet/alc.git"`.
 > Hacking on ALC itself? `uv sync` in a clone and prefix commands with `uv run`.
 
 **Set up a project** — three steps from zero to a validated Operator Layer:
@@ -131,8 +133,8 @@ registered project: dashboard, queue, live runs (Assurance Loop timeline), loops
 all updated in real time over WebSocket (no refresh, ever).
 
 ```bash
-uv tool install "alc[ui]"   # or: uv sync --extra ui
-alc ui                      # http://127.0.0.1:8642 — frontend served by default
+uv tool install "alc-runtime[ui]"   # or: uv sync --extra ui
+alc ui                              # http://127.0.0.1:8642 — frontend served by default
 ```
 
 The frontend lives in [`ui/`](ui/) (React + Vite + TypeScript). Development workflow:

@@ -6,12 +6,14 @@ with the rough edges called out so you don't trip on them.
 ## 1. Install
 
 ```bash
-uv tool install alc          # puts `alc` on your PATH (~/.local/bin)
+uv tool install alc-runtime  # puts the `alc` command on your PATH (~/.local/bin)
 alc --version                # confirm it's installed: alc X.Y.Z
 ```
 
+> The PyPI package is `alc-runtime`; it installs the `alc` command.
+>
 > **Not on PyPI yet?** Install the current build from git:
-> `uv tool install "git+https://github.com/gifflet/alc.git"` (add `[ui]` for the web UI).
+> `uv tool install "alc-runtime[ui] @ git+https://github.com/gifflet/alc.git"`.
 > Iterating on ALC itself? Bump the version before reinstalling — `uv tool install
 > --force` silently reuses a cached build when the version is unchanged, so your
 > changes won't land.
