@@ -1,8 +1,13 @@
 # Release — automatic on main: when pyproject.toml's version has no matching
 # tag yet, run the full test suite, build the frontend into the package
-# (src/alc/ui/static/) and publish a GitHub Release (tag v<version>) with the
-# sdist + wheel attached. Version bumps land in feature commits, so merging a
-# bumped main is what cuts a release.
+# (src/alc/ui/static/), publish to PyPI (Trusted Publishing, no token), and cut a
+# GitHub Release (tag v<version>) with the sdist + wheel attached. Version bumps
+# land in feature commits, so merging a bumped main is what cuts a release.
+#
+# PyPI publish uses OIDC Trusted Publishing — configure a publisher on PyPI once
+# (Publishing → owner: gifflet, repo: alc, workflow: release.yml) so no token is
+# stored here. It runs BEFORE the GitHub Release so a publish failure leaves the
+# tag uncreated and the run re-runnable.
 name: Release
 
 on:
@@ -11,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # PyPI Trusted Publishing (OIDC) — no long-lived token
 
 concurrency:
   group: release
@@ -72,6 +78,10 @@ jobs:
           if not any("/ui/static/" in n for n in names):
               sys.exit("wheel has no ui/static files")
           EOF
+
+      - name: Publish to PyPI (Trusted Publishing)
+        if: steps.version.outputs.released == 'false'
+        run: uv publish
 
       - name: Create GitHub Release
         if: steps.version.outputs.released == 'false'

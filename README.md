@@ -173,4 +173,4 @@ Experimental, but real: every feature is covered by a hermetic test suite and va
 
 ## 📄 License
 
-Not yet licensed — add a `LICENSE` file before sharing this publicly.
+[MIT](LICENSE) © gifflet

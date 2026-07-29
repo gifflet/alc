@@ -173,4 +173,4 @@ Experimental, mas de verdade: cada feature tem cobertura de testes herméticos e
 
 ## 📄 Licença
 
-Ainda sem licença — adicione um arquivo `LICENSE` antes de compartilhar publicamente.
+[MIT](LICENSE) © gifflet
