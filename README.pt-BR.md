@@ -43,8 +43,6 @@ uv tool install "alc-runtime[ui]"    # …com a UI web (dashboard, runs ao vivo)
 
 > O pacote no PyPI é **`alc-runtime`**; ele coloca o comando **`alc`** no seu PATH.
 >
-> **Ainda não está no PyPI?** Instale o build atual direto do git:
-> `uv tool install "alc-runtime[ui] @ git+https://github.com/gifflet/alc.git"`.
 > Desenvolvendo o próprio ALC? `uv sync` num clone e prefixe os comandos com `uv run`.
 
 **Preparar um projeto** — três passos de zero a um Operator Layer validado:

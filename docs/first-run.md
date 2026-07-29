@@ -12,8 +12,6 @@ alc --version                # confirm it's installed: alc X.Y.Z
 
 > The PyPI package is `alc-runtime`; it installs the `alc` command.
 >
-> **Not on PyPI yet?** Install the current build from git:
-> `uv tool install "alc-runtime[ui] @ git+https://github.com/gifflet/alc.git"`.
 > Iterating on ALC itself? Bump the version before reinstalling — `uv tool install
 > --force` silently reuses a cached build when the version is unchanged, so your
 > changes won't land.
