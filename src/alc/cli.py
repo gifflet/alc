@@ -3291,7 +3291,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
     except ModuleNotFoundError:
         print(
             "[ERROR] `alc ui` requires the 'ui' extra (fastapi, uvicorn, watchfiles). "
-            'Install it with: uv tool install "alc[ui]"',
+            'Install it with: uv tool install "alc-runtime[ui]"',
             file=sys.stderr,
         )
         return 1

@@ -28,14 +28,15 @@ echo "▶ building the web IDE (ui → src/alc/ui/static/)"
 # 2. Reinstall the global tool. --no-cache is LOAD-BEARING: static/ is gitignored,
 #    so uv's build cache would otherwise reuse a stale wheel. [ui] keeps the web
 #    IDE's runtime deps (fastapi/uvicorn/watchfiles).
-echo "▶ installing the global alc[ui] (no build cache)"
+echo "▶ installing the global alc-runtime[ui] (no build cache)"
 uv tool install --force --reinstall --no-cache ".[ui]"
 
 # 3. Guard: the installed bundle must be the one we just built — the exact
-#    stale-bundle failure this script exists to prevent.
+#    stale-bundle failure this script exists to prevent. NOTE the tool dir is named
+#    after the DISTRIBUTION (`alc-runtime`), not the `alc` command it installs.
 echo "▶ verifying the installed bundle matches the fresh build"
 fresh_index="$(basename "$(ls src/alc/ui/static/assets/index-*.js | head -1)")"
-installed_assets="$(find "$(uv tool dir)/alc" -type d -path "*/alc/ui/static/assets" 2>/dev/null | head -1)"
+installed_assets="$(find "$(uv tool dir)/alc-runtime" -type d -path "*/alc/ui/static/assets" 2>/dev/null | head -1)"
 if [ -z "$installed_assets" ] || [ ! -f "$installed_assets/$fresh_index" ]; then
   echo "✗ installed UI is stale: '$fresh_index' not found in the installed tool" >&2
   exit 1

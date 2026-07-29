@@ -7,7 +7,7 @@ IDE web (estilo JetBrains) para acompanhar e gerenciar projetos que usam o **alc
 
 | Decisão | Escolha |
 |---|---|
-| Backend | FastAPI **dentro do repo alc**, novo comando `alc ui` (extra opcional `alc[ui]`) |
+| Backend | FastAPI **dentro do repo alc**, novo comando `alc ui` (extra opcional `alc-runtime[ui]`) |
 | Frontend | **Monorepo** (decisão 2026-07-12): vive em `ui/` dentro do repo alc (React + Vite + TS); o repo alc-ui foi descontinuado |
 | Distribuição | `npm run build:alc` (em `ui/`) publica em `src/alc/ui/static/` (gitignored); wheel/release sai com a UI embarcada — versionamento atômico API ↔ UI |
 | Deploy | Local, single-user, localhost, **sem autenticação** |
