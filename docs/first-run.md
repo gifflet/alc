@@ -6,10 +6,12 @@ with the rough edges called out so you don't trip on them.
 ## 1. Install
 
 ```bash
-uv tool install <path-to-the-alc-repo>   # puts `alc` on your PATH (~/.local/bin)
-alc --version                            # confirm it's installed: alc X.Y.Z
+uv tool install alc          # puts `alc` on your PATH (~/.local/bin)
+alc --version                # confirm it's installed: alc X.Y.Z
 ```
 
+> **Not on PyPI yet?** Install the current build from git:
+> `uv tool install "git+https://github.com/gifflet/alc.git"` (add `[ui]` for the web UI).
 > Iterating on ALC itself? Bump the version before reinstalling — `uv tool install
 > --force` silently reuses a cached build when the version is unchanged, so your
 > changes won't land.
@@ -34,9 +36,19 @@ The defaults are deliberately generic. Two edits make ALC real for your project:
 `claude-code` (or `gemini`). `mock` is a free no-op for dry runs; the real engines do
 the work.
 
-**Set real checks.** `alc init` detects common stacks (Go, Python, Node, Rust) and writes
-real checks automatically. For other stacks, each Blueprint ships a placeholder `["true"]`
-check — replace it with the commands that gate your work:
+**Adopt your project's real checks — `alc onboard`.** `alc init` detects common stacks
+(Go, Python, Node, Rust) and writes stack checks. But most projects already declare their
+OWN checks — `make test`, `npm run typecheck`, a lint script. `alc onboard` harvests those
+(from your Makefile / `package.json`), proposes them as a reusable `project` check_set, and
+— on your approval — wires them into your Blueprints so runs are gated by the checks you
+already trust. Run it once after `init`:
+
+```bash
+alc onboard          # review the proposed check_set, then approve (or `alc onboard --yes`)
+```
+
+For a stack neither `init` nor `onboard` covers, each Blueprint ships a placeholder
+`["true"]` check — replace it with the commands that gate your work:
 
 ```yaml
 checks:
@@ -93,9 +105,9 @@ discard. That's the one step ALC deliberately leaves to you.
 
 ---
 
-That's the loop: **init → teach it your stack → prime → run → review.** Thicken your
-Operator Layer over time (more Blueprints, Flows, Specialists) and the agent takes on
-more of the work — with the guardrails always on.
+That's the loop: **init → onboard → prime → run → review.** Thicken your Operator Layer
+over time (more Blueprints, Flows, Specialists) and the agent takes on more of the work —
+with the guardrails always on.
 
 ## Known rough edges
 

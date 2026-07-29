@@ -37,17 +37,22 @@ The point: best practices stop being discipline you have to remember, and become
 **Install**
 
 ```bash
-uv sync                 # dev environment
-# — or install the CLI globally —
-uv tool install .       # gives you a global `alc`
+uv tool install alc          # global `alc`
+uv tool install "alc[ui]"    # …with the web UI (dashboard, live runs)
 ```
 
-**Set up a project**
+> **Not on PyPI yet?** Install the current build straight from git:
+> `uv tool install "alc[ui] @ git+https://github.com/gifflet/alc.git"`.
+> Hacking on ALC itself? `uv sync` in a clone and prefix commands with `uv run`.
+
+**Set up a project** — three steps from zero to a validated Operator Layer:
 
 ```bash
 cd your-project
-alc init --setup        # scaffold .alc/ + install the editor skill (Claude Code by default)
-alc lint                # check the Operator Layer is well-formed
+alc init --setup     # 1. scaffold .alc/ (detects your stack) + install the editor skill
+alc onboard          # 2. adopt the checks your project ALREADY declares (Makefile targets,
+                     #    package.json scripts) — proposes first, you approve
+alc lint             # 3. validate the Operator Layer
 ```
 
 **Run**
@@ -67,9 +72,24 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 
 ## 🧭 Commands
 
+**By intent** — the fast path when you already know what you want:
+
+| Intent | Reach for |
+|---|---|
+| **Discover** this project | `alc status` · `alc lint` · `alc team status` · `alc audit` |
+| **Run** one verified unit | `alc run <blueprint> "…"` · `alc spike "…"` · `alc flow <flow> "…"` |
+| **From a goal**, let ALC plan | `alc conduct "<goal>"` |
+| **Explore** alternatives | `alc explore … --variants N` → `alc compare --diff` → `alc adopt` |
+| **Run unattended** | `alc enqueue …` → `alc tick` · `alc cycle` / `alc loop` |
+| **Integrate** the result | `alc land` · `alc discard` |
+
+<details>
+<summary><strong>Full command reference</strong> (click to expand)</summary>
+
 | Command | What it does |
 |---|---|
 | `alc init [--setup]` | Scaffold a default `.alc/` Operator Layer; detects your stack and writes real checks (and installs the editor skill) |
+| `alc onboard [--yes] [--stage NAME]` | Adopt the checks your project ALREADY declares (Makefile targets, `package.json` scripts) into a `project` check_set and wire them into your Blueprints — proposes first, applies on approval (`--yes` skips the prompt); `--stage` also records the product stage |
 | `alc lint` | Validate the Operator Layer (your `.alc/`, not your source code) against the Policy Gate |
 | `alc run <blueprint> "<task>"` | Run one Blueprint as a verified Single Mandate; `--tier NAME` overrides the compute tier for this invocation |
 | `alc spike "<task>"` | Sugar over the Prototyper's `spike` Blueprint (`mode: spike`) — a fenced exception to the checks gate: forced isolation, zero repairs, no commit/auto-merge, excluded from the Scorecard streak |
@@ -89,7 +109,7 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc runs list\|show\|tail` | Inspect run logs (`.alc/runs/*.jsonl`): list recent runs, show one in full, or tail its last N events |
 | `alc audit --since 7d` | Aggregate the archived queue reports over a trailing window: task counts, Scorecard totals/averages, changed files, and engine usage/cost |
 | `alc metrics [--check NAME] [--json]` | Show the metric-check time series recorded in the project's ledger: value, delta vs the previous measurement, and trend — read-only, populated by `metric` checks (`alc run`/`alc flow`/`alc tick`/…) |
-| `alc team hire\|list\|retire\|status` | Scaffold, roster, or retire an Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — partial); `alc init --stage pre-pmf\|growth\|strong-pmf` installs a stage's combo; `status` also shows Mix Health when `stage` is declared |
+| `alc team hire\|list\|retire\|status` | Scaffold, roster, or retire an Archetype Pack — the five are `prototyper`, `builder`, `sweeper`, `grower`, `maintainer`. Hiring is ADDITIVE (writes only the pack's missing files; `--force` overwrites). `alc init --stage pre-pmf\|growth\|strong-pmf` installs that stage's combo; `status` also shows Mix Health when `stage` is declared |
 | `alc checks audit [--json]` | Re-detect your stack(s) and PROPOSE check_set upgrades against the Manifest — never writes; flags checks still commented out for a missing binary |
 | `alc signal ingest --kind K --source S --title T` | Ingest a typed real-usage signal (`error`\|`feedback`\|`issue`\|`review`); `--from-file PATH` accepts an already-formed JSON payload; `alc signal list [--json]` shows what's pending consumption by a `signals` replenish loop |
 | `alc serve --webhook [--host H] [--port P] [--token T]` | A minimal HTTP door onto signal intake and the enqueue path — `POST /signal`, `POST /enqueue`, `GET /health`; validates and writes only, never executes; `alc tick`/`alc cycle` drains what lands |
@@ -101,6 +121,8 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 Add `--engine claude-code|gemini|mock` to choose the executor, and `--isolate` to contain edits to a git-worktree branch.
 
 Blueprints support `max_repairs` to cap the Assurance Loop repair budget, and `check_set` to reference a reusable named check set declared in the Manifest. Checks run by exit code without a shell by default; add a `shell:` one-liner to a check entry to run it via `sh -c` (note: pass/fail is decided solely by the exit code — stdout/stderr are captured and fed to the repair directive, but they do not affect the pass/fail decision).
+
+</details>
 
 ## 🖥 Web UI
 

@@ -30,22 +30,29 @@ A ideia central: boas práticas deixam de ser disciplina que você precisa lembr
 
 ## 🚀 Início Rápido
 
+> Novo no ALC? O **[guia de primeira execução](docs/first-run.md)** te leva do install a uma mudança verificada, com as arestas sinalizadas.
+>
 > Se você configurou com `uv sync`, prefixe os comandos abaixo com `uv run` (ex.: `uv run alc lint`).
 
 **Instalar**
 
 ```bash
-uv sync                 # ambiente de desenvolvimento
-# — ou instale o CLI globalmente —
-uv tool install .       # disponibiliza um `alc` global
+uv tool install alc          # `alc` global
+uv tool install "alc[ui]"    # …com a UI web (dashboard, runs ao vivo)
 ```
 
-**Preparar um projeto**
+> **Ainda não está no PyPI?** Instale o build atual direto do git:
+> `uv tool install "alc[ui] @ git+https://github.com/gifflet/alc.git"`.
+> Desenvolvendo o próprio ALC? `uv sync` num clone e prefixe os comandos com `uv run`.
+
+**Preparar um projeto** — três passos de zero a um Operator Layer validado:
 
 ```bash
 cd seu-projeto
-alc init --setup        # gera o .alc/ + instala a skill do editor (Claude Code por padrão)
-alc lint                # confere se o Operator Layer está bem-formado
+alc init --setup     # 1. gera o .alc/ (detecta o stack) + instala a skill do editor
+alc onboard          # 2. adota os checks que o projeto JÁ declara (targets de Makefile,
+                     #    scripts de package.json) — propõe primeiro, você aprova
+alc lint             # 3. valida o Operator Layer
 ```
 
 **Rodar**
@@ -65,9 +72,24 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 
 ## 🧭 Comandos
 
+**Por intenção** — o caminho rápido quando você já sabe o que quer:
+
+| Intenção | Use |
+|---|---|
+| **Descobrir** o projeto | `alc status` · `alc lint` · `alc team status` · `alc audit` |
+| **Rodar** uma unidade verificada | `alc run <blueprint> "…"` · `alc spike "…"` · `alc flow <flow> "…"` |
+| **A partir de um objetivo**, o ALC planeja | `alc conduct "<objetivo>"` |
+| **Explorar** alternativas | `alc explore … --variants N` → `alc compare --diff` → `alc adopt` |
+| **Rodar não-assistido** | `alc enqueue …` → `alc tick` · `alc cycle` / `alc loop` |
+| **Integrar** o resultado | `alc land` · `alc discard` |
+
+<details>
+<summary><strong>Referência completa de comandos</strong> (clique para expandir)</summary>
+
 | Comando | O que faz |
 |---|---|
 | `alc init [--setup]` | Gera um Operator Layer `.alc/` padrão; detecta o stack do projeto e cria checks reais (e instala a skill do editor) |
+| `alc onboard [--yes] [--stage NOME]` | Adota os checks que o projeto JÁ declara (targets de Makefile, scripts de `package.json`) num check_set `project` e os fia nos seus Blueprints — propõe primeiro, aplica na aprovação (`--yes` pula o prompt); `--stage` também registra o estágio do produto |
 | `alc lint` | Valida o Operator Layer contra o Policy Gate |
 | `alc run <blueprint> "<tarefa>"` | Roda um Blueprint como um Single Mandate verificado; `--tier NOME` substitui o compute tier para esta invocação |
 | `alc spike "<tarefa>"` | Açúcar sobre o Blueprint `spike` do Prototyper (`mode: spike`) — uma exceção cercada ao gate de checks: força isolamento, zero reparos, proíbe commit/auto-merge, fica fora do streak do Scorecard |
@@ -87,7 +109,7 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 | `alc runs list\|show\|tail` | Inspeciona os run logs (`.alc/runs/*.jsonl`): lista os runs recentes, mostra um por inteiro, ou exibe os últimos N eventos |
 | `alc audit --since 7d` | Agrega os reports arquivados da fila numa janela de tempo: contagem de tarefas, totais/médias do Scorecard, arquivos alterados e uso/custo de engine |
 | `alc metrics [--check NOME] [--json]` | Mostra a série temporal de um metric check gravada no ledger do projeto: valor, delta contra a medição anterior e tendência — somente leitura, populada por checks `metric` (`alc run`/`alc flow`/`alc tick`/…) |
-| `alc team hire\|list\|retire\|status` | Cria, lista ou aposenta um Archetype Pack (`builder`, `sweeper`, `maintainer`, `grower` — parcial); `alc init --stage pre-pmf\|growth\|strong-pmf` instala o combo de um estágio; `status` também mostra o Mix Health quando `stage` está declarado |
+| `alc team hire\|list\|retire\|status` | Cria, lista ou aposenta um Archetype Pack — os cinco são `prototyper`, `builder`, `sweeper`, `grower`, `maintainer`. O hire é ADITIVO (escreve só os arquivos que faltam do pack; `--force` sobrescreve). `alc init --stage pre-pmf\|growth\|strong-pmf` instala o combo daquele estágio; `status` também mostra o Mix Health quando `stage` está declarado |
 | `alc checks audit [--json]` | Redetecta o(s) stack(s) e PROPÕE upgrades de check_set contra o Manifest — nunca escreve; aponta checks ainda comentados por falta de binário |
 | `alc signal ingest --kind K --source S --title T` | Ingere um sinal tipado de uso real (`error`\|`feedback`\|`issue`\|`review`); `--from-file PATH` aceita um payload JSON já formado; `alc signal list [--json]` mostra o que está pendente de consumo por um loop de replenish `signals` |
 | `alc serve --webhook [--host H] [--port P] [--token T]` | Uma porta HTTP mínima sobre a ingestão de sinais e o caminho de enqueue — `POST /signal`, `POST /enqueue`, `GET /health`; só valida e escreve, nunca executa; `alc tick`/`alc cycle` drena o que chega |
@@ -99,6 +121,8 @@ alc tick --concurrency 4                       # drena a fila 4 tarefas ao mesmo
 Adicione `--engine claude-code|gemini|mock` para escolher o executor e `--isolate` para conter as edições numa branch de git-worktree.
 
 Blueprints suportam `max_repairs` para limitar o orçamento de reparos do Assurance Loop, e `check_set` para referenciar um conjunto de checks nomeado e reutilizável declarado no Manifest. Checks rodam por código de saída sem shell por padrão; adicione um `shell:` one-liner a uma entrada de check para rodá-lo via `sh -c` (atenção: o resultado é decidido exclusivamente pelo código de saída — stdout/stderr são capturados e alimentam a diretiva de reparo, mas não afetam a decisão de passar ou falhar).
+
+</details>
 
 ## 🖥 Web UI
 
