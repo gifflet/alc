@@ -65,10 +65,12 @@ function ProposalList({
   title,
   proposals,
   tone,
+  hints,
 }: {
   title: string
   proposals: CheckProposal[]
   tone: 'live' | 'warn'
+  hints?: Record<string, string>
 }) {
   if (proposals.length === 0) return null
   return (
@@ -79,6 +81,9 @@ function ProposalList({
           <li key={name} className="flex items-center gap-2 text-[12px]">
             <Pill tone={tone}>{name}</Pill>
             <span className="font-mono text-[11px] text-muted">{command.join(' ')}</span>
+            {hints?.[name] && (
+              <span className="text-[11px] text-warn">{hints[name]}</span>
+            )}
           </li>
         ))}
       </ul>
@@ -98,6 +103,7 @@ function CheckSetCard({ cs }: { cs: CheckSetAudit }) {
         title="Unavailable (binary not on PATH)"
         proposals={cs.unavailable}
         tone="warn"
+        hints={cs.install_hints}
       />
     </div>
   )

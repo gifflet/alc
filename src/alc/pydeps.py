@@ -118,3 +118,83 @@ def resolve_python_checks(
         (name, [*runner, *command] if _normalize(command[0]) in locked else command)
         for name, command in checks
     ]
+
+
+# Runner binary -> the command that materializes its locked environment. Keys
+# mirror _PYTHON_RUNNERS' argv[0]s; used to make an availability hint actionable.
+_RUNNER_SYNC: dict[str, str] = {
+    "uv": "uv sync",
+    "poetry": "poetry install",
+    "pdm": "pdm install",
+    "pipenv": "pipenv install --dev",
+}
+
+# The package-name prefix of a PEP 508 requirement string ("pytest>=8",
+# "pytest-cov[toml]==5.0" -> "pytest", "pytest-cov").
+_REQUIREMENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def declared_packages(project_root: Path) -> frozenset[str]:
+    """Normalized package names *project_root*'s pyproject.toml declares.
+
+    Reads [project.dependencies], every [project.optional-dependencies] group,
+    and every PEP 735 [dependency-groups] group (skipping {include-group}
+    table entries — the group they point at is read directly anyway). Degrades
+    to an empty set — never raises — on a missing or malformed pyproject.
+    """
+    path = project_root / "pyproject.toml"
+    if not path.exists():
+        return frozenset()
+    try:
+        data = tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return frozenset()
+
+    requirements: list[object] = []
+    project = data.get("project")
+    if isinstance(project, dict):
+        if isinstance(project.get("dependencies"), list):
+            requirements += project["dependencies"]
+        optional = project.get("optional-dependencies")
+        if isinstance(optional, dict):
+            for group in optional.values():
+                if isinstance(group, list):
+                    requirements += group
+    groups = data.get("dependency-groups")
+    if isinstance(groups, dict):
+        for group in groups.values():
+            if isinstance(group, list):
+                requirements += group
+
+    names: set[str] = set()
+    for requirement in requirements:
+        if not isinstance(requirement, str):
+            continue  # an {include-group = ...} table entry
+        match = _REQUIREMENT_NAME_RE.match(requirement.strip())
+        if match:
+            names.add(_normalize(match.group(0)))
+    return frozenset(names)
+
+
+def unavailable_hint(project_root: Path, command: list[str]) -> str | None:
+    """An actionable install hint for an off-PATH check command, or None.
+
+    Distinguishes "the project DOES provide this, your environment just isn't
+    materialized" from "not a tool this project uses" (which stays hint-less):
+
+    - argv[0] is the project's env-manager runner (`uv run ...` with uv itself
+      off PATH): the gap is the MANAGER — install it, then sync.
+    - argv[0] is a package pyproject.toml declares: it arrives with the
+      project's own dev dependencies, not a global install.
+    """
+    if not command:
+        return None
+    tool = command[0]
+    runner = python_runner(project_root)
+    if runner and tool == runner[0]:
+        return f"install {tool} — the project's env manager — then run `{_RUNNER_SYNC[tool]}`"
+    if _normalize(tool) in declared_packages(project_root):
+        if runner:
+            return f"declared in pyproject.toml — run `{_RUNNER_SYNC[runner[0]]}` to install it"
+        return "declared in pyproject.toml — install the project's dev dependencies"
+    return None

@@ -356,12 +356,30 @@ def cmd_init(args: argparse.Namespace) -> int:
         all_off_path = "- name: smoke" in checks_block
         some_off_path = "# - name:" in checks_block
         if all_off_path:
-            print(
-                f"Detected {stack_label}, but its checks ({checks_desc}) were not on "
-                "PATH — scaffolded them commented out with a smoke placeholder. "
-                "Install them and uncomment in .alc/blueprints/, or run `alc onboard` "
-                "to adopt the checks your project already declares."
-            )
+            # When the project itself can satisfy the gap (a declared dev
+            # dependency, or an env manager that is not installed), say exactly
+            # that instead of the generic "install them".
+            hint = None
+            if stack_label == "Python":
+                from alc.pydeps import resolve_python_checks, unavailable_hint
+
+                [(_name, command)] = resolve_python_checks(
+                    [("test", ["pytest", "-q"])], project_root
+                )
+                hint = unavailable_hint(project_root, command)
+            if hint is not None:
+                print(
+                    f"Detected {stack_label}, but its checks ({checks_desc}) were not "
+                    f"on PATH — scaffolded them commented out with a smoke placeholder. "
+                    f"Hint: {hint}, then uncomment in .alc/blueprints/."
+                )
+            else:
+                print(
+                    f"Detected {stack_label}, but its checks ({checks_desc}) were not on "
+                    "PATH — scaffolded them commented out with a smoke placeholder. "
+                    "Install them and uncomment in .alc/blueprints/, or run `alc onboard` "
+                    "to adopt the checks your project already declares."
+                )
         elif some_off_path:
             print(
                 f"Detected {stack_label} — scaffolded real checks ({checks_desc}); "
@@ -2917,7 +2935,10 @@ def _checks_audit(args: argparse.Namespace) -> int:
             print(f"      - name: {name}")
             print(f"        command: {json.dumps(command)}")
         for name, command in cs.unavailable:
-            print(f"  - {name}: {' '.join(command)}  (binary not on PATH — stays commented out)")
+            # A hint marks a gap the PROJECT can satisfy (declared dev dependency,
+            # missing env manager) — actionable, unlike a tool it simply never uses.
+            reason = cs.install_hints.get(name, "binary not on PATH — stays commented out")
+            print(f"  - {name}: {' '.join(command)}  ({reason})")
 
     for bp in report.smoke_only_blueprints:
         if bp.stacks:

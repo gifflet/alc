@@ -998,3 +998,50 @@ class TestScaffoldPythonRunner:
         blueprints = load_all_blueprints(manifest, operator_layer)
         errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
         assert not errors, f"Policy Gate errors on runner-resolved layer: {errors}"
+
+
+class TestInitMessageHints:
+    """`alc init` on a Python project whose checks land commented out points at
+    the ACTIONABLE gap (declared dev dependency / missing env manager) instead
+    of the generic "install them"."""
+
+    def _init(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import argparse
+
+        from alc.cli import cmd_init
+
+        monkeypatch.chdir(tmp_path)
+        assert cmd_init(argparse.Namespace(force=False, stage=None, setup=False)) == 0
+
+    def test_declared_dev_dependency_is_named_in_the_message(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "x"\nversion = "0"\n\n[dependency-groups]\ndev = ["pytest"]\n'
+        )
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert "declared in pyproject.toml" in out
+
+    def test_missing_env_manager_is_named_in_the_message(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
+        (tmp_path / "uv.lock").write_text(
+            'version = 1\n\n[[package]]\nname = "pytest"\nversion = "9.1.1"\n'
+        )
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert "install uv" in out
+
+    def test_nothing_declared_keeps_the_generic_message(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert "Install them and uncomment" in out
+        assert "declared in pyproject.toml" not in out

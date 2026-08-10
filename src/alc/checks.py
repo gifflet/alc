@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from alc.intake import is_smoke_only
 from alc.models import Blueprint, Manifest
+from alc.pydeps import unavailable_hint
 from alc.scaffold import _build_check_sets, detect_stacks
 
 # The literal fallback every pack Blueprint keeps so a check_set alone can never
@@ -38,12 +39,19 @@ class CheckSetAudit:
     binary has since been installed). ``unavailable`` are checks still
     missing a binary — informational, so installing the tool later is
     visible as it moving from here into ``add``.
+
+    ``install_hints`` (check name -> hint) annotates the ``unavailable``
+    entries the PROJECT itself can satisfy — a tool pyproject.toml declares,
+    or an env-manager runner (`uv run ...`) whose manager is off PATH — so
+    "declared but not installed" reads differently from "not a tool this
+    project uses" (which gets no entry).
     """
 
     set_name: str
     is_new: bool                              # True: this set doesn't exist in the Manifest yet
     add: list[tuple[str, list[str]]]
     unavailable: list[tuple[str, list[str]]]
+    install_hints: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,6 +101,7 @@ def audit_checks(
         is_new = set_name not in manifest.check_sets
         add: list[tuple[str, list[str]]] = []
         unavailable: list[tuple[str, list[str]]] = []
+        install_hints: dict[str, str] = {}
         for check_name, command in checks:
             if check_name in live_names:
                 continue  # already live — nothing to propose
@@ -100,9 +109,18 @@ def audit_checks(
                 add.append((check_name, command))
             else:
                 unavailable.append((check_name, command))
+                hint = unavailable_hint(project_root, command)
+                if hint is not None:
+                    install_hints[check_name] = hint
         if is_new or add or unavailable:
             check_sets.append(
-                CheckSetAudit(set_name=set_name, is_new=is_new, add=add, unavailable=unavailable)
+                CheckSetAudit(
+                    set_name=set_name,
+                    is_new=is_new,
+                    add=add,
+                    unavailable=unavailable,
+                    install_hints=install_hints,
+                )
             )
 
     # A smoke-only Blueprint is ALWAYS reported — a stackless project (stacks == [])
