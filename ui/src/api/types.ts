@@ -478,12 +478,15 @@ export type CheckProposal = [string, string[]]
 
 /** One check_set's proposed state (CheckSetAudit): `add` is available on
  * PATH today but not yet live in the Manifest; `unavailable` still lacks a
- * binary — informational only. */
+ * binary — informational only. `install_hints` (check name -> hint) annotates
+ * the unavailable entries the project itself can satisfy (declared dev
+ * dependency / missing env manager). */
 export interface CheckSetAudit {
   set_name: string
   is_new: boolean
   add: CheckProposal[]
   unavailable: CheckProposal[]
+  install_hints: Record<string, string>
 }
 
 /** A Blueprint whose resolved checks are nothing but the smoke placeholder,

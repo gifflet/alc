@@ -270,6 +270,71 @@ class TestChecksAuditCli:
 
 
 # ---------------------------------------------------------------------------
+# install_hints — "declared but not installed" is actionable, "not used by the
+# project" is not; the audit tells them apart (per-check hint via pydeps).
+# ---------------------------------------------------------------------------
+
+
+class TestAuditInstallHints:
+    def test_declared_dev_dependency_gets_a_pyproject_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname="x"\nversion="0"\n\n[dependency-groups]\ndev = ["pytest"]\n'
+        )
+
+        report = audit_checks(_manifest(), tmp_path, [])
+
+        python_set = next(cs for cs in report.check_sets if cs.set_name == "python")
+        assert {name for name, _cmd in python_set.unavailable} == {"test", "lint"}
+        assert "declared in pyproject.toml" in python_set.install_hints["test"]
+        assert "lint" not in python_set.install_hints  # ruff is NOT declared
+
+    def test_undeclared_tool_keeps_no_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname="x"\nversion="0"\n')
+
+        report = audit_checks(_manifest(), tmp_path, [])
+
+        python_set = next(cs for cs in report.check_sets if cs.set_name == "python")
+        assert python_set.install_hints == {}
+
+    def test_missing_env_manager_gets_a_runner_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """uv.lock declares pytest so the proposal is `uv run pytest -q`, but uv
+        itself is off PATH — the hint targets the env manager."""
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text('[project]\nname="x"\nversion="0"\n')
+        (tmp_path / "uv.lock").write_text(
+            'version = 1\n\n[[package]]\nname = "pytest"\nversion = "9.1.1"\n'
+        )
+
+        report = audit_checks(_manifest(), tmp_path, [])
+
+        python_set = next(cs for cs in report.check_sets if cs.set_name == "python")
+        assert dict(python_set.unavailable)["test"] == ["uv", "run", "pytest", "-q"]
+        assert "install uv" in python_set.install_hints["test"]
+
+    def test_cli_prints_the_hint_on_the_unavailable_line(
+        self, operator_layer: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: None)
+        (operator_layer.parent / "pyproject.toml").write_text(
+            '[project]\nname="x"\nversion="0"\n\n[dependency-groups]\ndev = ["pytest"]\n'
+        )
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_checks(_ns()) == 0
+
+        out = capsys.readouterr().out
+        assert "declared in pyproject.toml" in out
+
+
+# ---------------------------------------------------------------------------
 # Policy Gate — advisory smoke-only-execution-blueprint rule (T13)
 # ---------------------------------------------------------------------------
 

@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alc.pydeps import locked_packages, python_runner, resolve_python_checks
+from alc.pydeps import (
+    declared_packages,
+    locked_packages,
+    python_runner,
+    resolve_python_checks,
+    unavailable_hint,
+)
 
 _UV_LOCK_WITH_PYTEST = """\
 version = 1
@@ -127,3 +133,75 @@ class TestResolvePythonChecks:
         battery = [("test", ["pytest", "-q"])]
         resolve_python_checks(battery, tmp_path)
         assert battery == [("test", ["pytest", "-q"])]
+
+
+_PYPROJECT_WITH_GROUPS = """\
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["requests>=2.31"]
+
+[project.optional-dependencies]
+docs = ["mkdocs"]
+
+[dependency-groups]
+dev = ["pytest>=8", "Pytest_Cov[toml]==5.0", {include-group = "docs"}]
+"""
+
+
+class TestDeclaredPackages:
+    def test_reads_all_declaration_tables(self, tmp_path: Path) -> None:
+        """[project.dependencies] + [project.optional-dependencies] + PEP 735
+        [dependency-groups], names normalized and version/extras specs stripped;
+        an {include-group} table entry is skipped, never a crash."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_GROUPS)
+        assert declared_packages(tmp_path) == frozenset(
+            {"requests", "mkdocs", "pytest", "pytest-cov"}
+        )
+
+    def test_missing_pyproject_yields_empty_set(self, tmp_path: Path) -> None:
+        assert declared_packages(tmp_path) == frozenset()
+
+    def test_malformed_pyproject_yields_empty_set_never_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text("this is [ not toml")
+        assert declared_packages(tmp_path) == frozenset()
+
+
+class TestUnavailableHint:
+    def test_declared_tool_without_lockfile_points_at_dev_dependencies(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_GROUPS)
+        hint = unavailable_hint(tmp_path, ["pytest", "-q"])
+        assert hint is not None
+        assert "declared in pyproject.toml" in hint
+
+    def test_declared_tool_with_lockfile_names_the_sync_command(
+        self, tmp_path: Path
+    ) -> None:
+        """pytest declared in pyproject but absent from uv.lock (stale lock) —
+        the check stayed bare, and the hint points at the project's env manager."""
+        (tmp_path / "pyproject.toml").write_text(_PYPROJECT_WITH_GROUPS)
+        (tmp_path / "uv.lock").write_text("version = 1\n")
+        hint = unavailable_hint(tmp_path, ["pytest", "-q"])
+        assert hint is not None
+        assert "declared in pyproject.toml" in hint
+        assert "uv sync" in hint
+
+    def test_missing_env_manager_binary_says_install_the_runner(
+        self, tmp_path: Path
+    ) -> None:
+        """The check was wrapped (`uv run pytest -q`) but uv itself is off PATH:
+        the actionable gap is the env MANAGER, not the tool."""
+        (tmp_path / "uv.lock").write_text(_UV_LOCK_WITH_PYTEST)
+        hint = unavailable_hint(tmp_path, ["uv", "run", "pytest", "-q"])
+        assert hint is not None
+        assert "install uv" in hint
+        assert "uv sync" in hint
+
+    def test_undeclared_tool_has_no_hint(self, tmp_path: Path) -> None:
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\n')
+        assert unavailable_hint(tmp_path, ["gitleaks", "detect"]) is None
+
+    def test_empty_command_has_no_hint(self, tmp_path: Path) -> None:
+        assert unavailable_hint(tmp_path, []) is None

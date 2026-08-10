@@ -28,9 +28,29 @@ const populatedAudit: ChecksAudit = {
       is_new: true,
       add: [['lint', ['ruff', 'check', '.']]],
       unavailable: [['test', ['pytest', '-q']]],
+      install_hints: {},
     },
   ],
   smoke_only_blueprints: [{ blueprint: 'chore', stacks: ['Python'] }],
+}
+
+// An unavailable check the PROJECT itself can satisfy (declared dev dependency)
+// carries an install hint — rendered on the item so "declared but not
+// installed" reads differently from "not a tool this project uses".
+const hintedAudit: ChecksAudit = {
+  check_sets: [
+    {
+      set_name: 'python',
+      is_new: true,
+      add: [],
+      unavailable: [
+        ['test', ['pytest', '-q']],
+        ['lint', ['ruff', 'check', '.']],
+      ],
+      install_hints: { test: 'declared in pyproject.toml — run `uv sync` to install it' },
+    },
+  ],
+  smoke_only_blueprints: [],
 }
 
 // One smoke-only entry with a detected stack and one with none (stacks: []),
@@ -102,6 +122,19 @@ describe('Checks', () => {
     // never the misleading "while <stack> is detected" phrasing.
     expect(screen.getByText(/no stack was detected/i)).toBeInTheDocument()
     expect(screen.getByText('check_sets')).toBeInTheDocument()
+  })
+
+  it('annotates an unavailable check the project itself can satisfy', async () => {
+    installFetch({
+      '/checks/history': [],
+      '/checks/audit': hintedAudit,
+      '/checks/onboard': emptyOnboard,
+    })
+    renderWithProviders(<Checks />)
+
+    expect(await screen.findByText(/declared in pyproject.toml/i)).toBeInTheDocument()
+    // The un-hinted sibling renders without an annotation, exactly as before.
+    expect(screen.getByText('ruff check .')).toBeInTheDocument()
   })
 
   it('shows a clean empty state when the audit has no proposals', async () => {
