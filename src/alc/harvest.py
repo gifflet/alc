@@ -108,10 +108,12 @@ def _first_existing(project_root: Path, names: list[str]) -> Path | None:
     return None
 
 
-def _available(command: list[str] | None, shell: str | None) -> bool:
+def tool_available(command: list[str] | None, shell: str | None = None) -> bool:
     """True when the check's tool (argv[0], or the first shell token) is on PATH.
 
     A `shutil.which` LOOKUP — never an execution; see the module safety invariant.
+    Public: the ONE availability lookup shared with `alc.onboard`, so an
+    engine-proposed check and a harvested one are judged identically.
     """
     token: str | None = None
     if command:
@@ -140,7 +142,7 @@ def _make_check(
         source=source,
         source_path=source_path,
         confidence="high",
-        available=_available(command, None),
+        available=tool_available(command),
     )
 
 

@@ -917,3 +917,84 @@ class TestScaffoldNodeChecksReflectRealScripts:
         blueprints = load_all_blueprints(manifest, operator_layer)
         errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
         assert not errors, f"Policy Gate errors on Node layer: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Python runner resolution — a lockfile proves the project's env manager, so a
+# locked tool is scaffolded LIVE through its runner (`uv run pytest -q`) instead
+# of commented out because the bare binary only lives inside .venv.
+# ---------------------------------------------------------------------------
+
+_UV_LOCK_WITH_PYTEST = (
+    'version = 1\n\n[[package]]\nname = "pytest"\nversion = "9.1.1"\n'
+)
+
+
+class TestScaffoldPythonRunner:
+    def test_uv_locked_pytest_scaffolds_live_through_uv_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """pyproject + uv.lock declaring pytest -> blueprints carry
+        `uv run pytest -q` LIVE (availability keys on `uv`, which IS on PATH)."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (tmp_path / "uv.lock").write_text(_UV_LOCK_WITH_PYTEST)
+        scaffold(tmp_path)
+
+        chore = (tmp_path / ".alc" / "blueprints" / "chore.md").read_text()
+        assert '["uv", "run", "pytest", "-q"]' in chore
+        assert "# - name: test" not in chore
+
+    def test_uv_locked_pytest_lands_in_python_check_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The manifest's python set wraps pytest with the runner; ruff is NOT in
+        the lockfile so it stays bare (and live only because PATH has it)."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (tmp_path / "uv.lock").write_text(_UV_LOCK_WITH_PYTEST)
+        scaffold(tmp_path)
+
+        manifest = load_manifest(tmp_path / ".alc")
+        by_name = {c.name: c.command for c in manifest.check_sets["python"]}
+        assert by_name["test"] == ["uv", "run", "pytest", "-q"]
+        assert by_name["lint"] == ["ruff", "check", "."]
+
+    def test_runner_itself_off_path_still_comments_out(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """uv.lock present but `uv` NOT on PATH -> the wrapped check is commented
+        out exactly like any other off-PATH binary (never a live 127)."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (tmp_path / "uv.lock").write_text(_UV_LOCK_WITH_PYTEST)
+        scaffold(tmp_path)
+
+        chore = (tmp_path / ".alc" / "blueprints" / "chore.md").read_text()
+        assert '# - name: test' in chore
+        assert '#   command: ["uv", "run", "pytest", "-q"]' in chore
+
+    def test_no_lockfile_keeps_bare_pytest(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Without a lockfile nothing changes — the pre-runner scaffold output."""
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        scaffold(tmp_path)
+
+        chore = (tmp_path / ".alc" / "blueprints" / "chore.md").read_text()
+        assert '["pytest", "-q"]' in chore
+
+    def test_python_runner_layer_lints_clean(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        (tmp_path / "uv.lock").write_text(_UV_LOCK_WITH_PYTEST)
+        scaffold(tmp_path)
+
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = load_all_blueprints(manifest, operator_layer)
+        errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
+        assert not errors, f"Policy Gate errors on runner-resolved layer: {errors}"
