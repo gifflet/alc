@@ -14,8 +14,6 @@
 from __future__ import annotations
 
 import difflib
-import shlex
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +22,7 @@ from pydantic import BaseModel, ValidationError
 
 from alc.engine import EngineRequest
 from alc.engines.registry import resolve_engine
-from alc.harvest import HarvestReport
+from alc.harvest import HarvestReport, tool_available
 from alc.intake import is_smoke_only, load_manifest
 from alc.manifestedit import validate_manifest_text
 from alc.models import Blueprint, Manifest
@@ -167,22 +165,6 @@ _SIGNALS_CAP = 4000
 # discipline as commitmsg's diff cap).
 _TREE_MAX_PATHS = 400
 _TREE_CAP = 8000
-
-
-def _check_available(command: list[str] | None, shell: str | None) -> bool:
-    """True when the check's tool (argv[0], or the first shell token) is on PATH.
-
-    A ``shutil.which`` LOOKUP — never an execution, mirroring harvest's own
-    availability test — so an engine-proposed check is written commented-out when
-    its binary is absent, exactly like a harvested one.
-    """
-    token: str | None = None
-    if command:
-        token = command[0]
-    elif shell:
-        parts = shlex.split(shell)
-        token = parts[0] if parts else None
-    return token is not None and shutil.which(token) is not None
 
 
 def _summarize_signals(harvest_report: HarvestReport) -> str:
@@ -419,7 +401,7 @@ def build_proposal(
                     name=ec.name,
                     command=ec.command,
                     shell=ec.shell,
-                    available=_check_available(ec.command, ec.shell),
+                    available=tool_available(ec.command, ec.shell),
                     origin="engine",
                     source_path=None,
                 )

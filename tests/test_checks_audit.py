@@ -67,6 +67,23 @@ class TestAuditChecksCheckSets:
         assert python_set.add == []
         assert {name for name, _cmd in python_set.unavailable} == {"test", "lint"}
 
+    def test_uv_locked_pytest_is_proposed_through_its_runner(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A uv.lock declaring pytest -> the audit proposes `uv run pytest -q`
+        (same resolution `alc init` scaffolds), not the bare binary."""
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+        (tmp_path / "uv.lock").write_text(
+            'version = 1\n\n[[package]]\nname = "pytest"\nversion = "9.1.1"\n'
+        )
+
+        report = audit_checks(_manifest(), tmp_path, [])
+
+        python_set = next(cs for cs in report.check_sets if cs.set_name == "python")
+        assert dict(python_set.add)["test"] == ["uv", "run", "pytest", "-q"]
+        assert dict(python_set.add)["lint"] == ["ruff", "check", "."]  # not locked
+
     def test_already_live_check_is_not_proposed_again(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -67,6 +67,21 @@ class TestPackageJson:
 
         assert _by_name(harvest(tmp_path))["test"].command == ["yarn", "test"]
 
+    def test_tool_available_is_public_and_reflects_which(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`tool_available` is the ONE public availability lookup other modules
+        (onboard) reuse instead of duplicating the which() dance."""
+        from alc.harvest import tool_available
+
+        monkeypatch.setattr(
+            "alc.harvest.shutil.which", lambda cmd: "/bin/npm" if cmd == "npm" else None
+        )
+        assert tool_available(["npm", "test"]) is True
+        assert tool_available(["pytest", "-q"]) is False
+        assert tool_available(None, "npm test") is True
+        assert tool_available(None, None) is False
+
     def test_available_reflects_shutil_which(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

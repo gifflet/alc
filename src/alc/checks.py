@@ -85,7 +85,7 @@ def audit_checks(
         A ChecksAudit — every field is a proposal; nothing is written to disk.
     """
     stacks = detect_stacks(project_root)
-    fresh_sets = _build_check_sets(stacks)
+    fresh_sets = _build_check_sets(stacks, project_root)
 
     check_sets: list[CheckSetAudit] = []
     for set_name, checks in sorted(fresh_sets.items()):

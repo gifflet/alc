@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 from alc.harvest import read_package_scripts
+from alc.pydeps import resolve_python_checks
 
 # ---------------------------------------------------------------------------
 # Default template constants
@@ -304,9 +305,9 @@ def detect_stack(project_root: Path) -> tuple[str | None, str]:
             ("vet", ["go", "vet", "./..."]),
         ]))
     if (project_root / "pyproject.toml").exists() or (project_root / "setup.py").exists():
-        return ("Python", render_blueprint_checks([
+        return ("Python", render_blueprint_checks(resolve_python_checks([
             ("test", ["pytest", "-q"]),
-        ]))
+        ], project_root)))
     if (project_root / "package.json").exists():
         return ("Node", render_blueprint_checks([
             ("test", ["npm", "test"]),
@@ -501,20 +502,28 @@ def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, li
 
 def _build_check_sets(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path,
 ) -> dict[str, list[tuple[str, list[str]]]]:
     """Build the {check_set_name: checks} mapping for the detected stacks + security.
 
     One set per detected stack (its full battery), plus a `security` set with
     that stack's scanner (when known) and gitleaks (always, stack-agnostic).
+
+    The `python` battery (and the security set, whose pip-audit is a Python
+    tool) is resolved against *project_root*'s env-manager lockfile, so a
+    locked tool is proposed through its runner (`uv run pytest -q`) — shared by
+    `alc init` and `alc checks audit` so both speak the same commands.
     """
     sets: dict[str, list[tuple[str, list[str]]]] = {}
     security: list[tuple[str, list[str]]] = []
     for _label, set_name, checks in stacks:
+        if set_name == "python":
+            checks = resolve_python_checks(checks, project_root)
         sets[set_name] = checks
         if set_name in _SECURITY_SCANNERS:
             security.append(_SECURITY_SCANNERS[set_name])
     security.append(_GITLEAKS_CHECK)
-    sets["security"] = security
+    sets["security"] = resolve_python_checks(security, project_root)
     return sets
 
 
@@ -605,7 +614,7 @@ def _render_check_sets_block(
     The `node` set is resolved against the project's real package.json scripts so
     an absent-script check is scaffolded commented out rather than live-and-broken.
     """
-    check_sets = _build_check_sets(stacks)
+    check_sets = _build_check_sets(stacks, project_root)
     blocks: list[str] = []
     for name, checks in check_sets.items():
         if name == "node":
