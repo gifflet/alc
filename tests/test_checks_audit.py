@@ -270,6 +270,114 @@ class TestChecksAuditCli:
 
 
 # ---------------------------------------------------------------------------
+# CLI header — "No upgrades proposed" only when there is truly NOTHING to
+# show; an informational-only report (unavailable entries) gets an honest
+# header instead of a contradiction ("nothing proposed" above a list).
+# ---------------------------------------------------------------------------
+
+# A chore blueprint with a REAL inline check, so the layer has no smoke-only
+# execution blueprint (which would count as a proposal and mask the
+# informational-only case these specs isolate).
+_REAL_CHECK_CHORE = """\
+---
+name: chore
+purpose: Apply a low-risk, well-scoped maintenance change.
+compute_tier: standard
+checks:
+  - name: scan
+    command: ["gitleaks", "detect"]
+report:
+  format: json
+  schema:
+    status: string
+---
+# Workflow
+1. Make the smallest change that satisfies the task.
+"""
+
+_MANIFEST_TEMPLATE = """\
+version: 1
+default_engine: mock
+compute_tiers:
+  standard:
+    mock: mock-small
+  deep:
+    mock: mock-large
+engines:
+  mock:
+    type: mock
+check_sets:
+{check_sets}
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+"""
+
+
+def _real_check_layer(tmp_path: Path, check_sets_yaml: str) -> Path:
+    """A hermetic layer whose chore blueprint carries a real check (never
+    smoke-only) and whose manifest declares *check_sets_yaml*."""
+    alc = tmp_path / ".alc"
+    (alc / "blueprints").mkdir(parents=True)
+    (alc / "manifest.yaml").write_text(
+        _MANIFEST_TEMPLATE.format(check_sets=check_sets_yaml)
+    )
+    (alc / "blueprints" / "chore.md").write_text(_REAL_CHECK_CHORE)
+    return alc
+
+
+class TestChecksAuditCliHeaders:
+    def test_truly_empty_report_prints_no_upgrades_proposed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # gitleaks (the whole fresh security battery) is already live in the
+        # Manifest -> nothing to add, nothing informational, nothing smoke-only.
+        _real_check_layer(
+            tmp_path,
+            '  security:\n    - name: gitleaks\n      command: ["gitleaks", "detect"]',
+        )
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: None)
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_checks(_ns()) == 0
+
+        out = capsys.readouterr().out
+        assert "No upgrades proposed" in out
+        assert "No actionable upgrades" not in out
+
+    def test_informational_only_report_gets_an_honest_header(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        # The security set EXISTS (not new) but gitleaks' binary is absent:
+        # the only content is informational, so the header says exactly that —
+        # never "No upgrades proposed" directly above a printed list.
+        _real_check_layer(tmp_path, "  security: []")
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: None)
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_checks(_ns()) == 0
+
+        out = capsys.readouterr().out
+        assert "No upgrades proposed" not in out
+        assert "No actionable upgrades" in out
+        assert "gitleaks" in out  # the informational list still prints
+
+    def test_actionable_report_prints_neither_header(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+    ) -> None:
+        _real_check_layer(tmp_path, "  security: []")
+        monkeypatch.setattr("alc.checks.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        monkeypatch.chdir(tmp_path)
+
+        assert cmd_checks(_ns()) == 0
+
+        out = capsys.readouterr().out
+        assert "No upgrades proposed" not in out
+        assert "No actionable upgrades" not in out
+        assert "+ gitleaks" in out
+
+
+# ---------------------------------------------------------------------------
 # install_hints — "declared but not installed" is actionable, "not used by the
 # project" is not; the audit tells them apart (per-check hint via pydeps).
 # ---------------------------------------------------------------------------

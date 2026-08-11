@@ -2922,8 +2922,15 @@ def _checks_audit(args: argparse.Namespace) -> int:
         emit_json(asdict(report))
         return 0
 
-    if not report.has_proposals:
+    if not report.check_sets and not report.smoke_only_blueprints:
         print("No upgrades proposed — check_sets are current with the detected stack(s).")
+    elif not report.has_proposals:
+        # Everything below is informational (unavailable-only sets): an honest
+        # header instead of "No upgrades proposed" directly above a printed list.
+        print(
+            "No actionable upgrades — the checks below stay commented out "
+            "until their tools are installed."
+        )
 
     for cs in report.check_sets:
         status = "NEW" if cs.is_new else "existing"
