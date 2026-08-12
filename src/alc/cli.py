@@ -320,7 +320,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     contract as `alc team hire`. Without it, only a discovery hint is printed —
     no pack is installed unless explicitly asked (opt-in byte-identical `init`).
     """
-    from alc.scaffold import detect_stack, scaffold
+    from alc.scaffold import detect_default_engine, detect_stack, scaffold
 
     project_root = Path.cwd()
     try:
@@ -332,6 +332,18 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("Initialised Operator Layer:")
     for path in created:
         print(f"  {path}")
+
+    # Say which engine init picked (same probe scaffold() used), so nobody
+    # discovers a mock no-op run the hard way.
+    engine = detect_default_engine()
+    if engine == "mock":
+        print(
+            "Engine: mock — no engine CLI (claude, gemini) found on PATH. Runs are "
+            "no-ops until you install one and set `default_engine` in .alc/manifest.yaml."
+        )
+    else:
+        binary = "claude" if engine == "claude-code" else "gemini"
+        print(f"Engine: {engine} (`{binary}` found on PATH).")
 
     stack_label, checks_block = detect_stack(project_root)
     if stack_label is not None:

@@ -30,11 +30,14 @@ its keep once you start editing Blueprints.
 
 ## 3. Make it know your stack
 
-The defaults are deliberately generic. Two edits make ALC real for your project:
+The defaults are deliberately generic. One check and one command make ALC real for
+your project:
 
-**Pick a real engine.** In `.alc/manifest.yaml`, change `default_engine: mock` to
-`claude-code` (or `gemini`). `mock` is a free no-op for dry runs; the real engines do
-the work.
+**Confirm the engine.** `alc init` probes PATH and picks the engine for you: `claude`
+found → `default_engine: claude-code`, `gemini` found → `gemini`, neither → `mock` (a
+free no-op for dry runs — the init output says which one it chose). You only need to
+touch `.alc/manifest.yaml` if you want a different engine than the detected one, or if
+init fell back to mock and you've since installed a real CLI.
 
 **Adopt your project's real checks — `alc onboard`.** `alc init` detects common stacks
 (Go, Python, Node, Rust) and writes stack checks. But most projects already declare their

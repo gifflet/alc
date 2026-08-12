@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 from alc.manifestedit import validate_manifest_text
 from alc.policy import Violation
@@ -14,8 +15,13 @@ from alc.scaffold import scaffold
 
 
 def _scaffolded(tmp_path: Path) -> Path:
-    """Scaffold a real `.alc/` and return its operator-layer path."""
-    scaffold(tmp_path)
+    """Scaffold a real `.alc/` and return its operator-layer path.
+
+    Engine detection is pinned to mock so the host machine's claude/gemini CLI
+    never leaks into the scaffolded manifest these tests string-match against.
+    """
+    with mock.patch("alc.scaffold.detect_default_engine", return_value="mock"):
+        scaffold(tmp_path)
     return tmp_path / ".alc"
 
 

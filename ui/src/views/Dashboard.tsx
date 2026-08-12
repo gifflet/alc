@@ -185,6 +185,7 @@ function EnginesCard() {
   const id = useProjectId()
   const { data } = useEngines(id)
   const engines = data ?? []
+  const mockIsDefault = engines.some((e) => e.default && e.type === 'mock')
   return (
     <Card title="Engines" icon={Cpu}>
       <div className="flex flex-col gap-1.5">
@@ -196,6 +197,12 @@ function EnginesCard() {
             <span className="ml-auto font-mono text-[11px] text-faint">{e.type}</span>
           </div>
         ))}
+        {mockIsDefault && (
+          <p className="text-[11px] text-warn">
+            mock is a no-op engine — runs verify nothing. Set a real default (claude-code or
+            gemini) in the Manifest.
+          </p>
+        )}
       </div>
     </Card>
   )
