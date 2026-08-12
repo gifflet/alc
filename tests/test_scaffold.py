@@ -1144,3 +1144,35 @@ class TestInitEngineMessage:
         out = capsys.readouterr().out
         assert "Engine: mock" in out
         assert "no engine CLI" in out
+
+
+class TestInitNextStep:
+    """`alc init` ends with ONE concrete next action instead of a fan of hints
+    — the golden path is `alc run`, or installing an engine when none exists."""
+
+    def _init(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import argparse
+
+        from alc.cli import cmd_init
+
+        monkeypatch.chdir(tmp_path)
+        assert cmd_init(argparse.Namespace(force=False, stage=None, setup=False)) == 0
+
+    def test_real_engine_points_at_the_first_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert 'Next: alc run chore -d' in out
+        # The next step is the LAST thing printed — one action, no fan-out.
+        assert out.rstrip().splitlines()[-1].startswith("Next:")
+
+    def test_mock_fallback_points_at_installing_an_engine(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert "Next: install an engine CLI" in out
+        assert out.rstrip().splitlines()[-1].startswith("Next:")

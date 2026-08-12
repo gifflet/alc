@@ -432,6 +432,16 @@ def cmd_init(args: argparse.Namespace) -> int:
             return 1
         _print_skill_result(skill_path, changed, _resolve_version(), args.engine)
 
+    # ONE concrete next action, always the last line — the golden path is a
+    # first real run, or installing an engine when init had to fall back to mock.
+    if engine == "mock":
+        print(
+            "Next: install an engine CLI (claude or gemini), set `default_engine` in "
+            '.alc/manifest.yaml, then: alc run chore -d "<a small, well-scoped task>"'
+        )
+    else:
+        print('Next: alc run chore -d "<a small, well-scoped task>"')
+
     return 0
 
 
