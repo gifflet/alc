@@ -1164,7 +1164,10 @@ class TestInitNextStep:
         monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
         self._init(tmp_path, monkeypatch)
         out = capsys.readouterr().out
-        assert 'Next: alc run chore -d' in out
+        # The task is a POSITIONAL argument — the suggested command must be the
+        # exact syntax `alc run` accepts (a `-d` flag does not exist).
+        assert 'Next: alc run chore "' in out
+        assert "chore -d" not in out
         # The next step is the LAST thing printed — one action, no fan-out.
         assert out.rstrip().splitlines()[-1].startswith("Next:")
 
@@ -1175,4 +1178,5 @@ class TestInitNextStep:
         self._init(tmp_path, monkeypatch)
         out = capsys.readouterr().out
         assert "Next: install an engine CLI" in out
+        assert "chore -d" not in out
         assert out.rstrip().splitlines()[-1].startswith("Next:")
