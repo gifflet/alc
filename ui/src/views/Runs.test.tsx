@@ -63,8 +63,9 @@ describe('Runs', () => {
   it('renders an empty state naming the concrete first action', async () => {
     installFetch({ '/runs': { runs: [], total: 0 } })
     renderWithProviders(<Runs />)
-    // Mirrors `alc init`'s golden-path "Next:" — name the action, not just the fact.
+    // Mirrors `alc init`'s golden-path "Next:" — name the action, not just the
+    // fact, and in the exact syntax `alc run` accepts (the task is positional).
     expect(await screen.findByText(/No runs yet/)).toBeInTheDocument()
-    expect(screen.getByText(/alc run chore -d/)).toBeInTheDocument()
+    expect(screen.getByText(/alc run chore "<task>"/)).toBeInTheDocument()
   })
 })

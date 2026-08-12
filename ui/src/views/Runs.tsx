@@ -33,7 +33,7 @@ export function Runs() {
     return (
       <EmptyState
         icon={Radio}
-        message={'No runs yet — dispatch one with `alc run chore -d "<task>"` (or the Run button on a Blueprint) to see it here live.'}
+        message={'No runs yet — dispatch one with `alc run chore "<task>"` (or the Run button on a Blueprint) to see it here live.'}
       />
     )
   }

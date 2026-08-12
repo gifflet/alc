@@ -437,10 +437,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     if engine == "mock":
         print(
             "Next: install an engine CLI (claude or gemini), set `default_engine` in "
-            '.alc/manifest.yaml, then: alc run chore -d "<a small, well-scoped task>"'
+            '.alc/manifest.yaml, then: alc run chore "<a small, well-scoped task>"'
         )
     else:
-        print('Next: alc run chore -d "<a small, well-scoped task>"')
+        print('Next: alc run chore "<a small, well-scoped task>"')
 
     return 0
 
