@@ -59,6 +59,43 @@ describe('Dashboard', () => {
     expect(screen.getByText('Recent runs')).toBeInTheDocument()
   })
 
+  it('warns when the default engine is the mock no-op', async () => {
+    // beforeEach installs mock as the default engine.
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Engines')).toBeInTheDocument()
+    expect(screen.getByText(/no-op/i)).toBeInTheDocument()
+  })
+
+  it('does not warn when a real engine is the default', async () => {
+    installFetch({
+      '/scorecard': {
+        reports: 0,
+        successes: 0,
+        failures: 0,
+        span_total: 0,
+        passes_total: 0,
+        streak_total: 0,
+        touch_total: 0,
+      },
+      '/queue': { pending: [], done: [] },
+      '/runs': { runs: [], total: 0 },
+      '/engines': [
+        { name: 'mock', type: 'mock', default: false, tiers: {}, healthy: true },
+        {
+          name: 'claude-code',
+          type: 'claude-code',
+          default: true,
+          tiers: { standard: 'claude-sonnet-4-6' },
+          healthy: true,
+        },
+      ],
+      '/loops': [],
+    })
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Engines')).toBeInTheDocument()
+    expect(screen.queryByText(/no-op/i)).not.toBeInTheDocument()
+  })
+
   it('shows the aggregate scorecard', async () => {
     renderWithProviders(<Dashboard />)
     expect(await screen.findByText('Scorecard')).toBeInTheDocument()

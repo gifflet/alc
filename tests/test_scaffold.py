@@ -1045,3 +1045,102 @@ class TestInitMessageHints:
         out = capsys.readouterr().out
         assert "Install them and uncomment" in out
         assert "declared in pyproject.toml" not in out
+
+
+# ---------------------------------------------------------------------------
+# Engine detection — `alc init` picks default_engine by probing PATH for a
+# real engine CLI, so nobody has to hand-edit `default_engine: mock` before
+# their first real run (the single mandatory manual edit until now).
+# ---------------------------------------------------------------------------
+
+
+class TestScaffoldEngineDetection:
+    def test_claude_on_path_becomes_the_default_engine(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "claude-code"
+
+    def test_gemini_only_becomes_default_and_gains_engine_entry(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """gemini on PATH (claude absent) -> default_engine: gemini, plus the
+        gemini engine entry and tier models the template does not normally carry."""
+        monkeypatch.setattr(
+            "alc.scaffold.shutil.which",
+            lambda cmd: "/usr/bin/gemini" if cmd == "gemini" else None,
+        )
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "gemini"
+        assert manifest.engines["gemini"]["type"] == "gemini"
+        assert manifest.compute_tiers["standard"]["gemini"] == "gemini-2.5-flash"
+        assert manifest.compute_tiers["deep"]["gemini"] == "gemini-2.5-pro"
+
+    def test_no_engine_cli_keeps_mock_and_no_gemini_block(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "mock"
+        # No spurious gemini engine entry (its health would render red in the UI).
+        assert "gemini" not in manifest.engines
+        assert "type: gemini" not in (tmp_path / ".alc" / "manifest.yaml").read_text()
+
+    def test_claude_wins_over_gemini_when_both_present(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            "alc.scaffold.shutil.which",
+            lambda cmd: f"/usr/bin/{cmd}" if cmd in ("claude", "gemini") else None,
+        )
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "claude-code"
+
+    def test_gemini_layer_lints_clean(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(
+            "alc.scaffold.shutil.which",
+            lambda cmd: "/usr/bin/gemini" if cmd == "gemini" else None,
+        )
+        scaffold(tmp_path)
+        operator_layer = tmp_path / ".alc"
+        manifest = load_manifest(operator_layer)
+        blueprints = load_all_blueprints(manifest, operator_layer)
+        errors = [v for v in lint(manifest, blueprints) if v.severity == "error"]
+        assert not errors, f"Policy Gate errors on gemini layer: {errors}"
+
+
+class TestInitEngineMessage:
+    """`alc init` says which engine it picked — and, when it had to fall back
+    to mock, says plainly that runs are no-ops until a real CLI is installed."""
+
+    def _init(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import argparse
+
+        from alc.cli import cmd_init
+
+        monkeypatch.chdir(tmp_path)
+        assert cmd_init(argparse.Namespace(force=False, stage=None, setup=False)) == 0
+
+    def test_detected_engine_is_announced(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: f"/usr/bin/{cmd}")
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert "Engine: claude-code" in out
+
+    def test_mock_fallback_is_announced_honestly(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+    ) -> None:
+        monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)
+        self._init(tmp_path, monkeypatch)
+        out = capsys.readouterr().out
+        assert "Engine: mock" in out
+        assert "no engine CLI" in out

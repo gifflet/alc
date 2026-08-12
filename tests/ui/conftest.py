@@ -14,9 +14,13 @@ from alc.ui.server import create_app
 
 
 @pytest.fixture
-def make_project(tmp_path: Path):
+def make_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Return a factory that scaffolds a fresh ALC project under tmp_path."""
     counter = {"n": 0}
+    # Hermetic: `alc init` now probes PATH for a real engine CLI — never let the
+    # host machine's claude/gemini leak into these fixtures, which promise a
+    # mock-engine project.
+    monkeypatch.setattr("alc.scaffold.detect_default_engine", lambda: "mock")
 
     def _make(name: str | None = None) -> Path:
         counter["n"] += 1

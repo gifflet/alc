@@ -16,15 +16,18 @@ from alc.pydeps import resolve_python_checks
 
 _MANIFEST = """\
 version: 1
-default_engine: mock
+# Chosen by probing PATH at `alc init` time (claude -> claude-code, gemini ->
+# gemini, neither -> mock). mock is a free no-op for dry runs — swap in a real
+# engine any time.
+default_engine: {default_engine}
 
 compute_tiers:
   standard:
     mock: "mock-small"
-    claude-code: "claude-sonnet-4-6"
+    claude-code: "claude-sonnet-4-6"{gemini_standard_line}
   deep:
     mock: "mock-large"
-    claude-code: "claude-opus-4-8"
+    claude-code: "claude-opus-4-8"{gemini_deep_line}
 
 engines:
   mock:
@@ -32,7 +35,7 @@ engines:
   claude-code:
     type: claude-code
     binary: claude
-    # clean_config: true  # skip the host project's .claude/ settings and hooks
+    # clean_config: true  # skip the host project's .claude/ settings and hooks{gemini_engine_block}
 
 # Behavioral knobs — defaults shown; uncomment a line to override:
 # default_timeout_s: 1800   # engine per-turn kill timeout (seconds)
@@ -264,6 +267,33 @@ loops/*.state.json
 loops/*.ledger.jsonl
 specialists/*.knowledge.md
 """
+
+
+# ---------------------------------------------------------------------------
+# Engine detection
+# ---------------------------------------------------------------------------
+
+# The gemini engine entry + tier models spliced into the manifest ONLY when
+# gemini is the detected engine — an always-present entry would render as a
+# permanently unhealthy engine in the UI for everyone who doesn't use it.
+_GEMINI_STANDARD_LINE = '\n    gemini: "gemini-2.5-flash"'
+_GEMINI_DEEP_LINE = '\n    gemini: "gemini-2.5-pro"'
+_GEMINI_ENGINE_BLOCK = "\n  gemini:\n    type: gemini\n    binary: gemini"
+
+
+def detect_default_engine() -> str:
+    """Pick the scaffolded ``default_engine`` by probing PATH for a real CLI.
+
+    claude -> "claude-code", else gemini -> "gemini", else "mock". A
+    `shutil.which` lookup, never an execution — same discipline as check
+    availability. Removes the one mandatory manual edit `alc init` used to
+    leave behind (docs/first-run.md's "Pick a real engine" step).
+    """
+    if shutil.which("claude") is not None:
+        return "claude-code"
+    if shutil.which("gemini") is not None:
+        return "gemini"
+    return "mock"
 
 
 # ---------------------------------------------------------------------------
@@ -770,8 +800,14 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     (alc_dir / "prompts").mkdir(parents=True, exist_ok=True)
 
     # Map each relative path to its content.
+    default_engine = detect_default_engine()
+    gemini = default_engine == "gemini"
     files: dict[str, str] = {
         ".alc/manifest.yaml": _MANIFEST.format(
+            default_engine=default_engine,
+            gemini_standard_line=_GEMINI_STANDARD_LINE if gemini else "",
+            gemini_deep_line=_GEMINI_DEEP_LINE if gemini else "",
+            gemini_engine_block=_GEMINI_ENGINE_BLOCK if gemini else "",
             check_sets_block=check_sets_block,
             worktree_provision_block=worktree_provision_block,
         ),
