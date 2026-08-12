@@ -60,9 +60,11 @@ describe('Runs', () => {
     expect(tabs.map((t) => t.id)).toContain('run:finished-run')
   })
 
-  it('renders an empty state when there are no runs', async () => {
+  it('renders an empty state naming the concrete first action', async () => {
     installFetch({ '/runs': { runs: [], total: 0 } })
     renderWithProviders(<Runs />)
+    // Mirrors `alc init`'s golden-path "Next:" — name the action, not just the fact.
     expect(await screen.findByText(/No runs yet/)).toBeInTheDocument()
+    expect(screen.getByText(/alc run chore -d/)).toBeInTheDocument()
   })
 })

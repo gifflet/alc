@@ -30,7 +30,12 @@ export function Runs() {
 
   if (isLoading) return <Loading />
   if (runs.length === 0) {
-    return <EmptyState icon={Radio} message="No runs yet — dispatch one to see it here live." />
+    return (
+      <EmptyState
+        icon={Radio}
+        message={'No runs yet — dispatch one with `alc run chore -d "<task>"` (or the Run button on a Blueprint) to see it here live.'}
+      />
+    )
   }
 
   const columns: Column<RunSummary>[] = [
