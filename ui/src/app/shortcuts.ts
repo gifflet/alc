@@ -7,6 +7,7 @@ import type { PrimaryView } from './uiStore'
 export type ShortcutAction =
   | { type: 'view'; view: PrimaryView }
   | { type: 'palette' }
+  | { type: 'switch-project' }
   | { type: 'close-tab' }
   | { type: 'toggle-bottom' }
   | { type: 'toggle-left' }
@@ -37,6 +38,9 @@ export function resolveShortcut(e: KeyboardEvent): ShortcutAction | null {
     // The number row is full (0-9); Inbox takes the mnemonic instead of
     // renumbering views operators already have in muscle memory.
     if (k === 'i') return { type: 'view', view: 'inbox' }
+    // Cmd/Ctrl+P — the quick-open slot in most editors, and P for project.
+    // Cmd+J was not available: it already toggles the bottom panel.
+    if (k === 'p') return { type: 'switch-project' }
     if (k === 'w') return { type: 'close-tab' }
     if (k === 'j') return { type: 'toggle-bottom' }
     if (k === 'b') return { type: 'toggle-left' }

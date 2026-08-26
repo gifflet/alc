@@ -17,7 +17,7 @@ afterEach(() => clearMatchMedia())
 function renderShell() {
   return renderWithProviders(
     <WsProvider projectId="demo">
-      <OperatorShell projectName="demo" onOpenProjects={() => {}} />
+      <OperatorShell projectName="demo" onSwitchProject={() => {}} />
     </WsProvider>,
   )
 }
@@ -102,9 +102,9 @@ describe('OperatorShell', () => {
     expect(uiStore.getState().activeTabId).toBe('view:fleet')
   })
 
-  it('offers Projects when there is nothing to go back to', () => {
+  it('offers the project switcher when there is nothing to go back to', () => {
     renderShell()
-    expect(screen.getByLabelText('Projects')).toBeInTheDocument()
+    expect(screen.getByLabelText('Switch project')).toBeInTheDocument()
     expect(screen.queryByLabelText('Back')).toBeNull()
   })
 })

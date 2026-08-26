@@ -24,9 +24,11 @@ import { TabContent } from './TabContent'
 export function IdeShell({
   projectName,
   onOpenProjects,
+  onSwitchProject,
 }: {
   projectName: string
   onOpenProjects: () => void
+  onSwitchProject: () => void
 }) {
   const ui = useUiState()
   const { data: inbox } = useInbox(useProjectId())
@@ -37,6 +39,7 @@ export function IdeShell({
   useShortcuts(
     () => setHelpOpen(true),
     () => setPaletteOpen(true),
+    onSwitchProject,
   )
 
   return (
@@ -107,7 +110,11 @@ export function IdeShell({
         </div>
       </div>
 
-      <StatusBar projectName={projectName} onOpenShortcuts={() => setHelpOpen(true)} />
+      <StatusBar
+        projectName={projectName}
+        onOpenShortcuts={() => setHelpOpen(true)}
+        onSwitchProject={onSwitchProject}
+      />
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}
       {spikeOpen && <SpikeDialog onClose={() => setSpikeOpen(false)} />}
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}

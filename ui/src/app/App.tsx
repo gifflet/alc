@@ -15,6 +15,7 @@ import { authStore, useUnauthorized } from './authStore'
 import { ApiError } from '../api/client'
 import { TokenPrompt } from '../components/TokenPrompt'
 import { ProjectSelector } from '../components/ProjectSelector'
+import { ProjectSwitcher } from '../components/ProjectSwitcher'
 import { EmptyState } from '../components/EmptyState'
 import { ProjectUnavailable } from '../components/ProjectUnavailable'
 
@@ -64,6 +65,7 @@ function ProjectShell() {
   const navigate = useNavigate()
   const { data: projects, isLoading } = useProjects()
   const [selectorOpen, setSelectorOpen] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
 
   // Reset + hydrate the tab store from the URL once per project; `hydrated` gates
   // UrlSync so the two-way binding can never turn into a navigation loop.
@@ -111,7 +113,28 @@ function ProjectShell() {
     <ProjectProvider value={id}>
       <WsProvider projectId={id}>
         <UrlSync id={id} hydrated={hydrated} />
-        <Shell projectName={projectName} onOpenProjects={() => setSelectorOpen(true)} />
+        <Shell
+          projectName={projectName}
+          onOpenProjects={() => setSelectorOpen(true)}
+          onSwitchProject={() => setSwitcherOpen(true)}
+        />
+        {switcherOpen && (
+          <ProjectSwitcher
+            projects={projects ?? []}
+            activeId={id}
+            onClose={() => setSwitcherOpen(false)}
+            onSelect={(next) => {
+              setSwitcherOpen(false)
+              if (next !== id) navigate(`/projects/${next}`)
+            }}
+            // Registering is a different job; the switcher hands off to the
+            // panel that owns it rather than growing a form inside itself.
+            onRegister={() => {
+              setSwitcherOpen(false)
+              setSelectorOpen(true)
+            }}
+          />
+        )}
         {selectorOpen && (
           <ProjectSelector
             activeId={id}

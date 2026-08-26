@@ -40,10 +40,10 @@ export function destinationFor(activeTabId: string | null, moreOpen: boolean): s
 
 export function OperatorShell({
   projectName,
-  onOpenProjects,
+  onSwitchProject,
 }: {
   projectName: string
-  onOpenProjects: () => void
+  onSwitchProject: () => void
 }) {
   const ui = useUiState()
   const projectId = useProjectId()
@@ -112,8 +112,8 @@ export function OperatorShell({
         ) : (
           <button
             type="button"
-            aria-label="Projects"
-            onClick={onOpenProjects}
+            aria-label="Switch project"
+            onClick={onSwitchProject}
             className="flex h-[var(--ui-rail-btn)] w-[var(--ui-rail-btn)] items-center justify-center text-faint"
           >
             <Boxes className="h-5 w-5" />
