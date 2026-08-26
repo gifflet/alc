@@ -1,0 +1,74 @@
+---
+title: What ALC is
+description: ALC is a control plane for agentic coding — it keeps verification, focus and isolation outside the model, in deterministic code.
+order: 1
+---
+ALC is a control plane for agentic coding. It keeps the good practices — verification, focus, isolation, review — *outside* the model, in plain deterministic code. The coding engine (Claude Code, Gemini) becomes a thin, swappable executor.
+
+The point: best practices stop being discipline you have to remember, and become defaults you can't skip.
+
+## The problem it solves
+
+Everyone doing serious work with a coding agent converges on the same habits. Give it one task at a time. Run the tests afterwards. Don't let it edit the whole repo at once. Read the diff before you keep it.
+
+Those habits live in your head. They survive as long as you remember them, and they die the moment you are tired, in a hurry, or asleep. Worse, they die silently — the agent reports success either way.
+
+Prompting harder does not fix this. A practice enforced by a paragraph in a system prompt is a practice the model may skip. A practice enforced by code that refuses to report success is one it cannot.
+
+So ALC moves them out of the prompt and into a program:
+
+- You declare the checks. ALC runs them, and re-invokes the engine with the failure output until they pass or the repair budget runs out. Nothing is reported done until it actually is.
+- You declare one unit of work. ALC gives the engine exactly that, in its own invocation, with a curated context.
+- You declare where the work happens. ALC can run it in a throwaway git worktree so your working tree stays clean.
+
+## The two planes
+
+Every unit of work splits in two.
+
+The **control plane** is deterministic code: it loads your configuration, refuses to run a misconfigured one, composes the directive, runs the checks, records the result. The **execution plane** is one reasoning-and-editing turn by a model.
+
+The rule that makes this work: push every practice that does not *require* the model into the control plane. The more a practice lives outside the model, the more portable and guaranteed it becomes — and the less it matters which engine you point at it.
+
+See [The control plane](/docs/concepts/control-plane) for the full model.
+
+## What it looks like
+
+ALC lives in a ring around your codebase — the **Operator Layer**, a `.alc/` directory kept separate from your app code:
+
+```bash
+alc init --setup                                # scaffold .alc/, detect your stack
+alc onboard                                     # adopt the checks your project already declares
+alc lint                                        # validate the Operator Layer
+
+alc run chore "remove the unused export endpoint"
+alc flow ship "add a changelog entry" --isolate
+alc conduct "the README is stale, refresh the docs" --parallel
+```
+
+The vocabulary underneath those commands is small:
+
+| Term | What it is |
+|---|---|
+| **Blueprint** | A template for a class of work (chore, bug, feature), carrying its own checks and report schema |
+| **Flow** | Blueprints composed into a pipeline; each stage is its own mandate |
+| **Conductor** | Turns a high-level goal into the right Flows, then runs or queues them |
+| **Specialist** | An agent with a Knowledge File for one area, improving as it works |
+| **Assurance Loop** | `Act → Verify → Repair`. Your checks are the law |
+| **Scorecard** | Span / Passes / Streak / Touch, per run |
+
+## The human is on the loop, not in it
+
+ALC guarantees that a change compiles and that your checks pass. It does not guarantee the change is *right*. Reading the diff and deciding to keep it is the one step ALC deliberately leaves to you.
+
+That gap is not an oversight. It is the design: automate the part a program can judge, and hand you the part it cannot.
+
+## Where to go next
+
+- [Installation](/docs/getting-started/installation) — get the `alc` command on your PATH.
+- [First run](/docs/getting-started/first-run) — from zero to a verified change.
+- [Make the checks real](/docs/getting-started/checks) — the step that turns ALC from a demo into a guarantee.
+- [The Assurance Loop](/docs/concepts/assurance-loop) — how checks become law.
+
+## Status
+
+Experimental, but real. Every feature is covered by a hermetic test suite and validated live against Claude Code and Gemini. Python 3.12, no heavy dependencies.

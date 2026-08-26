@@ -1,0 +1,99 @@
+---
+title: Running and access
+description: Register projects, bind a host and port, and use a bearer token when the UI is reachable from anywhere but localhost.
+order: 2
+---
+```bash
+alc ui                                  # http://127.0.0.1:8642
+alc ui --port 9000
+alc ui --no-ui                          # API and WebSocket only
+alc ui --ui-dist ./ui/dist              # serve a specific frontend build
+```
+
+| Flag | Default |
+|---|---|
+| `--host H` | `127.0.0.1` |
+| `--port P` | `8642` |
+| `--ui-dist PATH` | falls back to `ALC_UI_DIST`, then the bundled build, then API-only |
+| `--no-ui` | off |
+| `--token T` | none (env: `ALC_UI_TOKEN`) |
+
+The server needs the optional `ui` extra. Without it, `alc ui` prints an install hint and exits 1.
+
+## The project registry
+
+The UI is multi-project. The registry is a small JSON file at `~/.alc/ui/projects.json`, outside any project.
+
+**Adding a project means typing its absolute path.** There is no directory picker — the server validates that the path exists and contains a `.alc/manifest.yaml`, and rejects it otherwise. Registering a path that is already registered is idempotent.
+
+A project's id is derived from its directory name and a hash of its resolved path, so it is stable across restarts: the same directory always gets the same URL.
+
+Removing a project **deregisters it only**. It never touches files on disk.
+
+If a registered project's `.alc/manifest.yaml` later disappears, the project shows as unavailable rather than vanishing — with the reason distinguished between "not registered" and "gone from disk".
+
+Writes to the registry are atomic. A registry file that exists but is corrupt is left untouched and surfaces as an error, deliberately, rather than being silently overwritten.
+
+## Authentication
+
+By default there is none. `alc ui` binds loopback and answers unauthenticated requests, which is correct for a tool you run on your own machine.
+
+The moment it is reachable from anywhere else, set a token:
+
+```bash
+alc ui --host 0.0.0.0 --token "$(openssl rand -hex 32)"
+```
+
+Or via the environment, which `--token` overrides:
+
+```bash
+export ALC_UI_TOKEN=…
+alc ui --host 0.0.0.0
+```
+
+With a token set, every `/api` request needs an `Authorization: Bearer <token>` header, and the WebSocket handshake needs the token in its first frame.
+
+Binding a non-loopback host **without** a token prints a warning to stderr. It is never refused — but read the warning: anyone who can reach that port can read every registered project and dispatch runs.
+
+### Handing the token to a browser
+
+`alc ui` prints the URL to use once:
+
+```text
+Hand the token to a browser once: http://HOST:PORT/?t=<token>
+```
+
+Open that once. The page reads the `t` parameter before the first render, stores the token, and rewrites the address bar to drop the parameter — so the secret does not end up in browser history, a bookmark, or a URL you paste to someone.
+
+The token is kept in `localStorage`. If `localStorage` is unavailable — private browsing, a blocked origin — it degrades to memory for that session only.
+
+If the token is ever rejected, the client drops it and replaces the whole app with a prompt for a new one, rather than showing empty views. That distinction matters: a UI that renders an idle-looking project when it is really unauthenticated is lying to you.
+
+There is no logout button, no session cookie, and no expiry. Rotate by restarting with a new token.
+
+**The WebSocket token goes in the first frame, never in the URL query string.** A query-string token would land in every proxy and server log along the way.
+
+## Reaching it remotely
+
+Two options, in order of preference.
+
+**Tunnel it.** Leave the server on `127.0.0.1` and forward the port:
+
+```bash
+ssh -N -L 8642:127.0.0.1:8642 you@your-box
+```
+
+Nothing is exposed, and no token is needed.
+
+**Bind it, with a token.** If you must bind a routable interface, always pass `--token`, and put it behind TLS — the token is a bearer credential and travels in a header.
+
+## Live updates
+
+One WebSocket at `/ws` carries everything: run events, queue changes, new reports, loop state, config changes, signal intake, working-tree status, and the output of any exec the UI spawned. The client subscribes per project and reconnects on its own with capped backoff.
+
+Every `/api` response is served with `Cache-Control: no-store`, so nothing you read is a stale copy from a proxy.
+
+## Next
+
+- [The control room](/docs/web-ui/overview) — what each view is for.
+- [CLI commands](/docs/reference/cli) — everything the UI dispatches, and the parts it does not.

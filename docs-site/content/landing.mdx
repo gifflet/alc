@@ -1,0 +1,216 @@
+---
+title: ALC — Agentic Layer Compiler & Runtime
+description: A control plane for agentic coding. Declare how your agents should work once, run it on any coding engine, with the guardrails built in.
+---
+
+## Section: Hero
+
+### Eyebrow
+
+Agentic Layer Compiler & Runtime
+
+### Headline
+
+Declare how your agents should work once.
+
+### Subheadline
+
+Run it on any coding engine, with the guardrails built in. ALC keeps verification, focus and isolation outside the model, in plain deterministic code — so best practices stop being discipline you have to remember, and become defaults you can't skip.
+
+### Primary CTA
+
+Label: Get started
+Link: /docs/getting-started/first-run
+
+### Secondary CTA
+
+Label: Read the concepts
+Link: /docs/concepts/control-plane
+
+### Hero code block
+
+```bash
+uv tool install alc-runtime
+
+alc init --setup     # scaffold .alc/, detect your stack
+alc onboard          # adopt the checks your project already declares
+alc run chore "remove the unused export endpoint"
+```
+
+### Hero caption
+
+Python 3.12. Two runtime dependencies. Works with Claude Code, Gemini, or a free Mock engine that exercises everything without a model call.
+
+---
+
+## Section: Problem
+
+### Section heading
+
+Everyone converges on the same habits. Then forgets them.
+
+### Body
+
+Give the agent one task at a time. Run the tests afterwards. Don't let it edit the whole repo at once. Read the diff before you keep it.
+
+Those habits live in your head. They survive as long as you remember them, and they die the moment you're tired, in a hurry, or asleep. Worse, they die silently — the agent reports success either way.
+
+Prompting harder doesn't fix this. A practice enforced by a paragraph in a system prompt is a practice the model may skip. A practice enforced by code that refuses to report success is one it cannot.
+
+### Pull quote
+
+Nothing is reported done until it actually is.
+
+---
+
+## Section: How it works
+
+### Section heading
+
+Two planes, one door between them
+
+### Body
+
+ALC splits every unit of work in two. The **control plane** is deterministic code: it loads your configuration, refuses to run a misconfigured one, composes the directive, runs your checks, records the result. The **execution plane** is one reasoning-and-editing turn by a model.
+
+The rule that makes it work: push every practice that does not *require* the model into the control plane. The more a practice lives outside the model, the more portable and guaranteed it becomes — and the less it matters which engine you point at it.
+
+### Step 1
+
+Title: Declare
+Body: A Blueprint is a template for a class of work — chore, bug, feature — carrying its own checks, compute tier and report schema. It lives in `.alc/`, kept separate from your app code.
+
+### Step 2
+
+Title: Gate
+Body: Before anything runs, the Policy Gate lints the Operator Layer and refuses a configuration that can't deliver on what it claims. A Blueprint with no checks is not a guarantee, so it isn't allowed to pretend to be one.
+
+### Step 3
+
+Title: Act, Verify, Repair
+Body: The engine takes one turn. The control plane runs your checks. On failure it re-invokes the engine with the failure output, up to a bounded budget. Checks are law — and the law itself is guarded, so a run can't pass by quietly weakening a lint rule.
+
+### Step 4
+
+Title: Review
+Body: ALC guarantees the change compiles and your checks pass. It doesn't guarantee the change is right. Reading the diff is the one step it deliberately leaves to you.
+
+### Diagram caption
+
+Act → Verify → Repair, until the checks pass or the repair budget runs out.
+
+---
+
+## Section: Features
+
+### Section heading
+
+What lives outside the model
+
+### Feature 1
+
+Title: Guarantees outside the model
+Body: The Assurance Loop runs your checks and repairs until they pass. A failed run is never committed and never auto-merged.
+
+### Feature 2
+
+Title: Engine-agnostic
+Body: Claude Code or Gemini, switched with a flag. The control plane doesn't change — only the quality of one step does.
+
+### Feature 3
+
+Title: One agent, one purpose
+Body: Every task is a focused Single Mandate in its own invocation. The engine never has to stay focused on its own, because it's never handed more than one thing.
+
+### Feature 4
+
+Title: Composable
+Body: Blueprints compose into Flows. A Conductor turns a goal into the right Flows, then runs or queues them.
+
+### Feature 5
+
+Title: Unattended
+Body: Drop tasks in a queue and let cron's `alc tick` drain them, isolated, while you're away. Land what survived the checks in the morning.
+
+### Feature 6
+
+Title: Isolated
+Body: `--isolate` runs the work in a throwaway git-worktree branch, so your working tree stays clean and nothing merges without you.
+
+### Feature 7
+
+Title: Specialists
+Body: Agents tied to one area, keeping a Knowledge File and getting better at it over time.
+
+### Feature 8
+
+Title: Measured
+Body: Span, Passes, Streak and Touch, per run. The north star is hands-off delivery: Touch to zero.
+
+---
+
+## Section: Ladder
+
+### Section heading
+
+You don't start at the top. You climb.
+
+### Body
+
+ALC grows with you. Each rung is useful on its own, and each one earns the next.
+
+### Rung 1
+
+Title: Attended
+Body: You run it, watch the loop, read the diff. This is where the Operator Layer gets real — checks that mean something, Blueprints that describe your actual practice.
+
+### Rung 2
+
+Title: Detached
+Body: Flows run off a queue, triggered by cron or a webhook, isolated in worktrees. Touch drops, but you still decide what lands.
+
+### Rung 3
+
+Title: Conducted
+Body: You give a goal, not a task. A Conductor plans which Flows and Specialists it needs and drives them for you.
+
+### Closing line
+
+The human is on the loop, not in it. `Touch → 0` means zero interventions — not zero judgement.
+
+---
+
+## Section: Get started
+
+### Section heading
+
+Three commands to a validated Operator Layer
+
+### Body
+
+The PyPI package is `alc-runtime`; it puts the `alc` command on your PATH. A freshly scaffolded project defaults to the free Mock engine, so you can prove the whole control plane works before spending anything on it.
+
+### Code block
+
+```bash
+uv tool install alc-runtime          # or: "alc-runtime[ui]" for the web UI
+
+cd your-project
+alc init --setup                     # scaffold .alc/ and install the editor skill
+alc onboard                          # adopt the checks you already declare
+alc lint                             # validate the Operator Layer
+```
+
+### Primary CTA
+
+Label: First run guide
+Link: /docs/getting-started/first-run
+
+### Secondary CTA
+
+Label: Browse the CLI
+Link: /docs/reference/cli
+
+### Footer note
+
+Experimental, but real: every feature is covered by a hermetic test suite and validated live against Claude Code and Gemini. MIT licensed.

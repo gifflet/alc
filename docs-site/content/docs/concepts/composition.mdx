@@ -1,0 +1,136 @@
+---
+title: Composition
+description: Blueprint, Flow, Conductor, Specialist — the four units of work and how each one composes the ones below it.
+order: 4
+---
+ALC has four units of work. Each is built out of the one below it, and each is still a [Single Mandate](/docs/concepts/single-mandate) at the point the engine is actually called.
+
+```text
+  Conductor    a goal          → picks the Flows
+      │
+  Flow         a pipeline      → stages, each its own mandate
+      │
+  Blueprint    a class of work → one mandate, with its own checks
+      │
+  Engine turn  one act
+```
+
+A **Specialist** sits alongside these: an agent tied to one area, which runs a Blueprint for its act and keeps notes between runs.
+
+## Blueprint
+
+A parameterized template for a *class* of problem — chore, bug, feature, patch. You describe the task; the Blueprint supplies the practice.
+
+A Blueprint is a markdown file with YAML front-matter. The front-matter declares the contract; the body is the workflow the engine is given.
+
+```yaml
+---
+name: chore
+purpose: Apply a low-risk, well-scoped maintenance change.
+compute_tier: standard
+check_set: project
+report:
+  format: json
+  schema:
+    status: string
+    summary: string
+---
+
+## Chore Workflow
+
+You are executing a Single-Mandate chore: one change, one purpose, nothing more.
+
+1. **Understand** the task stated in the header above…
+```
+
+The front-matter carries the compute tier, the checks (inline or by named set), the report schema, and the guards (`protect:`, `max_repairs`, `mode: spike`). Every field is in the [Blueprint reference](/docs/reference/blueprint).
+
+`alc init` scaffolds `chore`, `bug`, `feature` and `plan`. Add your own:
+
+```bash
+alc new blueprint migration
+alc new blueprint hotfix --from bug     # clone an existing one
+```
+
+## Flow
+
+A deterministic pipeline that composes multiple invocations. Each stage is a separate Single Mandate; the output of one stage becomes upstream context for the next.
+
+```yaml
+# .alc/flows/ship.yaml
+name: ship
+description: Plan a change, then implement it — each stage in its own focused mandate.
+stages:
+  - name: plan
+    blueprint: plan
+  - name: build
+    blueprint: chore
+```
+
+A stage runs either a Blueprint or a Specialist, never both. Two stage kinds are worth knowing:
+
+- **`verify_only: true`** — the stage runs the named Blueprint's checks as a pure gate. No engine turn at all. This is how you end a pipeline with "and it still has to build".
+- **`derive_checks`** — on a `verify_only` stage, materializes the checks from an *earlier* stage's report rather than from a Blueprint. A check list only knowable after that stage ran.
+
+A Flow can also declare a terminal commit, made on success only:
+
+```yaml
+commit:
+  enabled: true
+  message: "chore(cycle): {name}"
+```
+
+That commit is a deterministic control-plane commit, not the engine's. `.alc/` is always excluded from it; a Flow's own `exclude:` list only adds to that.
+
+Details and the full schema: [Flows](/docs/guides/flows).
+
+## Conductor
+
+A single-interface agent: you talk to one agent instead of a fleet. The Conductor turns a high-level goal into a plan of Flows and Specialists, then either runs them or queues them.
+
+```bash
+alc conduct "the README is stale, refresh the docs"
+alc conduct "ship the refunds endpoint" --parallel
+alc conduct "clean up the dead admin screens" --enqueue
+```
+
+The plan is structured, not prose. Each item names a `kind` (flow or specialist), a `name` validated against your catalog, and a task. Items can declare `depends_on` and `touches`; the control plane derives ordering from overlapping `touches` itself, so interdependency safety does not rely on the planner getting `depends_on` right.
+
+The planning turn is a mandate like any other. `plan_tier` in the Manifest picks its compute tier; `plan_retries` caps the corrective retries when the plan comes back malformed.
+
+Details: [Conducting a goal](/docs/guides/conducting).
+
+## Specialist
+
+An agent tied to one area of the codebase, which keeps a **Knowledge File** — a working model of that area — and self-tunes it through a `Recall → Act → Learn` cycle.
+
+```yaml
+# .alc/specialists/db.yaml
+name: db
+area: "the database access layer"
+blueprint: chore
+knowledge_path: .alc/specialists/db.knowledge.md
+```
+
+```bash
+alc specialist db "add an index for the orders lookup"
+```
+
+Recall reads the Knowledge File into the directive. Act runs the named Blueprint as a normal Single Mandate, with the full Assurance Loop. Learn updates the Knowledge File afterwards.
+
+The Knowledge File is a working model, **not** a source of truth. The code is. A Specialist that has drifted is corrected by the checks like anything else, and hiring an Archetype Pack never overwrites a Knowledge File — only scaffolded pack content.
+
+## Where each one fits
+
+| You have | Reach for |
+|---|---|
+| One well-defined change | `alc run <blueprint> "…"` |
+| A change that needs planning before building | `alc flow ship "…"` |
+| A goal, and no idea which units it decomposes into | `alc conduct "…"` |
+| Repeated work in one area, worth accumulating notes on | `alc specialist <name> "…"` |
+| An idea you might throw away | `alc spike "…"` |
+
+## Next
+
+- [Archetype Packs](/docs/concepts/archetypes) — ready-made sets of these units, per phase of a product's life.
+- [Running a unit of work](/docs/guides/running-units) — the commands and their flags.

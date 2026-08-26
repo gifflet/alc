@@ -1,0 +1,249 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/ibm-plex-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+/*
+ * The docs site borrows the control room's palette verbatim from ui/src/index.css.
+ * That is deliberate: someone who reads the docs and then opens `alc ui` should
+ * recognise the same instrument, not two products that share a name. The tokens
+ * that carry text are the contrast-corrected ones (`faint` at 4.6:1, `accent` at
+ * AA for links), so the same audit that governs the app governs the site.
+ *
+ * Dark is the default because that is what the app ships as; light follows the
+ * reader's system preference rather than a toggle, since a docs page has no
+ * state worth persisting a preference for.
+ */
+@theme {
+  --color-base: #1b1d1f;
+  --color-panel: #212427;
+  --color-raised: #26292c;
+  --color-hover: #2e3236;
+  --color-border: #35393d;
+
+  --color-primary: #d5d8dc;
+  --color-muted: #8b9096;
+  --color-faint: #7d848b;
+
+  --color-accent: #5794e6;
+  --color-live: #5cc975;
+  --color-running: #d9a343;
+  --color-error: #ee6f66;
+  --color-warn: #c9a23f;
+
+  --font-sans: 'IBM Plex Sans Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+:root {
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.28), 0 1px 3px rgb(0 0 0 / 0.22);
+  --elev-2: 0 4px 12px rgb(0 0 0 / 0.34), 0 1px 3px rgb(0 0 0 / 0.24);
+  --content-max: 46rem;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-base: #ffffff;
+    --color-panel: #f1f2f4;
+    --color-raised: #f8f9fa;
+    --color-hover: #e6e8eb;
+    --color-border: #d2d6db;
+
+    --color-primary: #1e2124;
+    --color-muted: #5a6066;
+    --color-faint: #7d848b;
+
+    --color-accent: #1f66c9;
+    --color-live: #1f7a3d;
+    --color-running: #8a5d0a;
+    --color-error: #c4342a;
+    --color-warn: #7d6410;
+
+    --elev-1: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.10);
+    --elev-2: 0 4px 12px rgb(16 24 40 / 0.08), 0 1px 3px rgb(16 24 40 / 0.10);
+    color-scheme: light;
+  }
+}
+
+html { scroll-behavior: smooth; scroll-padding-top: 5rem; }
+body { background: var(--color-base); color: var(--color-primary); }
+
+/* Prose — styled here rather than with a plugin, so the rules stay readable and
+   every value traces back to a token above. */
+.prose { max-width: var(--content-max); line-height: 1.7; }
+.prose > * + * { margin-top: 1.1em; }
+.prose h2 {
+  margin-top: 2.5em; font-size: 1.4rem; font-weight: 600; letter-spacing: -0.01em;
+  scroll-margin-top: 5rem;
+}
+.prose h3 {
+  margin-top: 2em; font-size: 1.1rem; font-weight: 600; scroll-margin-top: 5rem;
+}
+.prose p, .prose li { color: var(--color-muted); }
+.prose strong { color: var(--color-primary); font-weight: 600; }
+.prose a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 3px; }
+.prose ul, .prose ol { padding-left: 1.4em; }
+.prose ul { list-style: disc; }
+.prose ol { list-style: decimal; }
+.prose li + li { margin-top: 0.4em; }
+.prose blockquote {
+  border-left: 2px solid var(--color-accent);
+  padding-left: 1em; color: var(--color-faint);
+}
+.prose table { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
+.prose th, .prose td { text-align: left; padding: 0.55em 0.8em; border-bottom: 1px solid var(--color-border); }
+.prose th { color: var(--color-primary); font-weight: 600; white-space: nowrap; }
+.prose td { color: var(--color-muted); }
+
+/* Inline code — distinguishable from prose without shouting. */
+.prose :not(pre) > code {
+  font-family: var(--font-mono); font-size: 0.87em;
+  background: var(--color-panel); border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs); padding: 0.12em 0.35em; color: var(--color-primary);
+}
+
+/* Shiki writes both themes as CSS variables; this switches between them without
+   a second render pass. */
+.prose pre {
+  background: var(--color-panel) !important;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.95rem 1.1rem; overflow-x: auto;
+  font-size: 0.85rem; line-height: 1.6;
+}
+.prose pre code { font-family: var(--font-mono); display: grid; }
+@media (prefers-color-scheme: light) {
+  .prose pre span { color: var(--shiki-light) !important; }
+}
+@media (prefers-color-scheme: dark) {
+  .prose pre span { color: var(--shiki-dark) !important; }
+}
+
+/* Anchor links on headings: present for anyone who wants to link a section,
+   invisible until the heading is hovered so they never compete with the text. */
+.prose .heading-anchor {
+  opacity: 0; margin-left: 0.2em; padding: 0 0.35em; color: var(--color-faint);
+  text-decoration: none; font-weight: 400;
+  /* inline-block so the padding produces a real box: an inline anchor around a
+     single "#" is a ~7px target, which is below the 24px floor and hard to hit
+     even with a mouse. */
+  display: inline-block; min-width: 24px; text-align: center;
+}
+.prose h2:hover .heading-anchor, .prose h3:hover .heading-anchor,
+.prose .heading-anchor:focus-visible { opacity: 1; }
+
+:where(a, button):focus-visible {
+  outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-xs);
+}
+
+/*
+ * Motion — CSS only, no animation library.
+ *
+ * Two rules govern it. Content must be readable before any animation runs, so
+ * every keyframe ends at the resting state and nothing starts invisible without
+ * also being scheduled to appear. And `prefers-reduced-motion` disables all of
+ * it: for a reader who asked the OS for less movement, a landing page that
+ * slides is not a nicer landing page.
+ */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out both;
+}
+
+/* Reveal on scroll, driven by the browser rather than an IntersectionObserver.
+   Unsupported browsers simply get the content with no animation, which is the
+   correct fallback. */
+@supports (animation-timeline: view()) {
+  .reveal {
+    animation: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 22%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-fade-in, .reveal {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Hero ground — darker than the page, fading into it.
+ *
+ * The page sits on #1b1d1f, which the app uses because a tool you stare at all
+ * day should not be pure black. A landing page is looked at for thirty seconds,
+ * so the hero goes darker to make the headline and the demo carry more weight,
+ * then dissolves into the working colour before the first section.
+ */
+.hero-ground {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(87, 148, 230, 0.07), transparent 62%),
+    linear-gradient(180deg, #0d0e0f 0%, #131516 52%, var(--color-base) 100%);
+}
+
+@media (prefers-color-scheme: light) {
+  .hero-ground {
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(31, 102, 201, 0.06), transparent 62%),
+      linear-gradient(180deg, #f6f7f9 0%, #fbfbfc 55%, var(--color-base) 100%);
+  }
+}
+
+/* A faint grid, the way a blueprint has one. Masked so it fades before it can
+   compete with the headline sitting on top of it. */
+.hero-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(90% 60% at 50% 8%, #000 20%, transparent 78%);
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: light) {
+  .hero-grid::before {
+    background-image:
+      linear-gradient(to right, rgba(0, 0, 0, 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+  }
+}
+
+/* Print never scrolls, so a scroll-linked reveal would hand the printer a page
+   of empty sections. Same reasoning for anything that renders without a
+   viewport walk — the content must not depend on the animation having run. */
+@media print {
+  .reveal, .animate-fade-up, .animate-fade-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .hero-ground, .hero-grid::before { background: none !important; }
+}

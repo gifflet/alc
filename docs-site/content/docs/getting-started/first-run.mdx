@@ -1,0 +1,90 @@
+---
+title: First run
+description: Ten minutes from an empty project to an agent shipping a change your own checks verified — with the rough edges called out.
+order: 3
+---
+Five steps: **init → onboard → prime → run → review**. The rough edges are flagged as they come up, so you don't trip on them.
+
+This assumes `alc` is already on your PATH — see [Installation](/docs/getting-started/installation) if not.
+
+## 1. Scaffold the Operator Layer
+
+```bash
+cd your-project
+alc init --setup
+```
+
+This creates `.alc/` — the **Operator Layer**, your agentic configuration. It is deliberately kept apart from your app code *and* from your editor's own config (`.claude/`, and so on). The Operator Layer acts *on* the codebase, not inside it.
+
+`--setup` also installs the user-level editor skill. Drop it if you only want the directory.
+
+Inside you get a `manifest.yaml`, a few starter Blueprints (`chore`, `bug`, `feature`, `plan`), a `ship` Flow, and check sets for whatever stacks were detected in your project root.
+
+## 2. Adopt the checks you already have
+
+```bash
+alc onboard
+```
+
+`alc init` writes generic per-stack checks. But most projects already declare their own — a `make test` target, an `npm run typecheck` script, a lint command. `alc onboard` harvests those from your `Makefile` and `package.json`, proposes them as a reusable `project` check set, and — once you approve — wires them into your Blueprints.
+
+It proposes first and writes nothing without approval. `alc onboard --yes` skips the prompt; `alc onboard --dry-run` prints the proposal and exits.
+
+Then validate what you have:
+
+```bash
+alc lint
+```
+
+`alc lint` validates **the Operator Layer**, not your source code and not your editor's agents. Right after `init` it is a trivial pass. It earns its keep once you start editing Blueprints. See [The Policy Gate](/docs/reference/policy-gate) for the rules it enforces.
+
+> Two rules that save real pain: checks are judged by **exit code**, and a check that already fails on a clean checkout makes *every* run fail. Run each check yourself once before trusting it. [Make the checks real](/docs/getting-started/checks) covers this properly.
+
+## 3. Prime the context (optional, worth it)
+
+Don't make the agent rediscover your codebase on every run. Write a small curated pointer — where the relevant code lives, the convention to follow — and pass it by name:
+
+```bash
+alc primer new payments               # scaffolds .alc/primers/payments.md
+```
+
+Small, high-value context beats a large always-on memory file. This is the Trim half of the [Context Budget](/docs/concepts/single-mandate#context-budget).
+
+## 4. Run it
+
+```bash
+alc run chore "remove the unused export endpoint" --primer payments
+```
+
+You get live progress — each file read and edited, the model in use, the running cost — then the Assurance Loop running your checks.
+
+Two heads-ups:
+
+- **The model comes from the Blueprint's compute tier.** The scaffolded `feature` Blueprint uses the `deep` tier, which maps to the most expensive model. Pass `--tier standard` to override it for one invocation without editing the Blueprint.
+- **Without `--isolate`, edits land in your working tree.** If you cancel mid-run, partial changes stay — including new, *untracked* files. Check `git status`, not just `git diff --stat`; the latter hides untracked files. The run report lists what the agent changed.
+
+To keep your working tree clean, add `--isolate` and the whole run happens on a throwaway branch in a git worktree:
+
+```bash
+alc run chore "remove the unused export endpoint" --isolate
+```
+
+See [Isolation and landing](/docs/guides/isolation) for what that branch is and how to integrate it.
+
+## 5. Review — the human gate
+
+ALC guarantees the change compiles and your checks pass. It does not guarantee the change is *right*.
+
+Read the diff, judge it, keep or discard. That is the one step ALC deliberately leaves to you.
+
+## Where this goes
+
+That is the attended loop, with you present for every run. Thicken the Operator Layer over time — more Blueprints, Flows composed out of them, Specialists that keep notes on an area — and the agent takes on more of the work with the guardrails always on.
+
+When you are ready to stop being present for every run, the queue takes over: see [Unattended work](/docs/guides/unattended).
+
+## Known rough edges
+
+Honest, and still being smoothed:
+
+- The `claude-code` engine runs inside your project, so it inherits your `.claude/` hooks and settings by default. That can add harmless noise to the output. Set `clean_config: true` on the engine entry in `manifest.yaml` to restrict the CLI to user-level settings and skip the project's `.claude/` configuration.

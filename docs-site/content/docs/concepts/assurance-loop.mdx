@@ -1,0 +1,117 @@
+---
+title: The Assurance Loop
+description: Act, Verify, Repair — the cycle that refuses to report a change done until your own checks pass.
+order: 3
+---
+The Assurance Loop is the guarantee ALC exists to provide.
+
+```text
+   Act  ───►  Verify  ───►  pass  ───►  done
+    ▲            │
+    │            │ fail
+    └── Repair ◄─┘   (bounded budget)
+```
+
+1. **Act** — the engine performs one turn.
+2. **Verify** — the control plane runs the declared checks: lint, tests, build, e2e.
+3. **Repair** — on failure, the control plane re-invokes the engine with the failure output, up to a bounded number of repairs.
+
+**Checks are law.** Nothing is reported as done until they pass or the repair budget is exhausted.
+
+None of this is asked of the model. The model is not told "please run the tests" and trusted to have done it. The control plane runs them, reads the exit codes, and decides.
+
+## The repair budget
+
+The loop makes at most `1 + max_repairs` engine turns. The default budget is 3, so four turns total. A Blueprint can override it:
+
+```yaml
+max_repairs: 1     # one act, one repair
+max_repairs: 0     # one shot, no repair
+```
+
+A repair directive is the original directive plus the failing checks' output. `check_output_chars` in the Manifest caps how much of that output is captured, defaulting to 4096 characters — enough to be actionable, bounded enough not to blow the context.
+
+When the budget runs out and checks still fail, the run is reported as failed. It is not committed, and it is not auto-merged.
+
+## What counts as a check
+
+Any command judged by its exit code — see [Make the checks real](/docs/getting-started/checks) for the three forms (`command`, `shell`, `metric`) and the traps.
+
+The one worth calling out here is the **metric** check, because it extends the law to numbers. A metric check prints a single number; the control plane compares it against the last accepted measurement in the project's ledger and decides pass or fail itself, using `direction` and `tolerance_pct`. The engine never judges the number. A regression fails like any other check, and repairs like any other failure.
+
+## Guarding the law
+
+An engine that cannot make the code pass could try to make the law pass instead. ALC closes both versions of that door, and neither is something you have to remember to configure.
+
+### `check-config-integrity`
+
+After every Act, the control plane crosses the paths changed so far against a curated set of check-defining files: linter, formatter and type-checker configs; `make`, `just` and `Taskfile` recipes; `pre-commit`, `tox`, `pytest` and `mypy` config. It is content-aware where it needs to be — a `package.json` `scripts` map and a `pyproject.toml` `[tool]` table count, but a plain dependency bump stays clean — and it also covers any script a check's own command names.
+
+Any hit becomes a synthetic failed check that feeds the same repair addendum a real failure would: revert the config, fix the code.
+
+This makes the law **tamper-evident** — the run is always recorded as having touched check config, in `RunReport.check_config_edits` plus a warning — and **tamper-resistant** — a run that silently weakens a check fails, and a failed run never auto-lands.
+
+A maintenance Blueprint whose whole job *is* to edit that config sets `allow_check_config: true`. The edit is then permitted, the evidence still fires, and `alc lint` emits a warning for as long as the waiver is set, so the standing exception stays in view.
+
+### `protect:`
+
+A Blueprint's `protect:` is the half of "don't touch what you're not supposed to" that does not depend on the model remembering an instruction:
+
+```yaml
+protect: ["tests/**", "test/**"]
+```
+
+After every Act — inside the loop, per attempt, not once at the end — the control plane diffs the paths changed so far against those globs. Any hit becomes a synthetic failed check that feeds the same repair addendum: you edited a protected path, revert it. No new mechanism; the existing cycle does the work.
+
+The Sweeper pack's `refactor` Blueprint uses exactly this, turning "a refactor must not touch tests" from workflow prose an agent could ignore into something the control plane enforces.
+
+Both guards degrade to a silent no-op outside a git repository, or when git itself is unavailable. A guard that cannot compute its answer must never be the reason a run fails.
+
+## Flaky checks and quarantine
+
+A check can declare `flaky: N` to be re-run up to N times after a failing attempt, before the control plane spends a repair turn on it. Seconds against a model call.
+
+The Manifest's `quarantined_checks` names checks that still run every attempt but can never fail a run. The failure is recorded — visible in the run log and the report — and `alc lint` warns for as long as the name is listed, so a quarantine is never invisible debt.
+
+## Spike — the fenced exception
+
+`mode: spike` on a Blueprint is the **one** relaxation of the checks gate ALC allows. It is a single named field, grepable and auditable by itself — never a side effect of a descriptive label.
+
+In this mode the Policy Gate's "blueprint has checks" rule drops from error to warn. Every other guarantee tightens rather than loosens:
+
+- the runner **forces isolation**;
+- `max_repairs` is set to `0`;
+- both commit and auto-merge are **forbidden**;
+- the run is marked `spike: True` and excluded from the Scorecard streak, because a one-shot spike proves nothing about repeatable delivery.
+
+Declaring `mode: spike` together with an enabled commit spec is itself a Policy Gate **error**. The exception can never become a delivery path.
+
+```bash
+alc spike "try a websocket transport for the live view"
+```
+
+That is sugar over `alc run` against the Prototyper pack's `spike` Blueprint — no blueprint name to remember, and no isolation or commit flags to opt into.
+
+## Inconclusive: neither pass nor fail
+
+Some gates legitimately have nothing to prove. When a `verify_only` stage's derived checks come back empty because the upstream stage succeeded and honestly reported an empty list, the result is recorded as **inconclusive** rather than a vacuous green or a false red.
+
+An inconclusive flow is neither committed nor reverted — its changes stay in the tree for you to look at. The invariant is that `inconclusive` always implies `success: False`, so nothing downstream mistakes it for a pass.
+
+The same applies to a `require_real_checks` gate in a project whose only resolvable check is the `["true"]` smoke placeholder: the removal is reported as honestly unverified. The fix is the one the docs keep pointing at — give the project a real `check_set`.
+
+## Watching a loop run
+
+```bash
+alc runs list                 # recent runs, newest first
+alc runs show <stem>          # every parsed event for one run
+alc runs tail <stem> -n 40    # the last N events
+```
+
+Each attempt records every check that ran — pass or fail — with its duration and exit code. That data is what `alc checks history` aggregates into pass rates and flake scores.
+
+## Next
+
+- [Make the checks real](/docs/getting-started/checks) — declaring checks that mean something.
+- [The Scorecard](/docs/concepts/scorecard) — what the loop records.
+- [The Policy Gate](/docs/reference/policy-gate) — what gets refused before the loop starts.

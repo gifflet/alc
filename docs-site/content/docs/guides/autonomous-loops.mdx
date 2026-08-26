@@ -1,0 +1,178 @@
+---
+title: Autonomous Loops
+description: A queue that refills itself — replenish, drain, check the stop conditions, repeat — with real usage as the source.
+order: 5
+---
+An Autonomous Loop is one step past the queue. Instead of you filling it, the loop refills it:
+
+```text
+  replenish  ──►  drain  ──►  check stop conditions  ──►  repeat
+```
+
+Each cycle is one fire. State persists between fires, so the loop is safe to drive from cron.
+
+```bash
+alc cycle deliver             # run ONE cycle and exit
+alc cycle deliver --status    # print the state without running anything
+alc cycle deliver --reset     # reset the state, then run one cycle
+```
+
+| `alc cycle` flag | Effect |
+|---|---|
+| `--engine NAME` | Override the engine for this cycle |
+| `--concurrency N` | Override the loop's drain concurrency (0 = use the definition) |
+| `--status` | Print the loop state and exit |
+| `--reset` | Reset the state first |
+| `--json` | With `--status`, print the state as JSON |
+| `--allow-dirty` | Silence the dirty working-tree notice |
+
+For interactive use without cron, `alc loop` is a foreground wrapper that repeats `alc cycle` until the loop stops:
+
+```bash
+alc loop deliver --interval 300      # sleep 300s between cycles (the default)
+alc loop deliver --reset             # restart a stopped loop in one step
+```
+
+For cron, schedule the cycle rather than the wrapper:
+
+```bash
+alc schedule install cycle deliver --every 1h
+```
+
+## Defining one
+
+A Loop is a YAML file in `.alc/loops/`.
+
+```yaml
+name: deliver
+replenish:
+  kind: plan
+  ref: planner
+  task: "Pick the next most valuable item from the roadmap."
+stop:
+  max_cycles: 20
+  on_no_new_work: true
+  budget:
+    unit: usd
+    max: 25.0
+failure:
+  max_consecutive: 5
+drain:
+  concurrency: 2
+archetype: builder
+```
+
+| Field | Meaning |
+|---|---|
+| `replenish` | The planning step at the start of each cycle. Omit it for a drain-only loop |
+| `stop.max_cycles` | **Required.** The hard backstop |
+| `stop.on_no_new_work` | Stop when a cycle produces nothing new (default: true) |
+| `stop.budget` | Cumulative cap: `engine_calls`, `usd` or `tokens` |
+| `failure.max_consecutive` | Stop after N consecutive no-progress cycles (default: 5) |
+| `drain.concurrency` | Queued tasks processed per cycle (default: 1) |
+| `archetype` | Provenance tag stamped onto the demands this loop creates |
+
+`max_cycles` is mandatory on purpose. A loop with no hard backstop is not a loop, it is a runaway.
+
+## The six replenish kinds
+
+| `kind` | `ref` | What it does |
+|---|---|---|
+| `specialist` | specialist name | Run a Specialist (`Recall → Act → Learn`) as the planning step |
+| `conduct` | — | Plan a Conductor goal and enqueue the resulting units |
+| `flow` | flow name | Run a named Flow directly as the planning step |
+| `plan` | specialist name | Run a planner Specialist, then reuse the Conductor's parse and enqueue on the structured plan it returns |
+| `signals` | flow name | Turn every pending Signal into a demand — no planning turn |
+| `regression` | flow name | Turn every rejected metric measurement into one fix demand |
+
+`ref` is required for every kind except `conduct`, which plans freely.
+
+A loop with **no** `replenish` is drain-only: it just keeps draining whatever you or another process put in the queue.
+
+## Signals — real usage as the source
+
+Every demand so far started in your head: a goal, a roadmap, a hand-written YAML. A **Signal** is how real usage gets in instead.
+
+A Signal is a typed JSON file: a `kind` — `error`, `feedback`, `issue` or `review` — plus `source`, `title`, `body` and a timestamp. An error tracker, a user report, an issue, a code review comment: whatever you can turn into that shape.
+
+```bash
+alc signal ingest --kind error --source sentry \
+  --title "TypeError in /api/refunds" --body "$(cat trace.txt)"
+
+alc signal ingest --from-file payload.json     # an already-formed JSON object
+alc signal list --json                          # what is pending consumption
+```
+
+`POST /signal` on `alc serve --webhook` accepts the same payload over HTTP.
+
+There is no per-service connector. One typed intake, any source that can format JSON.
+
+**A signal is data, not a command.** On its own it does nothing. A `signals` replenish reads every pending signal and turns each into a demand through the same write `alc enqueue` uses — so it clears the Policy Gate, isolates, and retries like any other demand. The consumed signal moves to `signals/done/`, mirroring the queue's own archive.
+
+External signal never bypasses the control plane.
+
+```yaml
+replenish:
+  kind: signals
+  ref: ship
+  task: "Address the reported problem. Keep the change minimal."
+```
+
+## Regression — measurement as the source
+
+The other half. Every time a Blueprint's `metric` check runs, the Verifier records a measurement in the project's ledger. That happens as a byproduct of checks that were already running; there is no separate instrumentation step.
+
+A `regression` replenish reads that ledger each cycle for any check whose newest measurement the Verifier itself **rejected** — its own tolerance judgment, not re-derived — and auto-enqueues one fix demand carrying the delta as failure feedback, in the same delimited-feedback shape a failed check's retry already uses.
+
+A per-check cursor in the loop state advances past every record it has seen, so a regression whose fix is already enqueued is never re-detected from the same ledger entry on a later cycle.
+
+**The control plane only detects and proposes. It never rolls back on its own.** The fix demand is verified by the Policy Gate, isolation and checks like any other.
+
+## The closed loop
+
+Chained together, those pieces close a circle:
+
+```text
+  signal ──► demand ──► change ──► measurement ──► regression ──► demand
+```
+
+Every step reuses a primitive that already existed — the queue, the Policy Gate, the Assurance Loop, the metric ledger. Closing the loop added two replenish kinds and one typed intake, never a second execution path.
+
+## Reading the state
+
+```bash
+alc cycle deliver --status --json
+```
+
+| State field | Meaning |
+|---|---|
+| `status` | `pending` → `running` → `stopped`. `stopped` is terminal until `--reset` |
+| `cycle` | Cycles completed |
+| `consecutive_no_progress` | Counts toward `failure.max_consecutive` |
+| `budget_used` | Cumulative usage per unit |
+| `stopped_reason` | Why it stopped |
+
+A loop is `pending` until its first cycle completes. Once a cycle finishes without triggering a stop condition it becomes `running`.
+
+Alongside the state, each cycle appends a line to a per-loop ledger: how many demands were replenished and drained, how many succeeded, failed or came back inconclusive, how many branches merged versus were left, whether the replenish step itself failed, and the budget delta.
+
+A **failed replenish** is tracked separately from "replenish produced no work". A planner turn that errored is a transient hiccup, not a signal that the work is done, so it does not trip the no-new-work stop. The `failure.max_consecutive` backstop bounds repeated failures instead.
+
+## Budgets are best-effort
+
+`stop.budget` caps cumulative usage across cycles, in engine calls, dollars or tokens. It is checked between cycles, from what the engines reported. An engine that reports no usage contributes nothing to the count.
+
+Treat it as a backstop against a loop running all weekend, not as a billing control.
+
+## Retiring a loop
+
+```bash
+alc team retire builder       # archives that member's loop definitions
+```
+
+Retiring archives into `loops/retired/`. It never deletes.
+
+## Next
+
+- [Isolation and landing](/docs/guides/isolation) — the branches a loop's drain produces.
+- [The Scorecard](/docs/concepts/scorecard) — reading whether the loop is doing useful work.

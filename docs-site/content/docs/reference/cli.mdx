@@ -1,0 +1,342 @@
+---
+title: CLI commands
+description: Every alc subcommand, its arguments and its flags — grouped by what you are trying to do.
+order: 1
+---
+`alc --version` prints the version. Every other flag belongs to a subcommand.
+
+## By intent
+
+The fast path when you already know what you want.
+
+| Intent | Reach for |
+|---|---|
+| **Discover** this project | `alc status` · `alc lint` · `alc team status` · `alc audit` |
+| **Run** one verified unit | `alc run` · `alc spike` · `alc specialist` · `alc flow` |
+| **From a goal**, let ALC plan | `alc conduct "<goal>"` |
+| **Explore** alternatives | `alc explore` → `alc compare --diff` → `alc adopt` |
+| **Run unattended** | `alc enqueue` → `alc tick` · `alc cycle` / `alc loop` |
+| **Integrate** the result | `alc land` · `alc discard` |
+| **Inspect** what happened | `alc runs` · `alc metrics` · `alc artifacts` · `alc checks history` |
+
+## Setup
+
+### `alc init`
+
+Scaffold a default `.alc/` Operator Layer into the current directory. Detects your stack and writes real checks.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--force` | off | Overwrite an existing `.alc/` directory |
+| `--setup` | off | Also install or update the user-level editor skill |
+| `--engine NAME` | `claude-code` | Engine whose editor skill `--setup` installs |
+| `--stage pre-pmf\|growth\|strong-pmf` | none | Also hire that stage's Archetype Pack combo |
+
+### `alc onboard`
+
+Harvest the checks your project already declares — `Makefile` targets, `package.json` scripts — and propose adopting them into a `project` check set. Proposes first; writes nothing without approval.
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | Print the proposal and exit. Also the default when stdout is not a TTY and `--yes` was not passed |
+| `--yes` | Apply the full proposal non-interactively |
+| `--json` | Print the proposal as JSON and exit |
+| `--stage pre-pmf\|growth\|strong-pmf` | Record the product stage. Omit to be asked interactively |
+| `--assist` | Spend one bounded engine turn proposing checks the deterministic harvest missed |
+
+### `alc setup`
+
+Install or update the user-level editor skill.
+
+| Flag | Default |
+|---|---|
+| `--engine claude-code\|gemini` | `claude-code` |
+
+### `alc lint`
+
+Validate the Operator Layer against the [Policy Gate](/docs/reference/policy-gate). `--json` for machine-readable violations.
+
+## Running work
+
+### `alc run <blueprint> "<task>"`
+
+Run one Blueprint as a verified Single Mandate.
+
+| Flag | Effect |
+|---|---|
+| `--engine NAME` | Override the default engine |
+| `--tier NAME` | Override the compute tier for this invocation |
+| `--isolate` | Run inside an isolated git worktree on a temporary branch |
+| `--primer NAME` | Inject `.alc/primers/<NAME>.md` into the directive |
+| `--bundle` | Write a bundle file recording this run's result for later replay |
+| `--from-bundle REF` | Replay a prior bundle (file path or stem) into the directive |
+
+### `alc spike "<task>"`
+
+Sugar over the Prototyper pack's `spike` Blueprint: forced isolation, zero repairs, no commit or auto-merge, excluded from the Scorecard streak. `--engine NAME` is the only flag.
+
+### `alc flow <flow> "<task>"`
+
+Run a multi-stage pipeline. Same flags as `alc run`, with `--tier` applying to **every** stage and `--isolate` using **one shared** worktree for the whole flow.
+
+### `alc specialist <name> "<task>"`
+
+Run an area Specialist (`Recall → Act → Learn`). `--engine NAME` is the only flag.
+
+### `alc conduct "<goal>"`
+
+Let the Conductor plan which Flows and Specialists to run.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--engine NAME` | manifest | Override the default engine |
+| `--tier NAME` | `plan_tier` | Compute tier for the planning turn |
+| `--enqueue` | off | Write queue task files instead of running immediately |
+| `--parallel` | off | Dispatch independent units concurrently in isolated worktrees |
+| `--concurrency N` | `fanout_concurrency` | Fan-out width for `--parallel` |
+| `--strict-stage` | off | Refuse, rather than warn, when a unit's archetype falls outside the stage mix |
+
+## The queue
+
+### `alc enqueue <name> ["<task>"]`
+
+Write one or more queue tasks directly, with no planning turn.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--kind flow\|specialist` | `flow` | Unit kind to dispatch |
+| `--engine NAME` | manifest | Engine for this task |
+| `--isolate` / `--no-isolate` | **isolate** | Whether to run in an isolated worktree |
+| `--id ID` | none | Slug another task can `--depends-on` |
+| `--depends-on ID` | none | Id of a precedent (repeatable) |
+| `--touches PATH` | none | Path or glob this task edits; overlaps serialize automatically (repeatable) |
+| `--priority N` | `0` | Tie-breaker within a dependency wave, higher first |
+| `--from-file PATH` | none | Batch-enqueue from a `.jsonl` or plain-text file |
+| `--json` | off | Print the written filenames as JSON |
+
+Omit the task argument when using `--from-file`.
+
+### `alc tick`
+
+Drain the task queue once and exit. Call it from cron.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--concurrency N` | `1` | Process up to N tasks in parallel, each isolated |
+| `--engine NAME` | per task | Override the engine for every demand in this drain |
+| `--allow-dirty` | off | Silence the dirty working-tree notice |
+
+### `alc retry [stem]`
+
+Re-enqueue a failed task with its failure feedback appended. No stem lists the outstanding failures.
+
+| Flag | Effect |
+|---|---|
+| `--all` | Re-enqueue every outstanding failure (ignored when a stem is given) |
+| `--json` | List the outstanding failures as JSON |
+
+### `alc cycle <name>`
+
+Run **one** Autonomous Loop cycle — replenish, drain, check stop conditions — and exit. State persists between fires.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--engine NAME` | manifest | Override the engine for this cycle |
+| `--concurrency N` | `0` | Override the loop's drain concurrency (0 = use the definition) |
+| `--status` | off | Print the loop state without running a cycle |
+| `--reset` | off | Reset the loop state, then run one cycle |
+| `--json` | off | With `--status`, print the state as JSON |
+| `--allow-dirty` | off | Silence the dirty working-tree notice |
+
+### `alc loop <name>`
+
+Foreground wrapper that repeats `alc cycle` until the loop stops.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--engine NAME` | manifest | Override the engine |
+| `--interval S` | `300` | Seconds to sleep between cycles (0 = no sleep) |
+| `--reset` | off | Reset the stopped state first — restart in one step |
+| `--allow-dirty` | off | Silence the dirty working-tree notice |
+
+### `alc schedule install|list|remove`
+
+Manage the crontab entry that fires `alc tick` or `alc cycle NAME`.
+
+```bash
+alc schedule install tick --every 15m
+alc schedule install cycle deliver --every 1h
+alc schedule list --json
+alc schedule remove cycle deliver
+```
+
+`--every` is required on `install`. `name` is required for `cycle` and omitted for `tick`. Install is idempotent; remove is scoped to ALC's own marker.
+
+### `alc serve --webhook`
+
+A minimal HTTP door onto signal intake and the enqueue path: `POST /signal`, `POST /enqueue`, `GET /health`. Validates and writes only; never executes.
+
+| Flag | Default |
+|---|---|
+| `--webhook` | **required** — the only mode today |
+| `--host H` | `127.0.0.1` |
+| `--port P` | `8787` |
+| `--token T` | none — the port then answers unauthenticated requests, with a warning |
+
+## Branches
+
+### `alc land [branch...]`
+
+Integrate `alc/*` demand branches into the current branch by linear cherry-pick. No arguments lists the unmerged ones.
+
+| Flag | Effect |
+|---|---|
+| `--all` | Integrate every unmerged `alc/*` branch |
+| `--json` | List the unmerged branches as JSON (only with no branch and no `--all`) |
+| `--push` | After a clean local land, push the current branch to the delivery remote |
+| `--pr` | Push, then open a pull request via `gh` against the delivery base |
+
+A push or PR failure never fails the land.
+
+### `alc discard [branch...]`
+
+Force-delete `alc/*` branches, prune stale worktrees, or remove old bundles. No arguments lists the unmerged branches.
+
+| Flag | Effect |
+|---|---|
+| `--all-unmerged` | Delete every unmerged `alc/*` branch (ignored when names are given) |
+| `--worktrees` | Prune stale worktree admin entries |
+| `--bundles` | Delete bundle files older than `--older-than N` days |
+| `--older-than N` | Age threshold in days for `--bundles` |
+| `--yes` | Confirm non-interactively (required when stdin is not a TTY) |
+| `--json` | List the unmerged branches as JSON (only with no other arguments) |
+
+## Variants
+
+### `alc explore <blueprint> "<task>"`
+
+Run N variants of the same unit in isolated worktrees. Never auto-merges.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--variants N` | `1` | Number of copies of the unit to run |
+| `--engine NAME` | manifest | Engine to explore — repeatable, crossed with `--tier` |
+| `--tier NAME` | blueprint | Compute tier to explore — repeatable, crossed with `--engine` |
+| `--json` | off | Print the variant table as JSON |
+
+### `alc compare [<branch|stem>...]`
+
+Put explored variants side by side. Omit the refs to list every archived variant.
+
+| Flag | Effect |
+|---|---|
+| `--diff` | Also print each variant's unified diff against the current branch |
+| `--json` | Print the variant table as JSON |
+
+### `alc adopt <branch>`
+
+Integrate the chosen variant and discard the other losing `alc/variant-*` branches. `--yes` confirms non-interactively; `--json` prints the outcome.
+
+## Authoring
+
+### `alc new <kind> <name>`
+
+Scaffold a new unit from a core template. `kind` is one of `blueprint`, `flow`, `specialist`, `loop`, `primer`.
+
+| Flag | Effect |
+|---|---|
+| `--force` | Overwrite an existing unit of the same kind and name |
+| `--from NAME` | Clone an existing unit of the same kind, replacing its `name:` field |
+
+### `alc primer new <name>`
+
+Scaffold a Primer at `.alc/primers/<name>.md`. `--force` overwrites.
+
+### `alc prompts list|eject [name]`
+
+Manage keyed prompt overrides in `.alc/prompts/`. `eject` writes a reserved default to a file so you can edit it; it requires a name. `--force` overwrites an existing override, `--json` applies to `list`.
+
+### `alc team hire|list|status|retire`
+
+Manage Archetype Packs. A bare `alc team` is the same as `alc team status`.
+
+| Subcommand | Arguments and flags |
+|---|---|
+| `hire <archetype>` | `--force` overwrites **all** of the pack's files |
+| `list` | `--json` |
+| `status` | `--json` — like `list`, plus Mix Health |
+| `retire <member>` | Archives that member's loop definitions into `loops/retired/` |
+
+The five archetypes are `prototyper`, `builder`, `sweeper`, `grower`, `maintainer`.
+
+## Inspection
+
+### `alc status`
+
+One-shot health snapshot for monitoring: pending tasks, outstanding failures, loop states, unmerged branches. **Always exits 0.** `--json` for the payload.
+
+### `alc runs list|show|tail`
+
+Inspect the structured run logs in `.alc/runs/`.
+
+| Subcommand | Flags |
+|---|---|
+| `list` | `--limit N` (default 50), `--offset N` (default 0), `--json` |
+| `show <stem>` | `--json` |
+| `tail <stem>` | `-n N` (default 20) |
+
+### `alc audit`
+
+Aggregate the archived queue reports over a trailing window: task counts, Scorecard totals and averages, changed files, engine usage and cost.
+
+| Flag | Default |
+|---|---|
+| `--since WINDOW` | `7d` — e.g. `7d`, `24h`, `30m` |
+| `--json` | off |
+
+### `alc metrics`
+
+Show the metric-check time series from the project's ledger: value, delta against the previous measurement, and trend. Read-only.
+
+| Flag | Effect |
+|---|---|
+| `--check NAME` | Only this check's series |
+| `--json` | Machine-readable |
+
+### `alc checks audit|history`
+
+A bare `alc checks` is the same as `alc checks audit`.
+
+| Subcommand | What it does |
+|---|---|
+| `audit` | Re-detect your stacks and propose check set upgrades. Never writes. Flags checks still commented out for a missing binary |
+| `history` | Aggregate run logs into per-check pass rate, mean duration and a flake score. Never writes |
+
+Both take `--json`.
+
+### `alc artifacts [<stem>]`
+
+List a run's captured e2e evidence — screenshots, curled responses, the health-poll log. Defaults to the most recent run that captured anything. `--json` for machine-readable output.
+
+### `alc signal ingest|list`
+
+| Subcommand | Flags |
+|---|---|
+| `ingest` | `--kind error\|feedback\|issue\|review`, `--source NAME`, `--title T`, `--body B`, `--from-file PATH`, `--json` |
+| `list` | `--json` |
+
+`--kind`, `--source` and `--title` are required unless `--from-file` supplies an already-formed JSON object.
+
+## Web UI
+
+### `alc ui`
+
+Serve the local web IDE. Requires the optional `ui` extra.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--host H` | `127.0.0.1` | Host to bind |
+| `--port P` | `8642` | Port to bind |
+| `--ui-dist PATH` | none | Explicit directory of a built frontend to serve. Falls back to `ALC_UI_DIST`, then the bundled build, then API-only |
+| `--no-ui` | off | Serve only the API and WebSocket |
+| `--token T` | none (env: `ALC_UI_TOKEN`) | Require this bearer token on every `/api` request and on the WebSocket handshake |

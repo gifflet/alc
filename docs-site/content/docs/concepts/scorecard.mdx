@@ -1,0 +1,108 @@
+---
+title: The Scorecard and the ladder
+description: Four numbers recorded per run, one north star — Touch to zero — and the three rungs you climb to get there.
+order: 6
+---
+Every run records four health metrics. They are deliberately few, and deliberately not about the model.
+
+| Metric | Direction | Meaning |
+|---|---|---|
+| **Span** | ↑ | Amount of work delivered per prompt — checks satisfied |
+| **Passes** | ↓ | Engine turns needed to reach done |
+| **Streak** | ↑ | Consecutive one-shot successes, with zero repairs |
+| **Touch** | ↓ | Human interventions required |
+
+The north star is **Hands-off Delivery**: `Touch → 0`.
+
+Note what is missing. There is no score for how good the model's reasoning was, or how clever the diff is. Those are not things a control plane can measure. What it *can* measure is how much of the work got done, how many turns it cost, and how often a human had to step in.
+
+## Reading them
+
+A **rising Span with a flat Passes** means your Blueprints are asking for the right amount of work. A **Passes count that keeps climbing** means the Assurance Loop is doing your thinking for you — usually a sign the directive is under-specified or the checks are catching something the workflow should have prevented.
+
+A **Streak that never grows** is the interesting one. It means nothing ever lands one-shot. Sometimes that is the model; more often it is a check that fails for a reason the agent could not have anticipated, and the fix is in the Operator Layer rather than the prompt.
+
+A **spike run is excluded from the streak** on purpose. A one-shot throwaway proves nothing about repeatable delivery.
+
+## Where the numbers live
+
+Per run, in the run log:
+
+```bash
+alc runs list                  # newest first, with net lines changed
+alc runs show <stem>
+```
+
+Aggregated over a window, from the archived queue reports:
+
+```bash
+alc audit --since 7d           # task counts, Scorecard totals and averages,
+alc audit --since 24h --json   # changed files, engine usage and cost
+```
+
+As a one-shot health snapshot for monitoring — always exits 0, so it is safe in a cron wrapper:
+
+```bash
+alc status --json              # pending tasks, outstanding failures,
+                               # loop states, unmerged branches
+```
+
+And aggregated by archetype, against your declared stage:
+
+```bash
+alc team status                # Mix Health
+```
+
+## Diffstat: the number that rewards deletion
+
+Alongside the four metrics, a run records its `diffstat` — adds, deletes, and files deleted — derived from the git diff. It is what makes a shrinking change legible as progress rather than as "not much output".
+
+A Blueprint can declare `expect: shrink` to state that this mandate should reduce the codebase. When such a run finishes net-positive, the control plane records a warning on the report. It never fails the run. Simplifying sometimes means growing before shrinking.
+
+Diffstat is absent when it cannot be computed — no git repo, git missing, no commits yet. That is never a reason to fail a run.
+
+## The ladder
+
+ALC grows with you. You don't start at the top; you climb.
+
+### 1. Attended — you run it
+
+A human is present and iterating. You type `alc run` or `alc flow`, watch the loop, read the diff, keep or discard. Touch is high by definition, and that is correct at this stage: you are still learning what your Blueprints should say, and what your checks should cover.
+
+The work of this rung is making the Operator Layer real. Checks that mean something. Blueprints that describe your actual practice. Primers for the areas you touch most.
+
+### 2. Detached — it runs unattended
+
+Flows run without a human present, through four elements:
+
+| Element | What it is | In ALC |
+|---|---|---|
+| **Source** | Where the task comes from | The YAML task queue, or an ingested Signal |
+| **Trigger** | What starts it | `alc tick` from cron, or `alc serve --webhook` |
+| **Sandbox** | Isolated environment | A git worktree on a throwaway branch |
+| **Gate** | How the result is reviewed | Checks, then `alc land` — you |
+
+```bash
+alc enqueue ship "add the changelog entry for 0.42"
+alc schedule install tick --every 15m
+```
+
+Touch drops here, but it does not reach zero: you still decide what lands. See [Unattended work](/docs/guides/unattended).
+
+### 3. Conducted — a Conductor drives
+
+You give a goal, not a task. The Conductor plans which Flows and Specialists it needs, and runs or queues them:
+
+```bash
+alc conduct "the docs are stale after the 0.41 changes" --parallel
+```
+
+At this rung the Operator Layer is thick enough that a planner has real units to choose from. That is why it is the top of the ladder rather than the entry point — `alc conduct` against a project with one placeholder Blueprint has nothing to plan with.
+
+See [Conducting a goal](/docs/guides/conducting), and [Autonomous Loops](/docs/guides/autonomous-loops) for the version that keeps going on its own.
+
+## The rung above the ladder is still you
+
+Even at the top, ALC guarantees that your checks pass. It does not guarantee the change is right. The human is **on** the loop, not in it: you set the law, and you decide what ships.
+
+`Touch → 0` means zero *interventions* — not zero judgement.

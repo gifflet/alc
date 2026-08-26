@@ -1,0 +1,143 @@
+---
+title: Running a unit of work
+description: alc run, alc spike and alc specialist — the three ways to spend one verified engine turn, and the flags that shape it.
+order: 1
+---
+Three commands run a single unit. They share most of their flags because they share the same machinery: compose one mandate, run the Assurance Loop, record a Scorecard.
+
+## `alc run` — one Blueprint, one task
+
+```bash
+alc run chore "remove the unused export endpoint"
+```
+
+| Flag | Effect |
+|---|---|
+| `--engine NAME` | Override the default engine: `claude-code`, `gemini`, `mock` |
+| `--tier NAME` | Override the Blueprint's compute tier for this invocation |
+| `--isolate` | Run inside a throwaway git worktree on a temporary branch |
+| `--primer NAME` | Inject `.alc/primers/<NAME>.md` into the directive |
+| `--bundle` | Record this run's result to a bundle file for later replay |
+| `--from-bundle REF` | Replay a prior bundle into the directive |
+
+A few combinations worth knowing:
+
+```bash
+# a cheap model for a mechanical change, without editing the Blueprint
+alc run feature "add the /health endpoint" --tier standard
+
+# keep the working tree clean
+alc run bug "fix the off-by-one in the pager" --isolate
+
+# hand the agent curated context instead of making it explore
+alc run feature "add refunds" --primer payments
+```
+
+`--isolate` outside a git repository degrades to a no-op with a note on stderr. The run still happens, in place.
+
+## `alc spike` — an idea you might throw away
+
+```bash
+alc spike "try a websocket transport for the live view"
+```
+
+Sugar over `alc run` against the Prototyper pack's `spike` Blueprint. No blueprint name to remember, and no isolation or commit flags to opt into — the runner supplies them.
+
+A spike is the one fenced exception to the checks gate, and everything else about it tightens rather than loosens: isolation is forced, the repair budget is zero, commit and auto-merge are forbidden, and the run is excluded from the Scorecard streak. Its branch is deleted when the run ends, whatever the outcome.
+
+That last part matters. A spike is a dead end by construction. If you want to keep the work, redo it as a real mandate.
+
+`--engine` is the only flag it takes.
+
+## `alc specialist` — an area, with memory
+
+```bash
+alc specialist db "add an index for the orders lookup"
+```
+
+Runs a `Recall → Act → Learn` cycle: read the Knowledge File, run the Specialist's Blueprint as a normal Single Mandate, then update the Knowledge File with what was learned.
+
+Use a Specialist when you keep coming back to the same area and the same context keeps needing to be re-explained. Use a plain `alc run` when the work is one-off.
+
+`--engine` is the only flag it takes.
+
+## Watching a run
+
+Every run writes a structured event log to `.alc/runs/`.
+
+```bash
+alc runs list                    # recent runs, newest first
+alc runs list --limit 10 --json
+alc runs show <stem>             # every parsed event for one run
+alc runs tail <stem> -n 40       # the last N events
+```
+
+The stem shown by `alc runs list` is what `show`, `tail` and `alc artifacts` take.
+
+## Verifying against a live app
+
+Checks that run a build or a test suite prove the code compiles. They do not prove the app works. For that, a Blueprint can opt into having ALC run the app for the duration of the run.
+
+Declare the service once, in the Manifest:
+
+```yaml
+# .alc/manifest.yaml
+service:
+  start: "npm run dev"
+  health: "/health"
+  ready_timeout_s: 30
+```
+
+Then opt a Blueprint into it:
+
+```yaml
+needs_service: true
+capture: "scripts/screenshot.sh"
+```
+
+ALC — not the agent — starts the app on an allocated port, polls `health` until it returns HTTP 200, exposes `$ALC_BASE_URL` to the engine's environment, and tears it down afterwards. The agent only ever hits `$ALC_BASE_URL`.
+
+`capture:` runs *after* the health poll has already proven the app reachable. `$ALC_ARTIFACTS_DIR` points at this run's artifacts directory; anything the command writes there is collected, alongside the health-poll log. A failing or absent capture warns and the run carries on.
+
+```bash
+alc artifacts                    # the most recent run that captured anything
+alc artifacts <stem> --json
+```
+
+That is the difference between "the checks exited 0" and an actual screenshot of the golden path having worked.
+
+## Authoring new units
+
+```bash
+alc new blueprint migration
+alc new flow release
+alc new specialist frontend
+alc new loop nightly
+alc new primer payments
+
+alc new blueprint hotfix --from bug     # clone an existing unit
+alc primer new payments                 # the primer-specific shorthand
+```
+
+`--force` overwrites an existing unit of the same kind and name.
+
+Run `alc lint` after authoring. The Policy Gate catches most of what a hand-edited Blueprint can get wrong before a run does.
+
+## Customising the built-in prompts
+
+ALC composes its directives from keyed prompts. Reserved names are built-in hooks with an embedded default; you can pull one out and edit it:
+
+```bash
+alc prompts list                 # reserved and free prompts, with their source
+alc prompts eject repair         # write the built-in default to .alc/prompts/repair.md
+alc prompts eject repair --force # overwrite an existing override
+```
+
+The reserved names are `plan-contract`, `conductor`, `corrective`, `learn`, `repair`, `runtime-conventions`, `service-conventions`, `commit-message` and `onboard`. Any other `.md` file in the prompts directory is a free prompt.
+
+An ejected prompt is a file you own from then on — nothing regenerates it. One constraint comes with that: a reserved prompt is applied by string formatting, so your override must keep every placeholder the default declares. `alc prompts list` shows which prompts are running on an override rather than the default.
+
+## Next
+
+- [Flows](/docs/guides/flows) — composing these units into a pipeline.
+- [Isolation and landing](/docs/guides/isolation) — what `--isolate` creates and how to integrate it.

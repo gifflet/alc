@@ -1,0 +1,107 @@
+---
+title: Single Mandate
+description: One agent, one directive, one purpose per invocation — and the context budget that keeps each one small.
+order: 2
+---
+**One agent, one directive, one purpose per invocation.**
+
+ALC enforces this by running a separate engine invocation per task. The engine never has to "stay focused" on its own, because the control plane never gives it more than one mandate at a time.
+
+This is why a Flow is a pipeline of separate invocations rather than one long conversation, and why the queue drains one task per engine turn. Focus is not a prompt instruction here. It is the shape of the call.
+
+## The Control Surface
+
+Every agent invocation has four configurable dials. Everything an engine exposes is, at bottom, an abstraction over these.
+
+| Dial | What it is | Who sets it |
+|---|---|---|
+| **Context** | What the agent is given to see | The control plane, from the Blueprint and any Primer or bundle |
+| **Model** | The model behind the turn | Resolved from a Compute Tier |
+| **Directive** | The fully composed instruction | The control plane — the engine receives it ready |
+| **Tools** | What the agent is allowed to do | The Blueprint's permission mode, plus tool scoping or its emulation |
+
+The engine receives a directive it does not have to assemble. That is deliberate: assembling context is deterministic work, so it belongs outside the model.
+
+## Compute Tier
+
+A **Compute Tier** is a named compute level mapped, per engine, to a concrete model id. Blueprints pick a tier; engines resolve it. This is the compute dial without hard-coding model names anywhere in your Blueprints.
+
+```yaml
+# .alc/manifest.yaml
+compute_tiers:
+  standard:
+    mock: "mock-small"
+    claude-code: "claude-sonnet-4-6"
+    gemini: "gemini-2.5-flash"
+  deep:
+    mock: "mock-large"
+    claude-code: "claude-opus-4-8"
+    gemini: "gemini-2.5-pro"
+```
+
+```yaml
+# a Blueprint's front-matter
+compute_tier: deep
+```
+
+Override it for one invocation without editing the Blueprint:
+
+```bash
+alc run feature "add the export endpoint" --tier standard
+alc flow ship "add a changelog entry" --tier deep    # applies to every stage
+```
+
+The tier names are yours. `standard` and `deep` are what `alc init` scaffolds, not a fixed vocabulary.
+
+## Context Budget
+
+Disciplined management of the context window, through two moves.
+
+### Trim — reduce what enters the context
+
+Give the agent a curated pointer instead of making it explore. A **Primer** is a small markdown file naming where the relevant code lives and the convention to follow:
+
+```bash
+alc primer new payments              # scaffolds .alc/primers/payments.md
+alc run feature "add refunds" --primer payments
+```
+
+`--primer` works on `alc run` and on `alc flow`, where it is injected into every stage's directive.
+
+Small, high-value context beats a large always-on memory file. A Primer you write for one area is read only by the runs that need it.
+
+### Offload — keep side work out of the primary context
+
+Delegate work to separate invocations so its intermediate reasoning never enters the main context. A **bundle** records a run's result to a file so a later run can replay the summary instead of redoing the work:
+
+```bash
+alc run plan "design the refunds API" --bundle
+alc run feature "implement refunds" --from-bundle plan-...
+```
+
+`--from-bundle` takes a bundle file path or a bare stem, looked up in `bundles_dir`. Only a bounded summary is replayed — `bundle_output_chars` in the Manifest caps how much of the original output text is kept, defaulting to 1500 characters.
+
+Old bundles are disposable:
+
+```bash
+alc discard --bundles --older-than 30
+```
+
+## Amplifiers
+
+Some properties of a codebase make agents dramatically more effective, and the control plane leans on all of them: structured logging, precise types, clear entry points, local docs — and above all **tests**, which are what the Assurance Loop actually runs.
+
+Investing in these is investing in every future run. A codebase with a fast, honest test suite gets more out of ALC than one without, and no amount of prompting closes that gap.
+
+## Per-invocation limits
+
+Two more dials sit on the Blueprint rather than on the command line:
+
+- **`timeout_s`** — the per-turn engine kill timeout. Unset falls back to `default_timeout_s` in the Manifest, which defaults to 1800 seconds.
+- **`max_repairs`** — the Assurance Loop's repair budget for this Blueprint. `0` means one shot, no repair.
+
+## Next
+
+- [The Assurance Loop](/docs/concepts/assurance-loop) — what happens after the turn.
+- [Composition](/docs/concepts/composition) — Blueprints, Flows, the Conductor, Specialists.
+- [Running a unit of work](/docs/guides/running-units) — the commands.

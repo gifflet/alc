@@ -1,0 +1,102 @@
+---
+title: The Policy Gate
+description: Every rule alc lint applies to the Operator Layer, its severity, and why it exists.
+order: 4
+---
+The Policy Gate is what turns the practices from advice into a guarantee. It is a lint over the **Operator Layer** — your `.alc/` directory — not over your source code and not over your editor's agents.
+
+```bash
+alc lint
+alc lint --json
+```
+
+Violations come in two severities:
+
+- **`error`** blocks the run. `alc run`, `alc flow` and every unattended path refuse to execute.
+- **`warn`** is reported and does not block.
+
+Some warnings are **permanent by design**: they fire for as long as the configuration that triggers them is in place. A standing exception the lint stays silent about is invisible debt.
+
+## Manifest rules
+
+| Rule | Severity | Why |
+|---|---|---|
+| `default_engine` is declared in `engines` | error | The execution plane must be resolvable |
+| Every Compute Tier maps `default_engine` | error | The model must be resolvable |
+| Each name in `quarantined_checks` | **warn, permanent** | A quarantined check still runs but can never fail a run. A silent quarantine is invisible debt |
+
+## Blueprint rules
+
+| Rule | Severity | Why |
+|---|---|---|
+| Resolves to at least one check | error<br/>(**warn** under `mode: spike`) | An Assurance Loop with no checks provides no guarantee |
+| `check_set` names a set declared in `manifest.check_sets` | error | The set must be resolvable |
+| Has a non-empty `name` and `purpose` | error | Single Mandate — one class of work per file |
+| `max_repairs`, when set, is `>= 0` | error | `0` is one shot; negative is not a budget |
+| `permission_mode`, when set, is recognised | error | Prevents silent misconfiguration |
+| A resolved `metric` check also declares `direction` | error | The Verifier cannot judge a number without knowing which way is better |
+| `protect` globs are well-formed relative patterns | error | An absolute glob, or one escaping via `..`, can never match a changed-file path — it would silently protect nothing |
+| Declares a `report` spec | warn | Structured output aids parsing and traceability |
+| `timeout_s`, when set, is `> 0` | warn | A non-positive timeout kills the engine turn immediately |
+| `archetype`, when set, is recognised | warn | Catches a typo'd label. The field has zero runtime effect, so this is advisory |
+| Opts into a `check_set` but resolves to nothing but the smoke placeholder | warn | The referenced set is currently empty — usually a tool that is not on PATH. The message names a populated set to point at, when one exists |
+| `allow_check_config: true` | **warn, permanent** | The Blueprint may edit files that define its own checks. Legitimate for check maintenance; a standing exception must stay in view |
+
+The smoke-only rule is deliberately scoped to Blueprints that **opt into** a `check_set`. The default `alc init` layer never sets one, so it stays exempt without a special case, and `plan` is exempt outright — a planning stage legitimately produces no executable code.
+
+## Flow rules
+
+| Rule | Severity | Why |
+|---|---|---|
+| Declares at least one stage | error | A Flow with no stages is no pipeline |
+| Every blueprint stage's Blueprint exists | error | Execution must be resolvable |
+| Every specialist stage's Specialist exists | error | Execution must be resolvable |
+| No stage whose Blueprint declares `mode: spike` combined with an enabled `commit` block | error | The spike exception must never become a delivery path |
+| `derive_checks.shell_template` contains the literal `{value}` placeholder | error | Otherwise nothing is ever interpolated |
+| `derive_checks.from_stage` names a stage **earlier** in the same Flow | error | A forward or self reference can never have a report to read |
+
+Two constraints are enforced earlier, when the file is parsed, rather than by the gate: a stage sets exactly one of `blueprint` or `specialist`, and a `verify_only` stage must reference a Blueprint because it runs that Blueprint's checks.
+
+## Loop rules
+
+| Rule | Severity | Why |
+|---|---|---|
+| A dependency-bumping loop with no `worktree_provision` entry declaring a `refresh` | warn | Its checks would run against the already-installed packages, so a breaking bump passes green |
+
+That one is worth understanding, because the failure it catches is invisible.
+
+A `link:` provision shares your already-installed packages into every worktree. A loop that bumps dependency manifests then runs its type-check, build and test against the **old** packages — a vacuous check that reports green for a change nothing verified. Declaring a `refresh` with a `when_changed` trigger closes it:
+
+```yaml
+worktree_provision:
+  - link: node_modules
+    refresh: ["npm", "install"]
+    when_changed: ["package.json", "package-lock.json"]
+```
+
+A single entry declaring a refresh silences the rule for every loop, since the install runs before the checks for the whole worktree.
+
+This rule is lint-only and advisory. It never blocks `alc cycle` or `alc loop` — a possible false green is worth surfacing, never a reason to refuse the run.
+
+## Stage rules
+
+Every rule the declared `stage` drives is advisory. With no `stage` in the Manifest, none of them fire.
+
+| Rule | Severity |
+|---|---|
+| A core archetype for this stage has no Blueprint hiring it | warn, with an `alc team hire <archetype>` hint |
+| A `compute_tier: deep` Blueprint whose archetype sits outside the mix | warn |
+| A Conductor plan whose units drift from the mix | warn — or a refusal under `alc conduct --strict-stage` |
+
+A Blueprint or planned unit with **no** `archetype` is never penalised.
+
+## What the gate deliberately does not do
+
+It does not lint your source code. It does not check that your tests are good, that your Blueprint's workflow prose is sensible, or that a task is worth doing.
+
+It checks that the Operator Layer is internally consistent and that every guarantee it claims is actually resolvable. Everything else is the Assurance Loop's job, or yours.
+
+## Next
+
+- [Blueprint reference](/docs/reference/blueprint) — the fields these rules apply to.
+- [Manifest reference](/docs/reference/manifest) — the other half.

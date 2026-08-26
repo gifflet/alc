@@ -1,0 +1,177 @@
+---
+title: Make the checks real
+description: Checks are the law a run must pass. This is how to declare ones that actually mean something, and the traps that make them lie.
+order: 4
+---
+Everything ALC guarantees rests on one thing: the checks. They are the law a run has to pass before it can be called done. A Blueprint with a placeholder check is a Blueprint with no guarantee — the Assurance Loop still runs, it just has nothing to enforce.
+
+This is the highest-leverage twenty minutes you will spend on ALC.
+
+## Where checks live
+
+Two places, and a Blueprint can use both:
+
+**Inline on the Blueprint** — checks specific to that class of work:
+
+```yaml
+checks:
+  - name: build
+    command: ["go", "build", "./..."]
+  - name: vet
+    command: ["go", "vet", "./..."]
+```
+
+**As a named set in the Manifest** — reusable across Blueprints:
+
+```yaml
+# .alc/manifest.yaml
+check_sets:
+  project:
+    - name: test
+      command: ["make", "test"]
+    - name: typecheck
+      command: ["npm", "run", "typecheck"]
+```
+
+```yaml
+# .alc/blueprints/feature.md front-matter
+check_set: project
+```
+
+A Blueprint's resolved checks are the named set's checks plus its own. A Blueprint that only references a `check_set` still satisfies the Policy Gate.
+
+## Let ALC find them for you
+
+Most projects already declare their checks somewhere. `alc onboard` harvests `Makefile` targets and `package.json` scripts, proposes them as a `project` check set, and wires them into your Blueprints once you approve:
+
+```bash
+alc onboard              # propose, then approve interactively
+alc onboard --dry-run    # print the proposal, write nothing
+alc onboard --yes        # apply the whole proposal non-interactively
+alc onboard --json       # machine-readable proposal
+```
+
+`--assist` spends one bounded engine turn analysing your file tree to propose checks the deterministic harvest missed. It is opt-in because it costs a turn, and the proposal is still yours to approve.
+
+Later, when your stack changes:
+
+```bash
+alc checks audit         # re-detect stacks, propose check_set upgrades — never writes
+```
+
+It also flags checks that `alc init` left commented out because their binary was not on PATH.
+
+## The three forms a check can take
+
+Exactly one of these per check entry.
+
+### `command` — an argv list, no shell
+
+```yaml
+- name: test
+  command: ["pytest", "-q"]
+```
+
+Run directly, with no shell. This is the default and the one to reach for.
+
+### `shell` — a one-liner via `sh -c`
+
+```yaml
+- name: clean-tree
+  shell: 'test -z "$(git status --porcelain)"'
+```
+
+For anything needing pipes, globs, or command substitution. Pass/fail is still decided **solely by the exit code** — stdout and stderr are captured and fed into the repair directive, but they do not affect the decision.
+
+### `metric` — a number the control plane judges
+
+```yaml
+- name: bundle-size
+  metric: ["scripts/bundle-size.sh"]
+  direction: lower_is_better
+  tolerance_pct: 2.0
+```
+
+The command prints one number on stdout. The engine never judges that number — the control plane does, exactly the way it judges any other check's exit code. The Verifier parses it and compares it against the most recent *accepted* measurement in the project's metric ledger.
+
+- `direction` says which way is a regression. It is required; the Policy Gate errors without it.
+- `tolerance_pct` absorbs benchmark noise. The default is `0.0` — no slack at all.
+- A metric with no history yet always passes. It becomes the first baseline, never a phantom failure.
+- Non-numeric stdout is a failed check, not a crash.
+
+A regression fails like any other check and can be repaired like any other failure. Read the series back with:
+
+```bash
+alc metrics                    # every check in the ledger
+alc metrics --check bundle-size --json
+```
+
+## The two rules that save you pain
+
+**Checks are judged by exit code.** `go build`, `pytest`, `tsc --noEmit` all work. `gofmt -l` does not — it exits 0 even when files are unformatted. If a command reports problems on stdout rather than through its exit status, wrap it in a `shell:` one-liner that turns the output into a status.
+
+**Run each check yourself once, first.** A check that already fails on a clean checkout makes *every* run fail, forever. The agent cannot fix problems that were not its task, so it burns the entire repair budget and reports failure. This is the single most common way a new Operator Layer ends up useless.
+
+That is also why `alc init` writes a check *commented out* when its binary is not on PATH. A live check that exits 127 on a clean checkout cannot be law. Install the tool, then uncomment.
+
+## The `["true"]` placeholder
+
+When no stack is detected — or none of the detected commands are on PATH — Blueprints ship with:
+
+```yaml
+- name: smoke
+  command: ["true"]
+```
+
+That is honest, not lazy: the Blueprint is marked as smoke-only rather than shipping a check that fails on a clean checkout. It also means the Blueprint verifies nothing. Replace it.
+
+`alc lint` warns when a Blueprint opts into a `check_set` and still resolves to nothing but the placeholder.
+
+## Handling flaky and broken checks
+
+Two escape hatches, both deliberately visible.
+
+**`flaky: N`** re-runs *that* check up to N times after a failing attempt, before the control plane spends a repair engine turn on it. Seconds against a model call:
+
+```yaml
+- name: e2e
+  command: ["npm", "run", "e2e"]
+  flaky: 2
+```
+
+**`quarantined_checks`** in the Manifest names checks that still run every attempt but can never fail a run:
+
+```yaml
+quarantined_checks:
+  - e2e
+```
+
+A quarantined check is recorded as failed in the run log and the report, so quarantine is never invisible debt — and `alc lint` emits a warning for as long as the name is listed. Remove it once the check is reliable again.
+
+To see which checks are actually worth quarantining:
+
+```bash
+alc checks history       # pass rate, mean duration and a flake score per check
+```
+
+It aggregates the `check_finished` events already in your run logs. It never writes.
+
+## Timeouts
+
+A hung check would otherwise freeze a whole unattended drain. ALC kills a check — and its child process group — after `check_timeout_s`, which defaults to 600 seconds, and reports it as timed out.
+
+```yaml
+# .alc/manifest.yaml
+check_timeout_s: 900
+```
+
+## Guarding the law itself
+
+A run's checks are the bar its work has to clear. An engine that cannot make the code pass could try to make the law pass instead — widen an ignore rule, delete a lint config entry, rewrite a `test` script to `true`.
+
+ALC closes that door automatically. You do not configure it; it is on by default. See [Guarding the law](/docs/concepts/assurance-loop#guarding-the-law) for what the `check-config-integrity` and `protect:` guards do.
+
+## Next
+
+- [The Assurance Loop](/docs/concepts/assurance-loop) — what happens when a check fails.
+- [Blueprint reference](/docs/reference/blueprint) — every field a Blueprint can declare.

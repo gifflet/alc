@@ -1,0 +1,113 @@
+---
+title: The control plane
+description: ALC splits every unit of work into a deterministic control plane and one probabilistic model turn — and pushes every practice it can into the first.
+order: 1
+---
+ALC splits every unit of work into two planes.
+
+| Plane | Owns | Determinism |
+|---|---|---|
+| **Control plane** | policy, context curation, single-mandate isolation, the Assurance Loop, the Scorecard, gates | Deterministic — pure orchestration code |
+| **Execution plane** | one reasoning-and-editing turn | Probabilistic — the model |
+
+The rule that makes ALC work: **push every practice that does not require the model into the control plane.** The more a practice lives outside the model, the more portable and guaranteed it becomes.
+
+Running the tests does not require a model. Refusing to report success when they fail does not require a model. Creating a git worktree, capping the number of retry turns, recording what changed — none of that requires a model. All of it used to live in a prompt, where it was advice. In the control plane it is a guarantee.
+
+## One run, end to end
+
+```text
+  task + blueprint
+        │
+        ▼
+  ┌─────────────┐   loads .alc/manifest.yaml and the named Blueprint
+  │   Intake    │
+  └──────┬──────┘
+         ▼
+  ┌─────────────┐   lints the Operator Layer; an `error` violation stops here
+  │ Policy Gate │
+  └──────┬──────┘
+         ▼
+  ┌─────────────┐   composes ONE single-mandate directive; resolves the
+  │   Mandate   │   engine and the model for the Blueprint's compute tier;
+  │   Runner    │   builds one EngineRequest
+  └──────┬──────┘
+         ▼
+  ┌───────────────────────────────────────┐
+  │            Assurance Loop             │
+  │                                       │
+  │   Act ──► Verify ──► pass ──────────► │
+  │    ▲         │                        │
+  │    └── Repair ┘  (bounded budget)     │
+  └──────────────────┬────────────────────┘
+                     ▼
+  ┌─────────────┐   Span / Passes / Streak / Touch, plus the run log
+  │  Scorecard  │
+  └──────┬──────┘
+         ▼
+  report + scorecard
+```
+
+The control plane runs left to right and is fully deterministic. The only door into the model is the **Engine contract** — an `EngineRequest` in, an `EngineResult` out.
+
+## Components
+
+Each has exactly one reason to change.
+
+| Component | Responsibility |
+|---|---|
+| **Intake** | Load and parse the Manifest and the requested Blueprint |
+| **Policy Gate** | Refuse a run whose Operator Layer violates the rules |
+| **Mandate Runner** | Compose one single-mandate directive, resolve engine and compute tier, build the request |
+| **Assurance Loop** | `Act → Verify → Repair` until the checks pass or the repair budget runs out |
+| **Verifier** | Run the declared checks, return pass/fail plus output |
+| **Scorecard** | Record Span / Passes / Streak / Touch for the run |
+| **Engine adapters** | Translate the contract to a concrete tool |
+| **Registry** | Resolve an engine name to an adapter instance |
+
+The control plane never imports a concrete engine — only the `Engine` abstraction. The registry injects the concrete one at the edge.
+
+## Engines are swappable
+
+The same task on `claude-code` or on `gemini` follows the identical control-plane path. Only the quality of the `Act` step changes.
+
+```bash
+alc run chore "tidy the imports" --engine claude-code
+alc run chore "tidy the imports" --engine gemini
+alc run chore "tidy the imports" --engine mock
+```
+
+The bar for being an engine is deliberately low: accept a fully composed directive headlessly, and edit files in a given working directory. That is the whole requirement. See the [engine contract](/docs/reference/engine-contract).
+
+## Capability emulation
+
+Engines differ. Some can scope their own tools; some cannot. Some can append to their own system prompt; some cannot. Rather than pushing that difference onto you, the control plane inspects what an engine declares and fills the gap:
+
+| Capability absent | Control-plane fallback |
+|---|---|
+| Tool scoping | Sandbox the working directory, restrict the environment |
+| System-prompt append | Prepend the text to the directive |
+| Structured output | Validate the output against the schema and re-ask on mismatch |
+| Subagents | Run additional engine invocations and route between them |
+
+This is why an adapter stays thin. If you find yourself adding retry logic or verification to an adapter, it belongs in the control plane instead.
+
+An adapter may also declare *less* than its tool supports, on purpose — claiming only what is stable across CLI versions and leaving the rest to emulation. The Gemini adapter does this: it reports native MCP support but not native system-append or structured output, so ALC folds the system prompt into the directive and validates the output itself. The behaviour is then uniform regardless of which `gemini` version is installed.
+
+## The Mock engine is not a toy
+
+The Mock adapter declares no capabilities at all and makes no model call. It exercises the entire control plane — the gate, the loop, the Scorecard — for free and hermetically.
+
+That makes it the right default for a freshly scaffolded project, and the right tool for proving an Operator Layer works before you spend anything running it.
+
+## The Operator Layer
+
+The control plane's configuration lives in `.alc/` — the **Operator Layer**: the Manifest, the Blueprints, the Flows, the Specialists, the Loops.
+
+It is kept separate from the **Application Layer** (your product code) on purpose. The Operator Layer acts *on* the codebase, not *inside* it. `alc lint` validates this folder and nothing else.
+
+## Next
+
+- [Single Mandate](/docs/concepts/single-mandate) — how one invocation is composed.
+- [The Assurance Loop](/docs/concepts/assurance-loop) — how checks become law.
+- [The Policy Gate](/docs/reference/policy-gate) — what the gate refuses.

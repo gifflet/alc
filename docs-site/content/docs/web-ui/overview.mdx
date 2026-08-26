@@ -1,0 +1,81 @@
+---
+title: The control room
+description: alc ui serves a local web IDE for every registered project — dashboard, live runs, queue, branch review and config, updated over WebSocket.
+order: 1
+---
+`alc ui` serves a local, single-user web IDE. It is not a dashboard bolted onto the CLI — it is the same control plane, with the reading and the dispatching made visual.
+
+```bash
+uv tool install "alc-runtime[ui]"
+alc ui                            # http://127.0.0.1:8642
+```
+
+Everything updates in real time over a WebSocket. No refresh, ever.
+
+## Two layouts, one app
+
+On a desktop it is an IDE: an activity rail, a project tree, tabs, a bottom Console and Problems panel, a status bar, a command palette on `Cmd+K` and a shortcuts dialog on `?`.
+
+On a phone it collapses to five bottom-tab destinations — Home, Inbox, Fleet, Queue, More — with everything else behind More. Config files are **read-only** on the narrow layout, deliberately: reading a Blueprint is a legitimate phone task; editing one is not.
+
+## The views
+
+| View | What it answers |
+|---|---|
+| **Dashboard** | How is this project doing? Scorecard trend, recent runs, engine health, team mix, the audit window, the cron schedule |
+| **Fleet** | What is executing right now? Every unit side by side, with its phase, attempt and running check |
+| **Inbox** | What needs a human? Outstanding failures, branches waiting to land, halted loops — each with an inline action |
+| **Queue** | Pending and archived tasks, plus the unmerged branches those drains produced |
+| **Runs** | The run list; opening a row gives the Assurance Loop timeline — `Act → Verify → Repair` per attempt, with check dots — and the live event feed |
+| **Loops** | Loop states, and per-loop the persisted state plus the per-cycle ledger as a chart |
+| **Conduct** | Dispatch the Conductor against a goal |
+| **Team** | The hired roster, hire and retire controls, Mix Health |
+| **Metrics** | Each metric check's value series |
+| **Compare** | Archived `alc explore` variants side by side, with Adopt |
+| **Checks** | Check history — pass rate, mean duration, flake score — plus the check-set audit and the onboarding panel |
+| **Branch review** | Read a branch diff and attach line-anchored notes, then send them back as one queue task |
+| **Config** | The manifest, blueprints, flows, specialists, loops, primers and prompts — editable, with a structured form view for the manifest and blueprints |
+
+The **Dashboard is not an index**. It answers a question about project health; it is not a menu of the other views. That is what the activity rail is for.
+
+The **Inbox has no dismiss button**, by design. An item leaves the Inbox by being acted on.
+
+## What you can do from it
+
+**Dispatch work.** `run`, `spike`, `flow`, `specialist`, `explore`, `conduct`, `tick`, `cycle`, `loop`, `retry` and `lint` — the whitelist the UI may spawn. Output streams into the Console panel, and a running exec can be cancelled from there.
+
+**Manage the queue.** Enqueue one task or a batch, delete a pending task, retry one failure or all of them.
+
+**Handle branches.** Land one or more with a delivery mode selector (`local`, `push`, `pr`), discard a branch with a confirmation, or submit a line-anchored branch review that becomes a queue task.
+
+**Adopt a variant.** From Compare, with siblings discarded and conflicts reported for manual resolution.
+
+**Edit the Operator Layer.** The manifest and every collection item, in a Monaco editor or a structured form. Writes are validated by running the payload through the real loaders before saving, so a broken file is rejected with its violations rather than persisted.
+
+**Create and delete units.** The `+` in the project tree scaffolds a minimal valid template, server-side. Reserved prompts can be ejected to become editable.
+
+**Hire and retire archetypes**, **ingest a signal**, and **apply the onboarding proposal** for a chosen stage.
+
+**Save run configurations** — named command-and-argument presets, stored inside the project at `.alc/ui/run-configs.json`.
+
+## What it deliberately cannot do
+
+- **Install or remove a cron schedule.** The schedule view is read-only; `alc schedule` is CLI-only.
+- **Dispatch anything outside the whitelist**, or pass a flag outside each command's own whitelist. Arguments are built as a real argv list, never a shell string; anything else is rejected.
+- **Run `alc onboard --assist`.** The engine-assisted proposal path stays on the CLI.
+
+## The frontend
+
+The UI source lives in `ui/` — React, Vite and TypeScript.
+
+```bash
+cd ui && npm install
+npm run dev          # Vite dev server proxying /api and /ws to 127.0.0.1:8642
+npm run build:alc    # publish the production build into src/alc/ui/static/
+```
+
+The built frontend is gitignored and ships in the wheel. `--ui-dist PATH` serves an alternative build; `--no-ui` serves only the API and WebSocket.
+
+## Next
+
+- [Running and access](/docs/web-ui/access) — registering projects, the token, and reaching it from another machine.
