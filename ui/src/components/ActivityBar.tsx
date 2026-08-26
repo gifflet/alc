@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { uiStore, useUiState } from '../app/uiStore'
+import { Mark } from './Mark'
 import type { PrimaryView } from '../app/uiStore'
 
 interface Item {
@@ -115,6 +116,15 @@ export function ActivityBar({
   return (
     <nav className="flex w-[var(--ui-rail-btn)] shrink-0 flex-col items-center justify-between border-r border-border bg-panel py-1">
       <div className="flex flex-col">
+        {/* Identity, not a control. The rail already has a Dashboard button, so
+            making the mark clickable would give the same destination two
+            affordances and teach neither. */}
+        <span
+          className="mb-1 flex h-[var(--ui-rail-btn)] w-[var(--ui-rail-btn)] items-center justify-center border-b border-border/40 text-muted"
+          title="ALC"
+        >
+          <Mark size={18} />
+        </span>
         {ITEMS.map((item) => (
           <RailButton
             key={item.view}
