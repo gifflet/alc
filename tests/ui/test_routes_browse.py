@@ -43,3 +43,61 @@ def test_a_file_is_400(client, tmp_path):
     target.write_text("x")
 
     assert client.get("/api/fs/browse", params={"path": str(target)}).status_code == 400
+
+
+def test_clone_refuses_a_url_that_is_really_a_git_option(client, tmp_path):
+    """`git clone --upload-pack=<cmd>` runs <cmd>. The endpoint must refuse the
+    URL before it ever reaches a subprocess."""
+    response = client.post(
+        "/api/fs/clone",
+        json={"url": "--upload-pack=touch /tmp/pwned", "parent": str(tmp_path)},
+    )
+    assert response.status_code == 400
+    assert "may not start with '-'" in response.json()["detail"]
+
+
+def test_clone_refuses_an_ext_url(client, tmp_path):
+    response = client.post(
+        "/api/fs/clone", json={"url": "ext::sh -c id", "parent": str(tmp_path)}
+    )
+    assert response.status_code == 400
+
+
+def test_clone_refuses_an_occupied_destination(client, tmp_path):
+    taken = tmp_path / "repo"
+    taken.mkdir()
+    (taken / "file").write_text("x")
+
+    response = client.post(
+        "/api/fs/clone",
+        json={"url": "https://example.com/o/repo.git", "parent": str(tmp_path)},
+    )
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
+
+
+def test_clone_starts_and_returns_an_exec_to_follow(client, tmp_path):
+    """A clone can take minutes, so the request returns the exec id rather than
+    blocking until git finishes."""
+    response = client.post(
+        "/api/fs/clone",
+        json={"url": "https://example.invalid/o/repo.git", "parent": str(tmp_path)},
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["exec_id"]
+    assert body["destination"] == str((tmp_path / "repo").resolve())
+
+
+def test_clone_output_is_global_so_it_reaches_a_client_with_no_project(client, tmp_path):
+    """The WebSocket only delivers messages for a subscribed project, plus
+    global ones. A clone happens before any project exists, so its exec must be
+    global — otherwise the progress reaches nobody."""
+    response = client.post(
+        "/api/fs/clone",
+        json={"url": "https://example.invalid/o/repo.git", "parent": str(tmp_path)},
+    )
+    exec_id = response.json()["exec_id"]
+
+    listed = {e["id"]: e for e in client.get("/api/execs").json()}
+    assert listed[exec_id]["project_id"] is None

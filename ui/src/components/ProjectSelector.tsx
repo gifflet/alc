@@ -5,6 +5,7 @@ import { FolderPlus, FolderSearch, Trash2, X } from 'lucide-react'
 import { ApiError, api } from '../api/client'
 import { useProjects } from '../api/hooks'
 import { keys } from '../api/keys'
+import { CloneForm } from './CloneForm'
 import { DirectoryBrowser } from './DirectoryBrowser'
 import { EmptyState } from './EmptyState'
 import { StatusDot } from './StatusDot'
@@ -22,6 +23,7 @@ export function ProjectSelector({
   const { data: projects, isLoading } = useProjects()
   const [path, setPath] = useState('')
   const [browsing, setBrowsing] = useState(false)
+  const [mode, setMode] = useState<'register' | 'clone'>('register')
   const [name, setName] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.projects() })
@@ -103,8 +105,36 @@ export function ProjectSelector({
           )}
         </div>
 
+        <div className="flex gap-1 border-t border-border px-3 pt-2">
+          {(['register', 'clone'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              aria-pressed={mode === m}
+              className={`rounded-xs px-2.5 py-1 text-[length:var(--ui-text-body)] transition-colors duration-120 ${
+                mode === m ? 'bg-hover text-primary' : 'text-faint hover:text-primary'
+              }`}
+            >
+              {m === 'register' ? 'Register existing' : 'Clone a repository'}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'clone' ? (
+          <div className="p-3">
+            <CloneForm
+              onCloned={(clonedPath) => {
+                // A finished clone is a directory the operator wants registered;
+                // handing it to the same field means one path through the code.
+                setPath(clonedPath)
+                setMode('register')
+              }}
+            />
+          </div>
+        ) : (
         <form
-          className="border-t border-border p-3"
+          className="p-3"
           onSubmit={(e) => {
             e.preventDefault()
             if (path.trim()) add.mutate()
@@ -159,6 +189,7 @@ export function ProjectSelector({
             {addError && <p className="text-[length:var(--ui-text-label)] text-error">{addError}</p>}
           </div>
         </form>
+        )}
       </div>
     </div>
   )

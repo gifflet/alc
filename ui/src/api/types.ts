@@ -807,3 +807,9 @@ export interface DirectoryListing {
   is_git_repo: boolean
   entries: DirectoryEntry[]
 }
+
+/** Accepted clone request: follow `exec_id` for progress. */
+export interface CloneStarted {
+  exec_id: string
+  destination: string
+}
