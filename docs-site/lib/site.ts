@@ -9,30 +9,29 @@
 // previews describe themselves rather than production, then the production
 // default.
 function resolveUrl(): string {
+  // An explicit override always wins.
   const explicit = process.env.NEXT_PUBLIC_SITE_URL
   if (explicit) return explicit.replace(/\/$/, '')
-  const vercel = process.env.NEXT_PUBLIC_VERCEL_URL ?? process.env.VERCEL_URL
-  if (vercel) return `https://${vercel.replace(/\/$/, '')}`
-  // alc-runtime is the package name on PyPI, so it is the project's canonical
-  // identifier rather than an invented one — and "runtime" disambiguates a
-  // three-letter acronym that otherwise reads as alcohol. (get-alc.vercel.app
-  // is already taken by "GetAlc — Premium Alcohol Discovery Platform".)
+
+  // On Vercel, VERCEL_URL is the *deployment* URL — unique per build and
+  // ephemeral. Using it in production put every canonical, every sitemap entry
+  // and the OG image on a host that changes with the next deploy, which is the
+  // one thing a canonical must never do.
+  //
+  // VERCEL_PROJECT_PRODUCTION_URL is the project's stable production domain.
+  // Previews still describe themselves with their own deployment URL, which is
+  // correct: a preview should not claim to be production.
+  const env = process.env.VERCEL_ENV ?? process.env.NEXT_PUBLIC_VERCEL_ENV
+  const production =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL
+  if (env === 'production' && production) return `https://${production.replace(/\/$/, '')}`
+
+  if (env === 'preview') {
+    const deployment = process.env.VERCEL_URL ?? process.env.NEXT_PUBLIC_VERCEL_URL
+    if (deployment) return `https://${deployment.replace(/\/$/, '')}`
+  }
+
   return 'https://alc-runtime.vercel.app'
-}
-
-/** Where the site is mounted below the domain root. Empty on Vercel, which
- *  serves at a root. Kept as a seam because a project site (GitHub Pages under
- *  /<repo>) needs every absolute asset path prefixed, and discovering that
- *  after the fact means hunting every <video> and <img> in the tree. */
-export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
-
-/** Prefix a /public asset with the base path.
- *
- *  Next rewrites hrefs on <Link>, but NOT string src attributes on <video> or
- *  <img>. Under basePath those resolve against the domain root and 404 — the
- *  hero demo silently stopped loading the first time this was exported. */
-export function asset(path: string): string {
-  return `${BASE_PATH}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 export const SITE = {
@@ -46,6 +45,20 @@ export const SITE = {
   pypi: 'https://pypi.org/project/alc-runtime/',
   locale: 'en_US',
 } as const
+
+/** Where the site is mounted below the domain root. Empty on Vercel, which
+ *  serves at a root. Kept as a seam because a project site (GitHub Pages under
+ *  /<repo>) needs every absolute asset path prefixed, and discovering that
+ *  after the fact means hunting every <video> and <img> in the tree. */
+export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
+
+/** Prefix a /public asset with the base path.
+ *
+ *  Next rewrites hrefs on <Link>, but NOT string src attributes on <video> or
+ *  <img>. Under a base path those resolve against the domain root and 404. */
+export function asset(path: string): string {
+  return `${BASE_PATH}${path.startsWith('/') ? path : `/${path}`}`
+}
 
 /** Absolute URL for a site-relative path.
  *
