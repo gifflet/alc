@@ -6,12 +6,14 @@ import type { PrimaryView } from './uiStore'
 
 export type ShortcutAction =
   | { type: 'view'; view: PrimaryView }
+  | { type: 'palette' }
   | { type: 'close-tab' }
   | { type: 'toggle-bottom' }
   | { type: 'toggle-left' }
   | { type: 'help' }
 
 const NUMBER_VIEW: Record<string, PrimaryView> = {
+  '0': 'fleet',
   '1': 'dashboard',
   '2': 'queue',
   '3': 'runs',
@@ -30,6 +32,11 @@ export function resolveShortcut(e: KeyboardEvent): ShortcutAction | null {
     const view = NUMBER_VIEW[e.key]
     if (view) return { type: 'view', view }
     const k = e.key.toLowerCase()
+    // Cmd/Ctrl+K was unbound, so the palette costs no existing shortcut.
+    if (k === 'k') return { type: 'palette' }
+    // The number row is full (0-9); Inbox takes the mnemonic instead of
+    // renumbering views operators already have in muscle memory.
+    if (k === 'i') return { type: 'view', view: 'inbox' }
     if (k === 'w') return { type: 'close-tab' }
     if (k === 'j') return { type: 'toggle-bottom' }
     if (k === 'b') return { type: 'toggle-left' }

@@ -31,7 +31,7 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
     case 'project_list_changed':
       return [keys.projects()]
     case 'queue_changed':
-      return [keys.queue(msg.project_id)]
+      return [keys.queue(msg.project_id), keys.inbox(msg.project_id)]
     case 'report_added':
       // A run finished and archived: it may have appended a new measurement
       // (metrics), it always changes what an audit window aggregates, and its
@@ -45,6 +45,8 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
         keys.audit(msg.project_id),
         keys.branches(msg.project_id),
         keys.worktree(msg.project_id),
+        // A finished run can mint a failure to retry AND a branch to land.
+        keys.inbox(msg.project_id),
       ]
     case 'loop_changed':
       return [
@@ -53,6 +55,8 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
         keys.collection(msg.project_id, 'loops'),
         // A loop can be a Team member's pack file — keep the roster live too.
         keys.team(msg.project_id),
+        // A loop halted by a backstop is a decision.
+        keys.inbox(msg.project_id),
       ]
     case 'config_changed': {
       // A manifest change (check_sets) alters the audit AND the onboard proposal
@@ -99,7 +103,12 @@ export function wsInvalidations(msg: WsMessage): QueryKey[] {
       // extra GET is cheap (one debounced request) and keeps one source of truth.
       return [keys.worktree(msg.project_id)]
     case 'run_event':
-      return RUN_LIST_EVENTS.has(msg.event.event) ? [keys.runs(msg.project_id)] : []
+      // The fleet grid tracks mid-run state (phase, attempt, running check), so
+      // unlike the runs LIST it must refresh on every event — that motion is the
+      // whole point of the screen.
+      return RUN_LIST_EVENTS.has(msg.event.event)
+        ? [keys.runs(msg.project_id), keys.fleet(msg.project_id)]
+        : [keys.fleet(msg.project_id)]
     case 'exec_output':
       return [keys.execs()]
     case 'exec_finished':

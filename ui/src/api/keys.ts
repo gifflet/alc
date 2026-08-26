@@ -20,6 +20,8 @@ export const keys = {
   queue: (id: string) => ['project', id, 'queue'] as const,
   branches: (id: string) => ['project', id, 'branches'] as const,
   variants: (id: string) => ['project', id, 'variants'] as const,
+  // Nested under `branches` so a land/discard sweep refreshes an open diff too.
+  branchDiff: (id: string, branch: string) => ['project', id, 'branches', 'diff', branch] as const,
   // Nested UNDER the `variants` prefix on purpose: the existing adopt /
   // exec_finished invalidations target `variants`, and prefix-match sweeps this
   // in too — so an open diff refreshes for free when the archive changes.
@@ -27,6 +29,8 @@ export const keys = {
     ['project', id, 'variants', 'diff', branch] as const,
   signals: (id: string) => ['project', id, 'signals'] as const,
   runs: (id: string) => ['project', id, 'runs'] as const,
+  fleet: (id: string) => ['project', id, 'fleet'] as const,
+  inbox: (id: string) => ['project', id, 'inbox'] as const,
   run: (id: string, stem: string) => ['project', id, 'run', stem] as const,
   loopState: (id: string, name: string) => ['project', id, 'loop', name, 'state'] as const,
   loopLedger: (id: string, name: string) => ['project', id, 'loop', name, 'ledger'] as const,

@@ -43,8 +43,8 @@ function MemberCard({
     <div className="rounded-panel border border-border bg-panel p-3">
       <div className="flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-[12px] font-medium capitalize text-primary">{member.archetype}</span>
-          <span className="text-[11px] text-faint">
+          <span className="text-[length:var(--ui-text-body)] font-medium capitalize text-primary">{member.archetype}</span>
+          <span className="text-[length:var(--ui-text-label)] text-faint">
             {member.files.length} file{member.files.length === 1 ? '' : 's'}
           </span>
         </div>
@@ -52,7 +52,7 @@ function MemberCard({
           type="button"
           aria-label={`Retire ${member.archetype}`}
           onClick={() => onRetire(member.archetype)}
-          className="flex shrink-0 items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[11px] text-muted hover:bg-hover hover:text-error"
+          className="flex shrink-0 items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-error"
         >
           <UserMinus className="h-3 w-3" />
           Retire
@@ -60,19 +60,19 @@ function MemberCard({
       </div>
       <ul className="mt-1.5 flex flex-col gap-0.5">
         {member.files.map((f) => (
-          <li key={f} className="truncate font-mono text-[11px] text-muted">
+          <li key={f} className="truncate font-mono text-[length:var(--ui-text-label)] text-muted">
             {f}
           </li>
         ))}
       </ul>
       {member.loops.length > 0 && (
-        <div className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2">
+        <div className="mt-2 flex flex-col gap-1 border-t border-border/15 pt-2">
           {member.loops.map((l) => (
-            <div key={l.name} className="flex items-center gap-2 text-[12px]">
+            <div key={l.name} className="flex items-center gap-2 text-[length:var(--ui-text-body)]">
               <StatusDot tone={STATUS_TONE[l.status]} pulse={l.status === 'running'} />
               <span className="text-muted">{l.name}</span>
               <Pill tone={STATUS_TONE[l.status]}>{l.status}</Pill>
-              <span className="tabular text-[11px] text-faint">cycle {l.cycle}</span>
+              <span className="tabular text-[length:var(--ui-text-label)] text-faint">cycle {l.cycle}</span>
             </div>
           ))}
         </div>
@@ -100,7 +100,7 @@ const MIX_TONE: Record<'core' | 'secondary' | 'off-mix', Tone> = {
 function SpendRow({ spend, health }: { spend: ArchetypeSpend; health: MixHealth }) {
   const label = mixLabel(health, spend.archetype)
   return (
-    <tr className="h-[28px] border-b border-border/60">
+    <tr className="h-[var(--ui-row-h)] border-b border-border/15">
       <td className="px-2 text-muted">{spend.archetype ?? '(none)'}</td>
       {health.stage && (
         <td className="px-2">{label && <Pill tone={MIX_TONE[label]}>{`[${label}]`}</Pill>}</td>
@@ -115,11 +115,11 @@ function SpendRow({ spend, health }: { spend: ArchetypeSpend; health: MixHealth 
 
 function MixHealthSection({ health }: { health: MixHealth }) {
   if (health.total_runs === 0) {
-    return <p className="text-[12px] text-faint">No data yet — no archived runs.</p>
+    return <p className="text-[length:var(--ui-text-body)] text-faint">No data yet — no archived runs.</p>
   }
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[12px] text-muted">
+      <p className="text-[length:var(--ui-text-body)] text-muted">
         {health.stage ? (
           <>
             Stage: <span className="text-primary">{health.stage}</span>
@@ -129,9 +129,9 @@ function MixHealthSection({ health }: { health: MixHealth }) {
         )}
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] border-collapse text-[12px]">
+        <table className="w-full min-w-[480px] border-collapse text-[length:var(--ui-text-body)]">
           <thead>
-            <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
+            <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
               <th className="px-2 py-1 font-medium">Archetype</th>
               {health.stage && <th className="px-2 py-1 font-medium">Mix</th>}
               <th className="px-2 py-1 font-medium">Runs</th>
@@ -150,7 +150,7 @@ function MixHealthSection({ health }: { health: MixHealth }) {
       {health.idle_core.length > 0 && (
         <ul className="flex flex-col gap-1">
           {health.idle_core.map((idle) => (
-            <li key={idle.archetype} className="flex items-center gap-1.5 text-[12px]">
+            <li key={idle.archetype} className="flex items-center gap-1.5 text-[length:var(--ui-text-body)]">
               <Pill tone="warn">{idle.archetype}</Pill>
               <span className="text-muted">
                 {idle.hired ? 'hired but never exercised' : 'not hired'} — {idle.hint}
@@ -196,9 +196,9 @@ export function Team() {
       </header>
 
       <section>
-        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Roster</h2>
+        <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Roster</h2>
         {members.length === 0 ? (
-          <p className="text-[12px] text-faint">No archetypes hired yet.</p>
+          <p className="text-[length:var(--ui-text-body)] text-faint">No archetypes hired yet.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {members.map((m) => (
@@ -207,13 +207,13 @@ export function Team() {
           </div>
         )}
         {apiMessage(retire.error) && (
-          <p className="mt-2 text-[11px] text-error">{apiMessage(retire.error)}</p>
+          <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{apiMessage(retire.error)}</p>
         )}
       </section>
 
       {available.length > 0 && (
         <section>
-          <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Hire</h2>
+          <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Hire</h2>
           <div className="flex flex-wrap gap-2">
             {available.map((a) => (
               <button
@@ -221,19 +221,19 @@ export function Team() {
                 type="button"
                 onClick={() => doHire(a)}
                 disabled={hire.isPending && hiring === a}
-                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[12px] capitalize text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[length:var(--ui-text-body)] capitalize text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
               >
                 <UserPlus className="h-3.5 w-3.5" />
                 Hire {a}
               </button>
             ))}
           </div>
-          {hire.isError && <p className="mt-2 text-[11px] text-error">{apiMessage(hire.error)}</p>}
+          {hire.isError && <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{apiMessage(hire.error)}</p>}
         </section>
       )}
 
       <section>
-        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Mix Health</h2>
+        <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Mix Health</h2>
         {health && <MixHealthSection health={health} />}
       </section>
 

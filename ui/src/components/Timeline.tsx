@@ -26,14 +26,14 @@ function AttemptTrack({ attempt }: { attempt: TimelineAttempt }) {
     <div className="flex items-center gap-1.5">
       {attempt.index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
       <span
-        className={`rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide ${actClasses(
+        className={`rounded-[3px] border px-1.5 py-0.5 font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide ${actClasses(
           attempt,
         )}`}
       >
         {phase}
       </span>
       {attempt.verifyStarted && (
-        <span className="font-mono text-[10px] uppercase tracking-wide text-faint">verify</span>
+        <span className="font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">verify</span>
       )}
       {attempt.checks.length > 0 && (
         <span className="flex items-center gap-1">
@@ -54,17 +54,17 @@ function GroupRow({ group }: { group: TimelineGroup }) {
   return (
     <div className="flex items-start gap-3 py-1.5">
       <div className="w-32 shrink-0">
-        <div className="flex items-center gap-1.5 truncate text-[12px] text-primary">
+        <div className="flex items-center gap-1.5 truncate text-[length:var(--ui-text-body)] text-primary">
           <StatusDot tone={groupTone(group)} pulse={group.success === null} />
           <span className="truncate">{group.label}</span>
         </div>
         {group.ref && group.ref !== group.label && (
-          <div className="truncate pl-3.5 text-[11px] text-faint">{group.ref}</div>
+          <div className="truncate pl-3.5 text-[length:var(--ui-text-label)] text-faint">{group.ref}</div>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {group.attempts.length === 0 ? (
-          <span className="font-mono text-[10px] uppercase tracking-wide text-faint">waiting</span>
+          <span className="font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">waiting</span>
         ) : (
           group.attempts.map((a) => <AttemptTrack key={a.index} attempt={a} />)
         )}

@@ -27,7 +27,7 @@ export function SpecialistForm({
     if (doc.errors.length) throw doc.errors[0]
   } catch {
     return (
-      <div className="p-4 text-[12px] text-error">
+      <div className="p-4 text-[length:var(--ui-text-body)] text-error">
         The YAML has a syntax error. Fix it in the Source view to edit fields here.
       </div>
     )
@@ -51,7 +51,7 @@ export function SpecialistForm({
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
-      <p className="flex items-center gap-1.5 text-[11px] text-faint">
+      <p className="flex items-center gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <Info className="h-3.5 w-3.5" />
         Form edits known fields only — comments and other keys are preserved.
       </p>

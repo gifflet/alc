@@ -2,6 +2,9 @@
 import { PanelsTopLeft } from 'lucide-react'
 import { EmptyState } from '../components/EmptyState'
 import { Dashboard } from '../views/Dashboard'
+import { Fleet } from '../views/Fleet'
+import { Inbox } from '../views/Inbox'
+import { BranchReview } from '../views/BranchReview'
 import { Queue } from '../views/Queue'
 import { Runs } from '../views/Runs'
 import { RunDetail } from '../views/RunDetail'
@@ -19,6 +22,8 @@ import type { PrimaryView, Tab } from './uiStore'
 
 const VIEWS: Record<PrimaryView, () => React.ReactElement> = {
   dashboard: Dashboard,
+  fleet: Fleet,
+  inbox: Inbox,
   queue: Queue,
   runs: Runs,
   loops: Loops,
@@ -41,6 +46,8 @@ function renderTab(tab: Tab): React.ReactElement {
       return <RunDetail stem={t.stem} />
     case 'loop':
       return <LoopDetail name={t.name} />
+    case 'review':
+      return <BranchReview branch={t.branch} />
     case 'source':
       return <SourceEditor resource={t.resource} name={t.name} />
   }

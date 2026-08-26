@@ -131,12 +131,12 @@ export function RunConfigForm({
               spec.opt_positionals.length === 0 &&
               spec.value_flags.length === 0 &&
               spec.bool_flags.length === 0 && (
-                <p className="text-[11px] text-faint">This command takes no arguments.</p>
+                <p className="text-[length:var(--ui-text-label)] text-faint">This command takes no arguments.</p>
               )}
           </div>
         )}
 
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )

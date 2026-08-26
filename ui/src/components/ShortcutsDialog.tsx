@@ -5,10 +5,13 @@ import { Dialog } from './Dialog'
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'
 
 const SHORTCUTS: [string, string][] = [
+  [`${MOD} K`, 'Command palette — go to any view, unit, run or branch'],
   [
     `${MOD} 1 – 9`,
     'Dashboard / Queue / Runs / Loops / Conduct / Team / Metrics / Compare / Checks',
   ],
+  [`${MOD} 0`, 'Fleet'],
+  [`${MOD} I`, 'Inbox'],
   [`${MOD} W`, 'Close the active tab'],
   [`${MOD} S`, 'Save the open editor'],
   [`${MOD} J`, 'Toggle the bottom panel'],
@@ -18,7 +21,7 @@ const SHORTCUTS: [string, string][] = [
 
 function Kbd({ children }: { children: string }) {
   return (
-    <kbd className="rounded-panel border border-border bg-base px-1.5 py-0.5 font-mono text-[11px] text-primary">
+    <kbd className="rounded-panel border border-border bg-base px-1.5 py-0.5 font-mono text-[length:var(--ui-text-label)] text-primary">
       {children}
     </kbd>
   )
@@ -29,7 +32,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="Keyboard shortcuts" onClose={onClose} width={420}>
       <ul className="flex flex-col gap-1.5">
         {SHORTCUTS.map(([keys, label]) => (
-          <li key={keys} className="flex items-center justify-between gap-4 text-[12px]">
+          <li key={keys} className="flex items-center justify-between gap-4 text-[length:var(--ui-text-body)]">
             <span className="text-muted">{label}</span>
             <Kbd>{keys}</Kbd>
           </li>

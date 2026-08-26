@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="alc">
+  <!-- Maskable: the platform may crop to a circle, so everything meaningful
+       stays inside the 80% safe zone (r <= 205 from centre). -->
+  <rect width="512" height="512" fill="#1b1d1f"/>
+  <circle cx="256" cy="256" r="106" fill="none" stroke="#4d8ae0" stroke-width="24"
+          stroke-linecap="round" stroke-dasharray="500 166" transform="rotate(-58 256 256)"/>
+  <path d="M320 156 l44 22 -25 42" fill="none" stroke="#4d8ae0" stroke-width="24"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="38" fill="#5cc975"/>
+</svg>

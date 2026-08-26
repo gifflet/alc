@@ -14,7 +14,7 @@ export function EmptyState({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
       <Icon className="h-6 w-6 text-faint" strokeWidth={1.5} />
-      <p className="text-[12px] text-muted">{message}</p>
+      <p className="text-[length:var(--ui-text-body)] text-muted">{message}</p>
       {action}
     </div>
   )

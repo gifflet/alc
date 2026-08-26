@@ -59,7 +59,7 @@ function highlight(line: string, lang: CodeLang): ReactNode {
 export function CodeView({ code, lang }: { code: string; lang: CodeLang }) {
   const lines = code.replace(/\n$/, '').split('\n')
   return (
-    <div className="h-full overflow-auto bg-base font-mono text-[12px] leading-[1.55]">
+    <div className="h-full overflow-auto bg-base font-mono text-[length:var(--ui-text-body)] leading-[1.55]">
       <table className="w-full border-collapse">
         <tbody>
           {lines.map((line, i) => (

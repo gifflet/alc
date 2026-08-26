@@ -54,7 +54,7 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
     if (doc.errors.length) throw doc.errors[0]
   } catch {
     return (
-      <div className="p-4 text-[12px] text-error">
+      <div className="p-4 text-[length:var(--ui-text-body)] text-error">
         The YAML has a syntax error. Fix it in the Source view to edit fields here.
       </div>
     )
@@ -115,7 +115,7 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
-      <p className="flex items-center gap-1.5 text-[11px] text-faint">
+      <p className="flex items-center gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <Info className="h-3.5 w-3.5" />
         Form edits known fields only — comments and other keys are preserved.
       </p>
@@ -131,18 +131,18 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[11px] uppercase tracking-wide text-faint">Stages</h3>
+          <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Stages</h3>
           <button
             type="button"
             onClick={addStage}
-            className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[11px] text-muted hover:bg-hover hover:text-primary"
+            className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
           >
             <Plus className="h-3 w-3" />
             Add stage
           </button>
         </div>
         {stages.length === 0 ? (
-          <p className="text-[12px] text-faint">No stages.</p>
+          <p className="text-[length:var(--ui-text-body)] text-faint">No stages.</p>
         ) : (
           <div className="flex flex-col gap-3">
             {stages.map((row, i) => (
@@ -154,14 +154,14 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
                     placeholder="stage name"
                     aria-label="Stage name"
                     spellCheck={false}
-                    className="w-28 rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
+                    className="w-28 rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
                   />
                   <select
                     value={row.refKind}
                     onChange={(e) => setStage(i, { ...row, refKind: e.target.value as RefKind })}
                     disabled={row.verifyOnly}
                     aria-label="Stage ref kind"
-                    className="rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent disabled:opacity-50"
+                    className="rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent disabled:opacity-50"
                   >
                     <option value="blueprint">blueprint</option>
                     <option value="specialist">specialist</option>
@@ -172,7 +172,7 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
                     placeholder={row.refKind === 'blueprint' ? 'blueprint name' : 'specialist name'}
                     aria-label="Stage ref name"
                     spellCheck={false}
-                    className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[12px] text-primary outline-none focus:border-accent"
+                    className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
                   />
                   <button
                     type="button"
@@ -191,7 +191,7 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
                 />
 
                 {row.verifyOnly && (
-                  <div className="flex flex-col gap-2 border-t border-border/60 pt-2">
+                  <div className="flex flex-col gap-2 border-t border-border/15 pt-2">
                     <Checkbox
                       checked={row.deriveChecks !== null}
                       onChange={(v) => toggleDeriveChecks(row, i, v)}

@@ -30,7 +30,7 @@ function RunSelector({ configs }: { configs: RunConfig[] }) {
         aria-label="Run configuration"
         value={selected}
         onChange={(e) => setSelected(e.target.value)}
-        className="rounded-panel border border-border bg-base px-2 py-1 text-[11px] text-primary outline-none focus:border-accent"
+        className="rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
       >
         <option value="">Select a configuration…</option>
         {configs.map((c) => (
@@ -44,7 +44,7 @@ function RunSelector({ configs }: { configs: RunConfig[] }) {
         aria-label="Run selected configuration"
         onClick={run}
         disabled={!selected}
-        className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[11px] text-live hover:bg-live/20 disabled:opacity-40"
+        className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
       >
         <Play className="h-3 w-3" />
         Run
@@ -60,7 +60,7 @@ function ConfigRow({ config, onEdit, onDelete }: {
 }) {
   const start = useStartExec()
   return (
-    <div className="group flex h-[28px] w-full items-center gap-2 border-b border-border/60 px-3 text-[12px] hover:bg-hover">
+    <div className="group flex h-[var(--ui-row-h)] w-full items-center gap-2 border-b border-border/15 px-3 text-[length:var(--ui-text-body)] hover:bg-hover">
       <span className="min-w-0 flex-1 truncate text-muted">{config.name}</span>
       <Pill tone="accent">{config.command}</Pill>
       <button
@@ -112,14 +112,14 @@ export function RunConfigs() {
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-panel px-4 py-2">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-3.5 w-3.5 text-muted" strokeWidth={1.75} />
-          <h2 className="text-[12px] font-medium text-primary">Run Configurations</h2>
+          <h2 className="text-[length:var(--ui-text-body)] font-medium text-primary">Run Configurations</h2>
         </div>
         <div className="flex items-center gap-2">
           {configs.length > 0 && <RunSelector configs={configs} />}
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[11px] text-accent hover:bg-accent/20"
+            className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
           >
             <Plus className="h-3 w-3" />
             New configuration

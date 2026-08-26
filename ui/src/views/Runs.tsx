@@ -9,7 +9,6 @@ import { EmptyState } from '../components/EmptyState'
 import { Loading } from '../components/primitives'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusDot } from '../components/StatusDot'
-import { formatBytes } from '../lib/format'
 import type { RunSummary } from '../api/types'
 
 type RunState = 'finished' | 'stale' | 'live'
@@ -41,39 +40,59 @@ export function Runs() {
   const columns: Column<RunSummary>[] = [
     {
       key: 'status',
-      header: '',
-      className: 'w-6',
+      header: 'State',
+      className: 'w-24',
+      priority: 1,
+      // Dot AND word in one cell: a separate State column repeated this, and a
+      // dot on its own would make colour the only carrier of meaning.
       render: (r) => {
         const s = runState(r)
+        const cls = s === 'finished' ? 'text-faint' : s === 'stale' ? 'text-warn' : 'text-running'
         return (
-          <StatusDot
-            tone={s === 'finished' ? 'idle' : s === 'stale' ? 'warn' : 'running'}
-            pulse={s === 'live'}
-            title={s === 'stale' ? 'interrupted — no live process is writing this run' : undefined}
-          />
+          <span className="flex items-center gap-2">
+            <StatusDot
+              tone={s === 'finished' ? 'idle' : s === 'stale' ? 'warn' : 'running'}
+              pulse={s === 'live'}
+              title={s === 'stale' ? 'interrupted — no live process is writing this run' : undefined}
+            />
+            <span className={cls}>{s}</span>
+          </span>
         )
       },
     },
-    { key: 'kind', header: 'Kind', className: 'w-16 font-mono text-faint', render: (r) => r.kind },
+    { key: 'kind', header: 'Kind', className: 'w-16 font-mono text-faint', priority: 2, render: (r) => r.kind },
     {
       key: 'stem',
       header: 'Run',
-      className: 'font-mono text-muted',
-      render: (r) => <span className="truncate">{r.stem}</span>,
+      // max-w-0 + w-full is the classic table truncation trick: without it the
+      // cell sizes to its content and a long stem pushes `When` off-screen —
+      // measured on an emulated iPad, where the column simply vanished.
+      className: 'w-full max-w-0',
+      priority: 1,
+      // The stem is an ADDRESS (timestamp + kind + slug + uid). What an operator
+      // scans for is what the run was asked to do, so the task leads and the
+      // stem sits under it as the identifier you would paste into `alc runs`.
+      render: (r) => (
+        <span className="flex min-w-0 flex-col justify-center leading-tight">
+          <span className="truncate text-primary">{r.title || r.stem}</span>
+          {r.title && (
+            <span className="truncate font-mono text-[length:var(--ui-text-label)] text-faint">
+              {r.unit ? `${r.unit} · ` : ''}
+              {r.stem}
+            </span>
+          )}
+        </span>
+      ),
     },
+    // nowrap: "8m ago" wrapped to two lines once the Run column started
+    // claiming the slack (seen on an emulated iPad).
     {
-      key: 'state',
-      header: 'State',
-      className: 'w-20',
-      render: (r) => {
-        const s = runState(r)
-        const cls =
-          s === 'finished' ? 'text-faint' : s === 'stale' ? 'text-warn' : 'text-running'
-        return <span className={cls}>{s}</span>
-      },
+      key: 'when',
+      header: 'When',
+      className: 'w-24 whitespace-nowrap',
+      priority: 2,
+      render: (r) => <RelativeTime value={r.mtime} />,
     },
-    { key: 'size', header: 'Size', className: 'w-20 tabular text-faint', render: (r) => formatBytes(r.size) },
-    { key: 'when', header: 'When', className: 'w-24', render: (r) => <RelativeTime value={r.mtime} /> },
   ]
 
   return (

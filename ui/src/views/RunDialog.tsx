@@ -110,7 +110,7 @@ export function RunDialog({
           <Checkbox checked={isolate} onChange={setIsolate} label="Run in an isolated git worktree" />
         )}
 
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )

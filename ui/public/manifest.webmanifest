@@ -1,0 +1,15 @@
+{
+  "name": "alc — control room",
+  "short_name": "alc",
+  "description": "Control plane for agentic coding: fleet, queue, runs and decisions.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1b1d1f",
+  "theme_color": "#1b1d1f",
+  "orientation": "any",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

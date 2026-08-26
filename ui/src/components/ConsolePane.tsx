@@ -32,7 +32,7 @@ export function ConsolePane({ lines }: { lines: string[] }) {
         hovering.current = false
         setPaused(false)
       }}
-      className="h-full overflow-auto bg-base px-3 py-2 font-mono text-[12px] leading-[1.5] text-primary"
+      className="h-full overflow-auto bg-base px-3 py-2 font-mono text-[length:var(--ui-text-body)] leading-[1.5] text-primary"
     >
       {lines.length === 0 ? (
         <span className="text-faint">No output.</span>

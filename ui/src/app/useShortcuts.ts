@@ -23,7 +23,7 @@ function closeActiveTab(): void {
   uiStore.closeTab(activeTabId)
 }
 
-export function useShortcuts(onHelp: () => void): void {
+export function useShortcuts(onHelp: () => void, onPalette?: () => void): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const action = resolveShortcut(e)
@@ -46,9 +46,12 @@ export function useShortcuts(onHelp: () => void): void {
         case 'help':
           onHelp()
           break
+        case 'palette':
+          onPalette?.()
+          break
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onHelp])
+  }, [onHelp, onPalette])
 }

@@ -33,3 +33,25 @@ describe('resolveShortcut', () => {
     expect(resolveShortcut(key({ key: '1' }))).toBeNull()
   })
 })
+
+describe('command palette shortcut', () => {
+  it('maps mod+k to the palette', () => {
+    expect(resolveShortcut(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))).toEqual({
+      type: 'palette',
+    })
+    expect(resolveShortcut(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))).toEqual({
+      type: 'palette',
+    })
+  })
+
+  it('leaves plain k alone so it still types', () => {
+    expect(resolveShortcut(new KeyboardEvent('keydown', { key: 'k' }))).toBeNull()
+  })
+
+  it('does not disturb the existing number bindings', () => {
+    expect(resolveShortcut(new KeyboardEvent('keydown', { key: '2', metaKey: true }))).toEqual({
+      type: 'view',
+      view: 'queue',
+    })
+  })
+})

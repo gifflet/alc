@@ -35,12 +35,15 @@ export function Dialog({
       <div
         role="dialog"
         aria-label={title}
-        style={{ width }}
-        className="flex max-h-[80vh] flex-col rounded-panel border border-border bg-panel shadow-lg"
+        // `width` is a ceiling, not a fixed size: at 520px on a 411px phone a
+        // fixed width overflows the viewport. Full width up to the ceiling keeps
+        // the desktop identical and makes every dialog fit a phone.
+        style={{ width: '100%', maxWidth: width }}
+        className="flex max-h-[80vh] flex-col rounded-[var(--radius-lg)] bg-panel shadow-[var(--elev-3)] ring-1 ring-border/50"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-border px-3 py-2">
-          <h2 className="text-[13px] font-medium text-primary">{title}</h2>
+          <h2 className="text-[length:var(--ui-text-title)] font-medium text-primary">{title}</h2>
           <button
             type="button"
             aria-label="Close"
@@ -84,7 +87,7 @@ export function DialogButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-panel border px-3 py-1.5 text-[12px] transition-colors duration-120 disabled:opacity-40 ${styles}`}
+      className={`rounded-panel border px-3 py-1.5 text-[length:var(--ui-text-body)] transition-colors duration-120 disabled:opacity-40 ${styles}`}
     >
       {children}
     </button>
@@ -121,7 +124,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <div className="text-[12px] text-muted">{message}</div>
+      <div className="text-[length:var(--ui-text-body)] text-muted">{message}</div>
     </Dialog>
   )
 }

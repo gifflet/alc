@@ -21,7 +21,7 @@ export function LoopForm({ value, onChange }: { value: string; onChange: (raw: s
     if (doc.errors.length) throw doc.errors[0]
   } catch {
     return (
-      <div className="p-4 text-[12px] text-error">
+      <div className="p-4 text-[length:var(--ui-text-body)] text-error">
         The YAML has a syntax error. Fix it in the Source view to edit fields here.
       </div>
     )
@@ -61,7 +61,7 @@ export function LoopForm({ value, onChange }: { value: string; onChange: (raw: s
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
-      <p className="flex items-center gap-1.5 text-[11px] text-faint">
+      <p className="flex items-center gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <Info className="h-3.5 w-3.5" />
         Form edits known fields only — comments and other keys are preserved.
       </p>
@@ -72,7 +72,7 @@ export function LoopForm({ value, onChange }: { value: string; onChange: (raw: s
 
       <section>
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[11px] uppercase tracking-wide text-faint">Replenish</h3>
+          <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Replenish</h3>
           <Checkbox checked={hasReplenish} onChange={setReplenishEnabled} label="Enabled" />
         </div>
         {hasReplenish ? (
@@ -100,12 +100,12 @@ export function LoopForm({ value, onChange }: { value: string; onChange: (raw: s
             </Field>
           </div>
         ) : (
-          <p className="text-[12px] text-faint">Drain-only loop (Mode B) — no replenish step.</p>
+          <p className="text-[length:var(--ui-text-body)] text-faint">Drain-only loop (Mode B) — no replenish step.</p>
         )}
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Stop</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Stop</h3>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Max cycles">
             <NumberInput
@@ -123,7 +123,7 @@ export function LoopForm({ value, onChange }: { value: string; onChange: (raw: s
         </div>
 
         <div className="mt-3 flex items-center justify-between">
-          <h4 className="text-[11px] uppercase tracking-wide text-faint">Budget</h4>
+          <h4 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Budget</h4>
           <Checkbox checked={hasBudget} onChange={setBudgetEnabled} label="Enabled" />
         </div>
         {hasBudget && (

@@ -63,30 +63,34 @@ export function Compare() {
   }
 
   const columns: Column<VariantRow>[] = [
-    { key: 'branch', header: 'Branch', className: 'font-mono text-muted', render: (r) => r.branch ?? '—' },
+    { key: 'branch', header: 'Branch', className: 'font-mono text-muted', priority: 1, render: (r) => r.branch ?? '—' },
     {
       key: 'engine',
+      priority: 3,
       header: 'Engine / Tier',
       className: 'w-32 text-faint',
       render: (r) => `${r.engine ?? '—'}${r.tier ? ` / ${r.tier}` : ''}`,
     },
     {
       key: 'result',
+      priority: 1,
       header: 'Result',
       className: 'w-16',
       render: (r) => <Pill tone={r.success ? 'live' : 'error'}>{r.success ? 'ok' : 'failed'}</Pill>,
     },
-    { key: 'checks', header: 'Checks', className: 'text-muted', render: (r) => r.checks },
-    { key: 'scorecard', header: 'Scorecard', className: 'tabular text-muted', render: scorecardLabel },
+    { key: 'checks', header: 'Checks', className: 'text-muted', priority: 2, render: (r) => r.checks },
+    { key: 'scorecard', header: 'Scorecard', className: 'tabular text-muted', priority: 2, render: scorecardLabel },
     {
       key: 'cost',
+      priority: 2,
       header: 'Cost',
       className: 'w-16 tabular text-muted',
       render: (r) => (r.usage?.cost_usd != null ? formatCost(r.usage.cost_usd) : '—'),
     },
-    { key: 'diffstat', header: 'Diffstat', className: 'font-mono text-faint', render: diffstatLabel },
+    { key: 'diffstat', header: 'Diffstat', className: 'font-mono text-faint', priority: 3, render: diffstatLabel },
     {
       key: 'actions',
+      priority: 1,
       header: '',
       className: 'w-32',
       render: (r) =>
@@ -98,7 +102,7 @@ export function Compare() {
               aria-pressed={diffBranch === r.branch}
               // Toggling the already-open row closes it — a second click hides the panel.
               onClick={() => setDiffBranch(diffBranch === r.branch ? null : (r.branch as string))}
-              className="rounded-panel border border-border px-2 py-0.5 text-[11px] text-muted hover:bg-panel aria-pressed:border-accent/60 aria-pressed:text-accent"
+              className="rounded-panel border border-border px-2 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-panel aria-pressed:border-accent/60 aria-pressed:text-accent"
             >
               Diff
             </button>
@@ -107,7 +111,7 @@ export function Compare() {
               aria-label={`Adopt ${r.branch}`}
               onClick={() => setAdopting(r.branch as string)}
               disabled={adopt.isPending}
-              className="rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/20 disabled:opacity-40"
+              className="rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20 disabled:opacity-40"
             >
               Adopt
             </button>
@@ -133,7 +137,7 @@ export function Compare() {
         <button
           type="button"
           onClick={() => setExploring(true)}
-          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[11px] text-accent hover:bg-accent/20"
+          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
         >
           <Sparkles className="h-3 w-3" />
           Explore
@@ -153,7 +157,7 @@ export function Compare() {
         // (identical checks/scorecard/cost) can still be told apart at a glance.
         <div className="rounded-panel border border-border">
           <header className="flex items-center justify-between border-b border-border px-3 py-1.5">
-            <span className="font-mono text-[11px] text-muted">
+            <span className="font-mono text-[length:var(--ui-text-label)] text-muted">
               {diffBranch}
               {diff.data ? ` vs ${diff.data.base}` : ''}
             </span>
@@ -170,16 +174,16 @@ export function Compare() {
             {diff.isLoading ? (
               <Loading />
             ) : apiMessage(diff.error) ? (
-              <p className="text-[11px] text-error">{apiMessage(diff.error)}</p>
+              <p className="text-[length:var(--ui-text-label)] text-error">{apiMessage(diff.error)}</p>
             ) : diff.data?.diff === '' ? (
-              <p className="text-[11px] text-muted">No changes vs {diff.data.base}.</p>
+              <p className="text-[length:var(--ui-text-label)] text-muted">No changes vs {diff.data.base}.</p>
             ) : diff.data ? (
               <div className="max-h-[50vh] overflow-auto rounded-panel border border-border">
                 <CodeView code={diff.data.diff} lang="diff" />
               </div>
             ) : null}
             {diff.data?.truncated && (
-              <p className="mt-2 text-[11px] text-warn">
+              <p className="mt-2 text-[length:var(--ui-text-label)] text-warn">
                 Diff truncated — run `git diff {diff.data.base}...{diffBranch}` for the full change.
               </p>
             )}
@@ -191,12 +195,12 @@ export function Compare() {
         // adopt_variant() always discards the siblings, even when the winner's own
         // cherry-pick conflicts — so this is never silent: the operator must resolve
         // the winner manually, but its (now former) siblings are already gone.
-        <p className="text-[11px] text-warn">
+        <p className="text-[length:var(--ui-text-label)] text-warn">
           Left for manual resolution: {adoptResult.conflicted.join(', ')}
         </p>
       )}
 
-      {apiMessage(adopt.error) && <p className="text-[11px] text-error">{apiMessage(adopt.error)}</p>}
+      {apiMessage(adopt.error) && <p className="text-[length:var(--ui-text-label)] text-error">{apiMessage(adopt.error)}</p>}
 
       {exploring && <ExploreDialog onClose={() => setExploring(false)} />}
 

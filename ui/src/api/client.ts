@@ -17,6 +17,10 @@ import type {
   DiscardResult,
   EngineInfo,
   ExecView,
+  FleetResponse,
+  InboxResponse,
+  ReviewComment,
+  ReviewResult,
   HireResult,
   LandResult,
   LintResult,
@@ -47,6 +51,8 @@ import type {
   WorktreeStatus,
 } from './types'
 
+import { clearToken, getToken } from '../app/token'
+
 export class ApiError extends Error {
   status: number
   detail: unknown
@@ -62,11 +68,19 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken()
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
   })
   if (!res.ok) {
+    // A rejected token is worse than no token: it would keep failing silently on
+    // every query. Drop it so the UI can ask for a fresh one.
+    if (res.status === 401) clearToken()
     let detail: unknown = null
     let violations: Violation[] = []
     let message = `${res.status} ${res.statusText}`
@@ -167,6 +181,18 @@ export const api = {
     }),
   listRuns: (id: string, limit = 50, offset = 0) =>
     request<RunsPage>(`${proj(id)}/runs?limit=${limit}&offset=${offset}`),
+  getFleet: (id: string) => request<FleetResponse>(`${proj(id)}/fleet`),
+  getInbox: (id: string) => request<InboxResponse>(`${proj(id)}/inbox`),
+  getBranchDiff: (id: string, branch: string) =>
+    request<VariantDiff>(`${proj(id)}/branches/diff?branch=${encodeURIComponent(branch)}`),
+  submitReview: (
+    id: string,
+    body: { branch: string; comments: ReviewComment[]; kind?: string; name?: string | null },
+  ) =>
+    request<ReviewResult>(`${proj(id)}/branches/review`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getRun: (id: string, stem: string, offset = 0) =>
     request<RunDetail>(`${proj(id)}/runs/${encodeURIComponent(stem)}?offset=${offset}`),
   getLoopState: (id: string, name: string) =>

@@ -164,7 +164,7 @@ export function EnqueueDialog({
           </Field>
         )}
 
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )

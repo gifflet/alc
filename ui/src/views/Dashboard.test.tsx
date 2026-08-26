@@ -327,3 +327,44 @@ describe('Audit card', () => {
     expect(await screen.findByText(/no archived tasks in this window/i)).toBeInTheDocument()
   })
 })
+
+describe('Scorecard history chart', () => {
+  it('lets its columns stretch, so percentage-height bars can render', async () => {
+    // The bug: with `items-end` each column sized to content, the bar's height:%
+    // resolved against zero, and the card showed an empty box. jsdom computes no
+    // layout, so the class itself is what this guards.
+    installFetch({
+      '/scorecard': {
+        reports: 1,
+        successes: 0,
+        failures: 1,
+        span_total: 2,
+        passes_total: 0,
+        streak_total: 0,
+        touch_total: 1,
+      },
+      '/queue': {
+        pending: [],
+        done: [
+          {
+            stem: 'r1',
+            mtime: 1,
+            task: null,
+            report: { success: false, scorecard: { span: 2, passes: 0, streak: 0, touch: 1 } },
+            retryable: false,
+          },
+        ],
+      },
+      '/runs': { runs: [], total: 0 },
+      '/engines': [],
+      '/loops': [],
+    })
+    renderWithProviders(<Dashboard />)
+    // The chart is fed by a SECOND query (the queue), so wait for the bar itself
+    // rather than for the card title.
+    const bar = await screen.findByTitle(/r1: span=2/)
+    const chart = bar.parentElement!
+    expect(chart.className).toContain('items-stretch')
+    expect(chart.className).not.toContain('items-end')
+  })
+})

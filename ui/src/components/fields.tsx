@@ -3,14 +3,14 @@ import type { ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 
 const INPUT =
-  'w-full rounded-panel border border-border bg-base px-2 py-1.5 text-[12px] text-primary outline-none focus:border-accent'
+  'w-full min-h-[var(--ui-control-h)] rounded-panel border border-border bg-base px-2 py-1.5 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent'
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] uppercase tracking-wide text-faint">{label}</span>
+      <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">{label}</span>
       {children}
-      {hint && <span className="text-[11px] text-faint">{hint}</span>}
+      {hint && <span className="text-[length:var(--ui-text-label)] text-faint">{hint}</span>}
     </label>
   )
 }
@@ -120,12 +120,12 @@ export function Checkbox({
   label: string
 }) {
   return (
-    <label className="flex items-center gap-2 text-[12px] text-primary">
+    <label className="flex min-h-[var(--ui-control-h)] items-center gap-2 text-[length:var(--ui-text-body)] text-primary">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-3.5 w-3.5 accent-accent"
+        className="h-4 w-4 shrink-0 accent-accent"
       />
       {label}
     </label>

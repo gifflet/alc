@@ -14,6 +14,8 @@ export interface OpenTabArg {
 
 const VIEW_TITLE: Record<PrimaryView, string> = {
   dashboard: 'Dashboard',
+  fleet: 'Fleet',
+  inbox: 'Inbox',
   queue: 'Queue',
   runs: 'Runs',
   loops: 'Loops',
@@ -27,6 +29,8 @@ const VIEW_TITLE: Record<PrimaryView, string> = {
 
 const PRIMARY_VIEWS = new Set<PrimaryView>([
   'dashboard',
+  'fleet',
+  'inbox',
   'queue',
   'runs',
   'loops',
@@ -65,6 +69,8 @@ export function pathForTab(id: string, target: TabTarget): string {
       return `${base}/runs/${encodeURIComponent(target.stem)}`
     case 'loop':
       return `${base}/loops/${encodeURIComponent(target.name)}`
+    case 'review':
+      return `${base}/review/${encodeURIComponent(target.branch)}`
     case 'source':
       return target.resource === 'manifest'
         ? `${base}/config/manifest`
@@ -103,6 +109,15 @@ export function openArgFromPath(segments: string[]): OpenTabArg | null {
   }
   if (head === 'loops' && rest.length === 1) {
     return { target: { type: 'loop', name: decodeURIComponent(rest[0]) }, title: decodeURIComponent(rest[0]) }
+  }
+  if (head === 'review' && rest.length >= 1) {
+    // An alc/* branch carries a slash. Chrome keeps it percent-encoded in
+    // location.pathname, so this is normally ONE segment — but a hand-typed or
+    // proxy-decoded URL arrives already split, and silently falling through to
+    // the dashboard would look like the link simply did not work. Rejoin either
+    // shape.
+    const branch = rest.map(decodeURIComponent).join('/')
+    return { target: { type: 'review', branch }, title: branch }
   }
   if (head === 'config') {
     if (rest.length === 1 && rest[0] === 'manifest') return sourceArg('manifest', 'manifest')
