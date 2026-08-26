@@ -1,10 +1,11 @@
 // ProjectSelector.tsx — Register / open / deregister projects (overlay panel).
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FolderPlus, Trash2, X } from 'lucide-react'
+import { FolderPlus, FolderSearch, Trash2, X } from 'lucide-react'
 import { ApiError, api } from '../api/client'
 import { useProjects } from '../api/hooks'
 import { keys } from '../api/keys'
+import { DirectoryBrowser } from './DirectoryBrowser'
 import { EmptyState } from './EmptyState'
 import { StatusDot } from './StatusDot'
 
@@ -20,6 +21,7 @@ export function ProjectSelector({
   const queryClient = useQueryClient()
   const { data: projects, isLoading } = useProjects()
   const [path, setPath] = useState('')
+  const [browsing, setBrowsing] = useState(false)
   const [name, setName] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.projects() })
@@ -109,13 +111,35 @@ export function ProjectSelector({
           }}
         >
           <div className="flex flex-col gap-2">
-            <input
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="/absolute/path/to/project"
-              spellCheck={false}
-              className="rounded-panel border border-border bg-base px-2 py-1.5 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
-            />
+            <div className="flex gap-2">
+              <input
+                value={path}
+                onChange={(e) => setPath(e.target.value)}
+                placeholder="/absolute/path/to/project"
+                spellCheck={false}
+                aria-label="Project path"
+                className="min-w-0 flex-1 rounded-panel border border-border bg-base px-2 py-1.5 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
+              />
+              {/* The field stays for anyone who knows the path; browsing is for
+                  everyone else, which is most of the time. */}
+              <button
+                type="button"
+                onClick={() => setBrowsing((b) => !b)}
+                aria-expanded={browsing}
+                className="flex shrink-0 items-center gap-1.5 rounded-panel border border-border px-2.5 py-1.5 text-[length:var(--ui-text-body)] text-primary transition-colors duration-120 hover:bg-hover"
+              >
+                <FolderSearch className="h-3.5 w-3.5" />
+                {browsing ? 'Hide' : 'Browse'}
+              </button>
+            </div>
+            {browsing && (
+              <DirectoryBrowser
+                onPick={(picked) => {
+                  setPath(picked)
+                  setBrowsing(false)
+                }}
+              />
+            )}
             <div className="flex gap-2">
               <input
                 value={name}

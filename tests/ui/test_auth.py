@@ -138,3 +138,12 @@ def registered_secure(secure_client, project: Path) -> str:
     )
     assert resp.status_code == 201, resp.text
     return resp.json()["id"]
+
+
+def test_browse_is_behind_the_token(secure_client) -> None:
+    """Filesystem browsing widens what the API can read — from one project's
+    files to any directory on the host — so it must not be the one route that
+    skips the guard."""
+    assert secure_client.get("/api/fs/browse").status_code == 401
+    ok = secure_client.get("/api/fs/browse", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert ok.status_code == 200

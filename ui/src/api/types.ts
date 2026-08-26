@@ -789,3 +789,21 @@ export type WsMessage =
   | WsRunConfigsChanged
   | WsSignalsChanged
   | WsWorktreeChanged
+
+/** One directory offered by the filesystem browser. */
+export interface DirectoryEntry {
+  name: string
+  path: string
+  is_alc_project: boolean
+  is_git_repo: boolean
+}
+
+/** A resolved directory and the directories directly inside it. */
+export interface DirectoryListing {
+  path: string
+  /** null at the filesystem root, where there is nowhere to go up to. */
+  parent: string | null
+  is_alc_project: boolean
+  is_git_repo: boolean
+  entries: DirectoryEntry[]
+}
