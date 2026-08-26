@@ -1,6 +1,12 @@
 <div align="center">
 
-# 🛠️ ALC — Agentic Layer Compiler & Runtime
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.png">
+  <img src="assets/logo-light.png" alt="ALC — Agentic Layer Compiler & Runtime" width="380">
+</picture>
+
+# ALC — Agentic Layer Compiler & Runtime
 
 **Declare uma vez como seus agentes devem trabalhar. Rode em qualquer coding engine — com as garantias embutidas.**
 
@@ -161,6 +167,9 @@ O ALC vive num anel ao redor do seu codebase — o **Operator Layer** (`.alc/`),
 O ALC cresce com você: **Attended** (você roda) → **Detached** (roda sozinho a partir da fila) → **Conducted** (um Conductor conduz os Flows por você). Você não começa no topo — você sobe.
 
 ## 📚 Documentação
+
+**[alc-runtime.vercel.app](https://alc-runtime.vercel.app)** — o site completo de documentação:
+primeiros passos, conceitos, guias e a referência da CLI.
 
 - [Conceitos e vocabulário](docs/concepts.md) — as palavras que o ALC usa e o modelo de dois planos
 - [Arquitetura](docs/architecture.md) — o diagrama control plane / execution plane

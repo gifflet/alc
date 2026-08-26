@@ -1,6 +1,12 @@
 <div align="center">
 
-# 🛠️ ALC — Agentic Layer Compiler & Runtime
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.png">
+  <img src="assets/logo-light.png" alt="ALC — Agentic Layer Compiler & Runtime" width="380">
+</picture>
+
+# ALC — Agentic Layer Compiler & Runtime
 
 **Declare how your agents should work once. Run it on any coding engine — with the guardrails built in.**
 
@@ -30,7 +36,7 @@ The point: best practices stop being discipline you have to remember, and become
 
 ## 🚀 Quick Start
 
-> New to ALC? The [first-run guide](docs/first-run.md) walks you from install to a verified change, with the rough edges flagged.
+> New to ALC? The [first-run guide](https://alc-runtime.vercel.app/docs/getting-started/first-run) walks you from install to a verified change, with the rough edges flagged.
 >
 > If you set up with `uv sync`, prefix the commands below with `uv run` (e.g. `uv run alc lint`).
 
@@ -161,6 +167,9 @@ ALC lives in a ring around your codebase — the **Operator Layer** (`.alc/`), k
 ALC grows with you: **Attended** (you run it) → **Detached** (it runs unattended off the queue) → **Conducted** (a Conductor drives the Flows for you). You don't start at the top — you climb.
 
 ## 📚 Documentation
+
+**[alc-runtime.vercel.app](https://alc-runtime.vercel.app)** — the full documentation site: getting started,
+concepts, guides, and the CLI reference.
 
 - [Concepts & vocabulary](docs/concepts.md) — the words ALC uses, and the two-plane model
 - [Architecture](docs/architecture.md) — the control-plane / execution-plane diagram
