@@ -1,6 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img">
   <title>ALC</title>
-  <path d="M5 0h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H3a3 3 0 0 1-3-3V5Z" fill="#1b1d1f"/>
-  <path d="M5 0h8a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H3a3 3 0 0 1-3-3V5Z M5.83 2H13a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5.83Z" fill="#d5d8dc" fill-rule="evenodd"/>
-  <rect x="6" y="5" width="4" height="6" rx="1" fill="#5794e6"/>
+  <!-- Same geometry as the Mark component in components/Logo.tsx, so the tab
+       icon and the navbar show one mark rather than two.
+
+       Two classes, not one: a CSS rule outranks a presentation attribute, so a
+       shared class carrying `fill` overrode the path's own fill="none" and
+       filled the ring solid. The ring styles stroke only; the core styles fill
+       only.
+
+       Colours are explicit because a favicon is an isolated document and never
+       inherits currentColor — but it does honour its own media query. -->
+  <style>
+    .ring { stroke: #1e2124; }
+    .core { fill: #1e2124; }
+    @media (prefers-color-scheme: dark) {
+      .ring { stroke: #d5d8dc; }
+      .core { fill: #d5d8dc; }
+    }
+  </style>
+  <path class="ring" d="M27 19V23a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4h14a4 4 0 0 1 4 4v4"
+        fill="none" stroke-width="4"/>
+  <rect class="core" x="13" y="11" width="6" height="10" rx="1"/>
 </svg>
