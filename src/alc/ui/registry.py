@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -43,19 +45,59 @@ class ProjectRegistry:
         self.path = path
 
     def _read(self) -> list[RegisteredProject]:
+        """Load the registry.
+
+        A MISSING file is an empty registry — that is a first run. A file that
+        exists but cannot be parsed is NOT: treating corruption as "no projects"
+        let the next write confirm the loss, silently erasing every registration
+        (observed with two `alc ui` instances sharing this file). A control plane
+        may fail loudly; it may not quietly report that nothing exists.
+        """
         if not self.path.exists():
             return []
         try:
             raw = json.loads(self.path.read_text())
-        except (json.JSONDecodeError, OSError):
-            return []
-        return [RegisteredProject.model_validate(item) for item in raw]
+        except json.JSONDecodeError as exc:
+            raise ApiError(
+                f"project registry at {self.path} is not valid JSON ({exc}). "
+                "It was left untouched — fix or delete the file to continue.",
+                status=500,
+            ) from exc
+        except OSError as exc:
+            raise ApiError(
+                f"cannot read the project registry at {self.path}: {exc}", status=500
+            ) from exc
+        try:
+            return [RegisteredProject.model_validate(item) for item in raw]
+        except Exception as exc:
+            raise ApiError(
+                f"project registry at {self.path} has an unexpected shape ({exc}). "
+                "It was left untouched — fix or delete the file to continue.",
+                status=500,
+            ) from exc
 
     def _write(self, projects: list[RegisteredProject]) -> None:
+        """Replace the registry atomically.
+
+        write_text truncates first, so a crash — or a second `alc ui` writing the
+        same file — can leave a half-written document that the next read sees as
+        corrupt. Writing to a temp file in the SAME directory and renaming makes
+        the swap atomic on POSIX: a reader sees either the old file or the new
+        one, never a partial one.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps([p.model_dump() for p in projects], indent=2)
-        )
+        payload = json.dumps([p.model_dump() for p in projects], indent=2)
+        fd, tmp_name = tempfile.mkstemp(dir=self.path.parent, prefix=".projects-", suffix=".tmp")
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self.path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     def list(self) -> list[RegisteredProject]:
         """Return every registered project."""
