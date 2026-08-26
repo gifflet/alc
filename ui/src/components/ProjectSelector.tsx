@@ -6,6 +6,7 @@ import { ApiError, api } from '../api/client'
 import { useProjects } from '../api/hooks'
 import { keys } from '../api/keys'
 import { CloneForm } from './CloneForm'
+import { NewProjectForm } from './NewProjectForm'
 import { DirectoryBrowser } from './DirectoryBrowser'
 import { EmptyState } from './EmptyState'
 import { StatusDot } from './StatusDot'
@@ -23,7 +24,7 @@ export function ProjectSelector({
   const { data: projects, isLoading } = useProjects()
   const [path, setPath] = useState('')
   const [browsing, setBrowsing] = useState(false)
-  const [mode, setMode] = useState<'register' | 'clone'>('register')
+  const [mode, setMode] = useState<'register' | 'clone' | 'new'>('register')
   const [name, setName] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.projects() })
@@ -106,7 +107,7 @@ export function ProjectSelector({
         </div>
 
         <div className="flex gap-1 border-t border-border px-3 pt-2">
-          {(['register', 'clone'] as const).map((m) => (
+          {(['register', 'clone', 'new'] as const).map((m) => (
             <button
               key={m}
               type="button"
@@ -116,12 +117,21 @@ export function ProjectSelector({
                 mode === m ? 'bg-hover text-primary' : 'text-faint hover:text-primary'
               }`}
             >
-              {m === 'register' ? 'Register existing' : 'Clone a repository'}
+              {m === 'register' ? 'Register existing' : m === 'clone' ? 'Clone a repository' : 'New project'}
             </button>
           ))}
         </div>
 
-        {mode === 'clone' ? (
+        {mode === 'new' ? (
+          <div className="p-3">
+            <NewProjectForm
+              onCreated={(createdPath) => {
+                setPath(createdPath)
+                setMode('register')
+              }}
+            />
+          </div>
+        ) : mode === 'clone' ? (
           <div className="p-3">
             <CloneForm
               onCloned={(clonedPath) => {
@@ -148,7 +158,7 @@ export function ProjectSelector({
                 placeholder="/absolute/path/to/project"
                 spellCheck={false}
                 aria-label="Project path"
-                className="min-w-0 flex-1 rounded-panel border border-border bg-base px-2 py-1.5 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
+                className="min-w-0 flex-1 rounded-panel border border-border bg-base min-h-[var(--ui-control-h)] px-2 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               />
               {/* The field stays for anyone who knows the path; browsing is for
                   everyone else, which is most of the time. */}
@@ -156,7 +166,7 @@ export function ProjectSelector({
                 type="button"
                 onClick={() => setBrowsing((b) => !b)}
                 aria-expanded={browsing}
-                className="flex shrink-0 items-center gap-1.5 rounded-panel border border-border px-2.5 py-1.5 text-[length:var(--ui-text-body)] text-primary transition-colors duration-120 hover:bg-hover"
+                className="flex shrink-0 items-center gap-1.5 rounded-panel border border-border min-h-[var(--ui-control-h)] px-2.5 text-[length:var(--ui-text-body)] text-primary transition-colors duration-120 hover:bg-hover"
               >
                 <FolderSearch className="h-3.5 w-3.5" />
                 {browsing ? 'Hide' : 'Browse'}
@@ -175,12 +185,12 @@ export function ProjectSelector({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="name (optional)"
-                className="flex-1 rounded-panel border border-border bg-base px-2 py-1.5 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
+                className="flex-1 rounded-panel border border-border bg-base min-h-[var(--ui-control-h)] px-2 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               />
               <button
                 type="submit"
                 disabled={!path.trim() || add.isPending}
-                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3 py-1.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 min-h-[var(--ui-control-h)] px-3 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
               >
                 <FolderPlus className="h-3.5 w-3.5" />
                 Register

@@ -1,12 +1,14 @@
 # routes_browse.py — Read-only filesystem browsing, so a project can be picked.
 from __future__ import annotations
 
+import subprocess
 from dataclasses import asdict
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
 from alc.ui import browse, clone
+from alc.ui.errors import ApiError
 
 router = APIRouter(prefix="/api/fs", tags=["fs"])
 
@@ -51,5 +53,52 @@ def clone_repository(body: CloneRequest, request: Request) -> dict:
         cwd=str(destination.parent),
         command=f"git clone {url}",
         argv=clone.build_argv(url, destination),
+    )
+    return {"exec_id": ex.id, "destination": str(destination)}
+
+
+class NewProjectRequest(BaseModel):
+    """Body for creating a project from nothing."""
+
+    parent: str
+    name: str
+    #: Run `git init` first. On by default because isolation, landing and the
+    #: commit step all need a repository — a project without one silently loses
+    #: half of what ALC does.
+    git: bool = True
+
+
+@router.post("/new-project", status_code=202)
+def new_project(body: NewProjectRequest, request: Request) -> dict:
+    """Create a directory and scaffold an Operator Layer in it.
+
+    Returns the exec to follow, like a clone: `alc init` detects the stack and
+    can take a moment, and the UI already knows how to watch an exec.
+    """
+    destination = clone.resolve_new_project(body.parent, body.name)
+    destination.mkdir(parents=True, exist_ok=True)
+
+    # `git init` finishes in milliseconds, so it runs here rather than being
+    # chained into the streamed command. Chaining would have meant a shell
+    # string, and this codebase builds argv lists precisely to avoid one.
+    if body.git:
+        try:
+            subprocess.run(
+                ["git", "init", "-q"], cwd=destination, capture_output=True, check=True
+            )
+        except FileNotFoundError as exc:
+            raise ApiError("git is not on PATH on the server", status=500) from exc
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or b"").decode(errors="replace").strip()
+            raise ApiError(f"git init failed: {detail}", status=500) from exc
+
+    # `alc init` acts on the current directory, so the work happens by running
+    # it *in* the new one rather than by passing a path it does not accept.
+    runs = request.app.state.run_manager
+    ex = runs.start(
+        project_id=None,
+        cwd=str(destination),
+        command=f"alc init in {destination.name}",
+        argv=["alc", "init"],
     )
     return {"exec_id": ex.id, "destination": str(destination)}
