@@ -10,6 +10,8 @@ import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from alc.ui.auth import WS_UNAUTHORIZED, configured_token, ws_token_accepted
+
 
 def register(app: FastAPI) -> None:
     """Attach the /ws endpoint to the app."""
@@ -17,6 +19,20 @@ def register(app: FastAPI) -> None:
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
         await websocket.accept()
+
+        # A browser cannot set headers on the handshake, so an authenticated
+        # server expects {"type": "auth", token} as the FIRST frame. With no
+        # token configured this block is skipped entirely and the socket behaves
+        # exactly as it always has.
+        if configured_token(websocket.app.state):
+            try:
+                opening = await websocket.receive_json()
+            except (WebSocketDisconnect, ValueError):
+                return
+            if not ws_token_accepted(websocket, opening):
+                await websocket.close(code=WS_UNAUTHORIZED)
+                return
+
         bus = websocket.app.state.bus
         subscribed: set[str] = set()
 

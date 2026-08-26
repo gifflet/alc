@@ -26,6 +26,11 @@ _WRAPPER_TERMINALS = {"flow_finished", "task_finished"}
 _ABORT_TERMINAL = "run_aborted"
 
 
+# Events that carry a run's header. Only the opening lines are scanned.
+_HEADLINE_EVENTS = {"flow_started", "task_started", "mandate_started"}
+_HEADLINE_SCAN_LINES = 20
+
+
 def _run_kind(stem: str) -> str:
     """Extract the run kind from a run-log stem (``<ts>-<kind>-<slug>-<hex>``)."""
     parts = stem.split("-")
@@ -59,6 +64,49 @@ def _run_finished(path: Path) -> bool:
     if events & _WRAPPER_TERMINALS:
         return True
     return not (events & _WRAPPER_STARTS) and "mandate_finished" in events
+
+
+def _run_headline(path: Path) -> tuple[str, str]:
+    """Return the human name of a run: ``(title, unit)``.
+
+    A stem (``20260825T110002-task-specialist-deps-refresh-cc3``) is an address,
+    not a name — it identifies the file, and an operator scanning a list should
+    read what the run was ASKED to do. The header events carry that: `task` is
+    the instruction, and flow/name/blueprint is the unit that ran it.
+
+    Only the opening events are read (the header is always at the top), and both
+    values degrade to "" so a caller can fall back to the stem.
+    """
+    title = ""
+    unit = ""
+    try:
+        with path.open() as handle:
+            for index, line in enumerate(handle):
+                if index >= _HEADLINE_SCAN_LINES or (title and unit):
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                name = event.get("event")
+                if name not in _HEADLINE_EVENTS:
+                    continue
+                if not title:
+                    task = event.get("task")
+                    if isinstance(task, str) and task.strip():
+                        title = task.strip().splitlines()[0]
+                if not unit:
+                    for key in ("flow", "name", "specialist", "blueprint"):
+                        value = event.get(key)
+                        if isinstance(value, str) and value:
+                            unit = value
+                            break
+    except OSError:
+        return "", ""
+    return title, unit
 
 
 def _net_lines(path: Path) -> int | None:
@@ -124,10 +172,15 @@ def list_runs(runs_dir: Path, stale_after: float, limit: int = 50, offset: int =
     for path in page:
         st = path.stat()
         finished = _run_finished(path)
+        title, unit = _run_headline(path)
         runs.append(
             {
                 "stem": path.stem,
                 "kind": _run_kind(path.stem),
+                # What the run was asked to do, and which unit ran it. Empty when
+                # the log has no header yet — the caller falls back to the stem.
+                "title": title,
+                "unit": unit,
                 "mtime": st.st_mtime,
                 "size": st.st_size,
                 "finished": finished,

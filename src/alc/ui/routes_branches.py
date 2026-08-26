@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from alc.ui import service
+from alc.ui import review, service
 from alc.ui.deps import ProjectContext, get_project
 
 router = APIRouter(prefix="/api/projects/{id}", tags=["branches"])
@@ -23,6 +23,24 @@ class LandBody(BaseModel):
     mode: Literal["local", "push", "pr"] | None = None
     remote: str | None = None
     base: str | None = None
+
+
+class ReviewComment(BaseModel):
+    """One line-anchored review note."""
+
+    path: str
+    line: int | None = None
+    text: str
+
+
+class ReviewBody(BaseModel):
+    """Body for POST /branches/review: the notes, and the unit to run them as."""
+
+    branch: str
+    comments: list[ReviewComment]
+    kind: Literal["flow", "specialist"] = "flow"
+    name: str | None = None
+    engine: str | None = None
 
 
 class BundlesSpec(BaseModel):
@@ -48,6 +66,25 @@ def get_branches(ctx: ProjectContext = Depends(get_project)) -> dict:
 def land(body: LandBody, ctx: ProjectContext = Depends(get_project)) -> dict:
     return service.land_branches(
         ctx.root, body.branches, mode=body.mode, remote=body.remote, base=body.base
+    )
+
+
+@router.get("/branches/diff")
+def get_branch_diff(branch: str, ctx: ProjectContext = Depends(get_project)) -> dict:
+    # `branch` is a QUERY param: an alc/* name carries a `/`, which a path param
+    # would split (same reason /variants/diff takes `?branch=`).
+    return service.alc_branch_diff(ctx.root, branch)
+
+
+@router.post("/branches/review")
+def submit_review(body: ReviewBody, ctx: ProjectContext = Depends(get_project)) -> dict:
+    return review.submit_review(
+        ctx.root,
+        body.branch,
+        [c.model_dump() for c in body.comments],
+        kind=body.kind,
+        name=body.name,
+        engine=body.engine,
     )
 
 
