@@ -45,6 +45,13 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
   },
+  // Search Console ownership. Next renders this as
+  // <meta name="google-site-verification" content="…"> in the head.
+  //
+  // Not a secret — it is served publicly in the HTML by design, which is how
+  // Google reads it. It must stay after verification succeeds: removing it
+  // eventually drops ownership of the property.
+  verification: { google: '1BYSLnSisrHVUhECfHa1fbzW2Qo9zHBLdNMhyTnHM6M' },
   icons: {
     icon: [{ url: asset('/brand/favicon.svg'), type: 'image/svg+xml' }],
     apple: asset('/brand/apple-touch-icon.png'),
