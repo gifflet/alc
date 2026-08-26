@@ -101,3 +101,43 @@ def test_clone_output_is_global_so_it_reaches_a_client_with_no_project(client, t
 
     listed = {e["id"]: e for e in client.get("/api/execs").json()}
     assert listed[exec_id]["project_id"] is None
+
+
+def test_new_project_creates_the_directory_and_starts_init(client, tmp_path):
+    response = client.post(
+        "/api/fs/new-project",
+        json={"parent": str(tmp_path), "name": "fresh", "git": False},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["destination"] == str((tmp_path / "fresh").resolve())
+    assert (tmp_path / "fresh").is_dir()
+    assert body["exec_id"]
+
+
+def test_new_project_can_make_a_git_repository(client, tmp_path):
+    """Isolation, landing and the commit step all need a repository, so a new
+    project gets one unless the caller says otherwise."""
+    client.post("/api/fs/new-project", json={"parent": str(tmp_path), "name": "repo"})
+    assert (tmp_path / "repo" / ".git").is_dir()
+
+
+def test_new_project_refuses_an_occupied_directory(client, tmp_path):
+    taken = tmp_path / "taken"
+    taken.mkdir()
+    (taken / "file").write_text("x")
+
+    response = client.post(
+        "/api/fs/new-project", json={"parent": str(tmp_path), "name": "taken"}
+    )
+    assert response.status_code == 400
+
+
+def test_new_project_refuses_a_name_that_escapes_the_parent(client, tmp_path):
+    response = client.post(
+        "/api/fs/new-project", json={"parent": str(tmp_path), "name": "../escape"}
+    )
+    assert response.status_code == 400
+    # Nothing should have been created outside the parent.
+    assert not (tmp_path.parent / "escape").exists()

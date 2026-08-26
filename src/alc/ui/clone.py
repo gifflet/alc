@@ -95,3 +95,27 @@ def build_argv(url: str, destination: Path) -> list[str]:
     validation cannot be read as a flag.
     """
     return ["git", "clone", "--progress", "--", url, str(destination)]
+
+
+def resolve_new_project(parent_raw: str, name: str) -> Path:
+    """Where a brand-new project will be created.
+
+    Unlike a clone, the directory may not exist yet — that is the normal case.
+    What must not happen is landing on top of something already there.
+    """
+    parent = Path(parent_raw).expanduser()
+    try:
+        parent = parent.resolve()
+    except OSError as exc:
+        raise ApiError(f"cannot resolve '{parent_raw}': {exc}", status=400) from exc
+    if not parent.is_dir():
+        raise ApiError(f"'{parent}' is not a directory", status=400)
+
+    folder = name.strip()
+    if not folder or folder in (".", "..") or "/" in folder or "\\" in folder:
+        raise ApiError(f"'{folder}' is not a usable directory name", status=400)
+
+    destination = parent / folder
+    if destination.exists() and any(destination.iterdir()):
+        raise ApiError(f"'{destination}' already exists and is not empty", status=400)
+    return destination

@@ -137,6 +137,13 @@ export const api = {
       body: JSON.stringify({ url, parent, name }),
     }),
 
+  /** Create a directory and scaffold an Operator Layer in it. */
+  newProject: (parent: string, name: string, git = true) =>
+    request<CloneStarted>('/api/fs/new-project', {
+      method: 'POST',
+      body: JSON.stringify({ parent, name, git }),
+    }),
+
   // Config viewers
   getManifest: (id: string) => request<RawParsed>(`${proj(id)}/manifest`),
   listCollection: (id: string, collection: CollectionName) =>

@@ -112,3 +112,28 @@ def test_argv_separates_options_from_operands(tmp_path):
     # `--` means even a URL that slipped past validation cannot be read as a flag.
     assert argv[:4] == ["git", "clone", "--progress", "--"]
     assert argv[4] == "https://h/o/r.git"
+
+
+class TestResolveNewProject:
+    def test_a_directory_that_does_not_exist_yet_is_the_normal_case(self, tmp_path):
+        target = clone.resolve_new_project(str(tmp_path), "fresh")
+        assert target == tmp_path.resolve() / "fresh"
+        assert not target.exists()
+
+    def test_an_empty_directory_is_acceptable(self, tmp_path):
+        (tmp_path / "empty").mkdir()
+        assert clone.resolve_new_project(str(tmp_path), "empty")
+
+    def test_refuses_to_land_on_top_of_existing_work(self, tmp_path):
+        occupied = tmp_path / "taken"
+        occupied.mkdir()
+        (occupied / "file").write_text("x")
+
+        with pytest.raises(ApiError) as exc:
+            clone.resolve_new_project(str(tmp_path), "taken")
+        assert "already exists and is not empty" in str(exc.value)
+
+    @pytest.mark.parametrize("name", ["", "  ", ".", "..", "a/b", "a\\b"])
+    def test_refuses_a_name_that_would_escape_the_parent(self, tmp_path, name: str) -> None:
+        with pytest.raises(ApiError):
+            clone.resolve_new_project(str(tmp_path), name)
