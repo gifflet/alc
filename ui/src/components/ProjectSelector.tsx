@@ -112,7 +112,7 @@ export function ProjectSelector({
               type="button"
               onClick={() => setMode(m)}
               aria-pressed={mode === m}
-              className={`rounded-xs px-2.5 py-1 text-[length:var(--ui-text-body)] transition-colors duration-120 ${
+              className={`inline-flex min-h-[var(--ui-control-h)] items-center rounded-xs px-2.5 text-[length:var(--ui-text-body)] transition-colors duration-120 ${
                 mode === m ? 'bg-hover text-primary' : 'text-faint hover:text-primary'
               }`}
             >

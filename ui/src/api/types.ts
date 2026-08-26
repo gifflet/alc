@@ -667,7 +667,8 @@ export type ExecStatus = 'running' | 'finished' | 'cancelled' | 'error'
 
 export interface ExecView {
   id: string
-  project_id: string
+  /** null for work that belongs to no project yet — a clone, for instance. */
+  project_id: string | null
   command: string
   status: ExecStatus
   exit_code: number | null
