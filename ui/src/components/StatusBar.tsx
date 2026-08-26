@@ -1,8 +1,9 @@
 // StatusBar.tsx — 24px footer: project, engine health, WS link, active execs.
-import { Cpu, Keyboard, Loader2 } from 'lucide-react'
+import { Cpu, Keyboard, Loader2, SunMoon } from 'lucide-react'
 import { useEngines, useExecs } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useWs } from '../ws/WsProvider'
+import { setTheme, useTheme } from '../app/useTheme'
 import { RepoStatus } from './RepoStatus'
 import { StatusDot } from './StatusDot'
 
@@ -18,13 +19,24 @@ export function StatusBar({
   const { data: engines } = useEngines(id)
   const { data: execs } = useExecs()
   const running = (execs ?? []).filter((e) => e.project_id === id && e.status === 'running').length
+  const theme = useTheme()
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-border bg-panel px-3 text-[11px] text-muted">
+    <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-border bg-panel px-3 text-[length:var(--ui-text-label)] text-muted">
       <span className="flex items-center gap-1.5 text-primary">
         <Cpu className="h-3 w-3 text-muted" />
         {projectName}
       </span>
+
+      <button
+        type="button"
+        aria-label={`Theme: ${theme}`}
+        title={`Theme: ${theme} — click to switch`}
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="flex items-center text-faint hover:text-primary"
+      >
+        <SunMoon className="h-3 w-3" />
+      </button>
 
       <RepoStatus />
 

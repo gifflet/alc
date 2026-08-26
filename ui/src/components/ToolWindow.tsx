@@ -51,16 +51,16 @@ function SectionShell({
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <div>
-      <div className="group/section flex h-[28px] w-full items-center gap-1 px-2 text-[12px] text-muted transition-colors duration-120 hover:bg-hover">
+      <div className="group/section flex h-[var(--ui-row-h)] w-full items-center gap-1 px-2 text-[length:var(--ui-text-body)] text-muted transition-colors duration-120 hover:bg-hover">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           className="flex flex-1 items-center gap-1 truncate text-left"
         >
           <Chevron className="h-3.5 w-3.5 text-faint" />
-          <span className="flex-1 truncate uppercase tracking-wide text-[11px]">{label}</span>
+          <span className="flex-1 truncate uppercase tracking-wide text-[length:var(--ui-text-label)]">{label}</span>
         </button>
-        <span className="tabular text-[11px] text-faint">{count}</span>
+        <span className="tabular text-[length:var(--ui-text-label)] text-faint">{count}</span>
         <button
           type="button"
           aria-label={`New ${label}`}
@@ -93,7 +93,7 @@ function LeafRow({
   return (
     <div
       style={{ animationDelay: `${Math.min(index, 8) * 12}ms` }}
-      className={`group/leaf alc-fade-in flex h-[28px] w-full items-center gap-1.5 pl-7 pr-2 text-[12px] transition-colors duration-120 ${
+      className={`group/leaf alc-fade-in flex h-[var(--ui-row-h)] w-full items-center gap-1.5 pl-7 pr-2 text-[length:var(--ui-text-body)] transition-colors duration-120 ${
         active ? 'bg-hover text-primary' : 'text-muted hover:bg-hover'
       }`}
     >
@@ -140,8 +140,8 @@ function NewFileDialog({
     >
       <div className="flex flex-col gap-2">
         <TextInput value={name} onChange={setName} placeholder="name" mono autoFocus />
-        <p className="text-[11px] text-faint">A minimal valid template is scaffolded for you.</p>
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        <p className="text-[length:var(--ui-text-label)] text-faint">A minimal valid template is scaffolded for you.</p>
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )
@@ -401,7 +401,7 @@ export function ToolWindow() {
             title: 'manifest.yaml',
           })
         }
-        className={`flex h-[28px] w-full items-center gap-1.5 px-2 text-[12px] transition-colors duration-120 hover:bg-hover ${
+        className={`flex h-[var(--ui-row-h)] w-full items-center gap-1.5 px-2 text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover ${
           manifestActive ? 'bg-hover text-primary' : 'text-muted'
         }`}
       >

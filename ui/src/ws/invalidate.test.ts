@@ -22,7 +22,12 @@ describe('wsInvalidations', () => {
   })
 
   it('invalidates queue on queue_changed', () => {
-    expect(wsInvalidations({ type: 'queue_changed', project_id: 'p' })).toEqual([keys.queue('p')])
+    // A queue change can create or resolve an outstanding failure, so the
+    // Inbox (and its badge) must follow it.
+    expect(wsInvalidations({ type: 'queue_changed', project_id: 'p' })).toEqual([
+      keys.queue('p'),
+      keys.inbox('p'),
+    ])
   })
 
   it('invalidates a loop state, ledger, the loops collection and the team roster', () => {
@@ -77,7 +82,23 @@ describe('wsInvalidations', () => {
       stem: 's',
       event: { ts: 't', event: 'check_finished' },
     })
-    expect(midRun).toEqual([])
+    // The runs LIST must not thrash on mid-run events...
+    expect(midRun).not.toContainEqual(keys.runs('p'))
+    // ...but the Fleet grid shows phase/attempt/running check, so it follows
+    // every event — that live motion is the entire point of the screen.
+    expect(midRun).toEqual([keys.fleet('p')])
+  })
+
+  it('keeps the fleet live on both mid-run and lifecycle events', () => {
+    for (const event of ['mandate_started', 'act_finished', 'mandate_finished']) {
+      const out = wsInvalidations({
+        type: 'run_event',
+        project_id: 'p',
+        stem: 's',
+        event: { ts: 't', event },
+      })
+      expect(out).toContainEqual(keys.fleet('p'))
+    }
   })
 
   it('invalidates the run-configs list when the file changes', () => {

@@ -85,3 +85,30 @@ describe('sourceTitle', () => {
     expect(sourceTitle('prompts', 'act')).toBe('act.md')
   })
 })
+
+describe('branch review route', () => {
+  const BRANCH = 'alc/run-a1b2c3d4'
+
+  it('encodes the slash in a branch name', () => {
+    expect(pathForTab('p', { type: 'review', branch: BRANCH })).toBe(
+      '/projects/p/review/alc%2Frun-a1b2c3d4',
+    )
+  })
+
+  it('round-trips the encoded form the browser reports', () => {
+    const arg = openArgFromPath(['review', 'alc%2Frun-a1b2c3d4'])
+    expect(arg?.target).toEqual({ type: 'review', branch: BRANCH })
+  })
+
+  it('also accepts a path that arrived already decoded', () => {
+    // A hand-typed or proxy-decoded URL splits the branch across segments;
+    // falling through to the dashboard would look like a dead link.
+    const arg = openArgFromPath(['review', 'alc', 'run-a1b2c3d4'])
+    expect(arg?.target).toEqual({ type: 'review', branch: BRANCH })
+  })
+
+  it('survives a full store round-trip', () => {
+    const arg = openArgFromPath(['review', 'alc%2Frun-a1b2c3d4'])!
+    expect(pathForTab('p', arg.target)).toBe('/projects/p/review/alc%2Frun-a1b2c3d4')
+  })
+})

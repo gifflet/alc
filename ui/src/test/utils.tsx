@@ -39,6 +39,34 @@ export function renderControlledForm(
   return render(<Controlled />)
 }
 
+/**
+ * Install a matchMedia stub. `matching` lists query fragments that should match
+ * (e.g. '(pointer: coarse)'); everything else reports false.
+ *
+ * jsdom ships no matchMedia, and the production code deliberately treats its
+ * absence as "not matching" — which lands on `compact`, today's desktop. Tests
+ * that want touch/narrow behaviour must opt in through this helper.
+ */
+export function mockMatchMedia(matching: string[] = []): void {
+  window.matchMedia = ((query: string) =>
+    ({
+      matches: matching.some((fragment) => query.includes(fragment)),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList) as typeof window.matchMedia
+}
+
+/** Remove the matchMedia stub, restoring the "no matchMedia" host default. */
+export function clearMatchMedia(): void {
+  // @ts-expect-error — deleting an optional host API is the point of the reset.
+  delete window.matchMedia
+}
+
 /** A minimal Response-like object for the fetch stub. */
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -54,6 +82,8 @@ export interface FetchCall {
   url: string
   method: string
   body: unknown
+  /** Request headers, lower-cased keys — for asserting auth is attached. */
+  headers: Record<string, string>
 }
 
 /** Wrap a status + body so a route handler can return a non-200 response. */
@@ -89,7 +119,11 @@ export function installFetch(routes: Routes): FetchMock {
         body = init.body
       }
     }
-    const call: FetchCall = { url, method, body }
+    const headers: Record<string, string> = {}
+    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) {
+      headers[k.toLowerCase()] = v
+    }
+    const call: FetchCall = { url, method, body, headers }
     mock.calls.push(call)
     for (const [pattern, value] of entries) {
       if (!url.includes(pattern)) continue

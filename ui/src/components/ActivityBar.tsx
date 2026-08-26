@@ -1,6 +1,8 @@
 // ActivityBar.tsx — The 40px icon rail: primary views + the projects action.
 import {
   Boxes,
+  Inbox as InboxIcon,
+  LayoutGrid,
   GitCompare,
   LayoutDashboard,
   LineChart,
@@ -26,6 +28,8 @@ interface Item {
 
 const ITEMS: Item[] = [
   { view: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { view: 'fleet', icon: LayoutGrid, label: 'Fleet' },
+  { view: 'inbox', icon: InboxIcon, label: 'Inbox' },
   { view: 'queue', icon: ListTodo, label: 'Queue' },
   { view: 'runs', icon: Radio, label: 'Runs' },
   { view: 'loops', icon: RefreshCw, label: 'Loops' },
@@ -39,6 +43,8 @@ const ITEMS: Item[] = [
 
 const VIEW_TITLE: Record<PrimaryView, string> = {
   dashboard: 'Dashboard',
+  fleet: 'Fleet',
+  inbox: 'Inbox',
   queue: 'Queue',
   runs: 'Runs',
   loops: 'Loops',
@@ -59,24 +65,37 @@ function RailButton({
   label,
   active,
   onClick,
+  badge,
 }: {
   icon: LucideIcon
   label: string
   active: boolean
   onClick: () => void
+  /** Count of pending decisions; hidden at zero. */
+  badge?: number
 }) {
   return (
     <button
       type="button"
-      title={label}
-      aria-label={label}
+      title={badge ? `${label} — ${badge} waiting` : label}
+      aria-label={badge ? `${label}, ${badge} waiting` : label}
       onClick={onClick}
-      className={`relative flex h-10 w-10 items-center justify-center transition-colors duration-120 ${
+      className={`relative flex h-[var(--ui-rail-btn)] w-[var(--ui-rail-btn)] items-center justify-center transition-colors duration-120 ${
         active ? 'text-primary' : 'text-faint hover:text-muted'
       }`}
     >
       {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded bg-accent" />}
       <Icon className="h-5 w-5" strokeWidth={1.75} />
+      {Boolean(badge) && (
+        <span
+          // Count, never a bare dot: "2 waiting" is a different decision from
+          // "9 waiting", and the operator should not have to open the view to
+          // learn which.
+          className="absolute right-0.5 top-0.5 min-w-[14px] rounded-full bg-accent px-1 text-center text-[length:var(--ui-text-label)] font-medium leading-[14px] text-base"
+        >
+          {badge}
+        </span>
+      )}
     </button>
   )
 }
@@ -84,13 +103,17 @@ function RailButton({
 export function ActivityBar({
   onOpenProjects,
   onOpenSpike,
+  inboxCount,
 }: {
   onOpenProjects: () => void
   onOpenSpike: () => void
+  /** Pending decisions, passed in by the Shell: the rail stays presentational
+   * and does not require project context to render. */
+  inboxCount?: number
 }) {
   const { activeTabId } = useUiState()
   return (
-    <nav className="flex w-10 shrink-0 flex-col items-center justify-between border-r border-border bg-panel py-1">
+    <nav className="flex w-[var(--ui-rail-btn)] shrink-0 flex-col items-center justify-between border-r border-border bg-panel py-1">
       <div className="flex flex-col">
         {ITEMS.map((item) => (
           <RailButton
@@ -98,6 +121,7 @@ export function ActivityBar({
             icon={item.icon}
             label={item.label}
             active={activeTabId === `view:${item.view}`}
+            badge={item.view === 'inbox' ? inboxCount : undefined}
             onClick={() => openView(item.view)}
           />
         ))}

@@ -40,7 +40,7 @@ export function RepoStatus() {
   const tooltip = `${head} — ${sync}${dirty ? `; ${untracked} untracked` : ''}`
 
   return (
-    <span className="flex items-center gap-1.5 text-[11px]" title={tooltip}>
+    <span className="flex items-center gap-1.5 text-[length:var(--ui-text-label)]" title={tooltip}>
       <GitBranch className="h-3 w-3 text-muted" />
       <span className={detached ? 'text-faint' : 'text-muted'}>
         {detached ? 'detached' : branch}

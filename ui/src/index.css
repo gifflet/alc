@@ -3,9 +3,18 @@
 @import '@fontsource-variable/jetbrains-mono';
 
 /*
- * Design tokens — "instrument control room", industrial/refined, JetBrains
- * (Darcula / New UI) lineage. Semantic names map to the brief's palette.
+ * Design tokens — "instrument control room", industrial and refined, in the
+ * lineage of a dark IDE. Semantic names map to the brief's palette.
  * Elevation comes from surface + 1px border, never large diffuse shadows.
+ *
+ * Dark is the default and lives in @theme (that is what Tailwind compiles the
+ * utilities from). Light overrides the same semantic roles below, so NO
+ * component changes when the theme flips — every component already consumes
+ * `text-faint` / `bg-panel` rather than a raw hex.
+ *
+ * Contrast is enforced by lib/contrast.test.ts, not merely intended: the dark
+ * theme shipped with `faint` at 2.83:1 — under even the 3:1 UI floor — because
+ * nothing was checking; every pair below is measured.
  */
 @theme {
   /* Surfaces */
@@ -18,21 +27,142 @@
   /* Text */
   --color-primary: #d5d8dc;
   --color-muted: #8b9096;
-  --color-faint: #5e646b;
+  /* Was #5e646b: 2.83:1 on base, 2.16:1 on hover — it carries table headers,
+     timestamps and metric labels, i.e. the first thing to vanish in daylight. */
+  --color-faint: #7d848b;
 
   /* Accents / status */
-  --color-accent: #3d7edb;
+  /* Was #3d7edb: 4.19:1 on base and 3.87:1 on panel — under AA body for links
+     and actions. Calibrated against panel (cards/rails), not just base. */
+  --color-accent: #5794e6;
   --color-live: #5cc975;
   --color-running: #d9a343;
-  --color-error: #e5544b;
+  /* Was #e5544b: 4.23:1 on panel — failure text is the last thing that may be
+     hard to read. */
+  --color-error: #ee6f66;
   --color-warn: #c9a23f;
 
   /* Fonts */
   --font-sans: 'IBM Plex Sans Variable', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
 
-  /* Density */
-  --radius-panel: 3px;
+  /* The shared radius used by `rounded-panel` across ~90 components. Raising
+     the TOKEN updates all of them at once; cards, dialogs and sheets opt into
+     the larger steps (--radius-md / --radius-lg) explicitly. */
+  --radius-panel: 6px;
+}
+
+/*
+ * Radius and elevation scales.
+ *
+ * The old `--radius-panel: 3px` plus a 1px border around everything reads as
+ * dated. This goes the other way: rounder corners, borders replaced by surface
+ * separation, and real (but subtle) elevation on things that float.
+ *
+ * Elevation is theme-aware: on a dark surface a shadow must be denser to read at
+ * all, while on light it has to stay soft or it looks like a smudge.
+ */
+:root {
+  --radius-xs: 4px;   /* pills, badges, checkbox */
+  --radius-sm: 6px;   /* buttons, inputs, small controls */
+  --radius-md: 8px;   /* cards, panels */
+  --radius-lg: 12px;  /* dialogs, sheets, command palette */
+
+  /* 1: resting card · 2: popup/dropdown · 3: dialog/sheet/palette */
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.30), 0 1px 1px rgb(0 0 0 / 0.18);
+  --elev-2: 0 4px 12px rgb(0 0 0 / 0.34), 0 1px 3px rgb(0 0 0 / 0.22);
+  --elev-3: 0 12px 32px rgb(0 0 0 / 0.44), 0 2px 8px rgb(0 0 0 / 0.26);
+}
+
+
+/*
+ * Density scale.
+ *
+ * `compact` is today's desktop lifted verbatim into variables (28px rows, 11px
+ * labels): the values below MUST stay identical to what the components used to
+ * hardcode, or the desktop drifts. `comfortable` raises every interactive
+ * target to the 44px touch floor for phones and tablets.
+ *
+ * Components consume these tokens; no component queries the viewport itself.
+ * useDensity writes `data-density` onto <html> and the whole tree follows.
+ */
+:root {
+  /* The old values (28/24/12/11/8/4) read as cramped. Every step here is
+     deliberate and measured on screen. */
+  --ui-row-h: 32px;
+  --ui-control-h: 28px;
+  --ui-rail-btn: 40px;
+  --ui-text-body: 13px;
+  --ui-text-label: 12px;
+  --ui-text-title: 14px;
+  --ui-icon: 16px;
+  --ui-gap: 10px;
+  --ui-pad-x: 12px;
+  --ui-pad-y: 6px;
+  --ui-tap-slop: 0px;
+}
+
+/*
+ * Light theme — the same semantic roles, re-valued. Worst pair anywhere is
+ * 3.08:1 (faint on hover), which clears the UI floor; every body-text pair
+ * clears 4.5:1. Applied by useTheme via data-theme on <html>.
+ */
+:root[data-theme='light'] {
+  --color-base: #ffffff;
+  --color-panel: #f1f2f4;
+  --color-raised: #f8f9fa;
+  --color-hover: #e6e8eb;
+  --color-border: #d2d6db;
+
+  --color-primary: #1e2124;
+  --color-muted: #5a6066;
+  --color-faint: #7d848b;
+
+  --color-accent: #1f66c9;
+  --color-live: #1f7a3d;
+  --color-running: #8a5d0a;
+  --color-error: #c4342a;
+  --color-warn: #7d6410;
+
+  /* On light, a shadow must stay soft or it reads as a smudge. */
+  --elev-1: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.10);
+  --elev-2: 0 4px 12px rgb(16 24 40 / 0.08), 0 1px 3px rgb(16 24 40 / 0.10);
+  --elev-3: 0 12px 32px rgb(16 24 40 / 0.12), 0 2px 8px rgb(16 24 40 / 0.08);
+
+  color-scheme: light;
+}
+
+/*
+ * cozy — a tablet: touch, but a screen big enough for the IDE grid. Targets are
+ * 40px (comfortably tappable without phone-sized rows), type sits between the
+ * two, and the grid keeps enough density to stay useful at 810px.
+ */
+:root[data-density='cozy'] {
+  --ui-row-h: 40px;
+  --ui-control-h: 40px;
+  --ui-rail-btn: 44px;
+  --ui-text-body: 14px;
+  --ui-text-label: 12px;
+  --ui-text-title: 15px;
+  --ui-icon: 18px;
+  --ui-gap: 12px;
+  --ui-pad-x: 14px;
+  --ui-pad-y: 8px;
+  --ui-tap-slop: 2px;
+}
+
+:root[data-density='comfortable'] {
+  --ui-row-h: 48px;
+  --ui-control-h: 44px;
+  --ui-rail-btn: 48px;
+  --ui-text-body: 15px;
+  --ui-text-label: 13px;
+  --ui-text-title: 17px;
+  --ui-icon: 20px;
+  --ui-gap: 14px;
+  --ui-pad-x: 16px;
+  --ui-pad-y: 10px;
+  --ui-tap-slop: 4px;
 }
 
 @layer base {

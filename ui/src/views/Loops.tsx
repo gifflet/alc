@@ -54,9 +54,9 @@ function LoopRow({ name }: { name: string }) {
   }
 
   return (
-    <div className="border-b border-border/60">
+    <div className="border-b border-border/15">
       <div
-        className={`group flex h-[28px] w-full items-center gap-2 px-3 text-[12px] transition-colors duration-120 ${
+        className={`group flex h-[var(--ui-row-h)] w-full items-center gap-2 px-3 text-[length:var(--ui-text-body)] transition-colors duration-120 ${
           active ? 'bg-hover' : 'hover:bg-hover'
         }`}
       >
@@ -69,7 +69,7 @@ function LoopRow({ name }: { name: string }) {
           <span className="min-w-0 flex-1 truncate">{name}</span>
         </button>
         <Pill tone={STATUS_TONE[status]}>{status}</Pill>
-        <span className="tabular w-16 text-right text-[11px] text-faint">cycle {data?.cycle ?? 0}</span>
+        <span className="tabular w-16 text-right text-[length:var(--ui-text-label)] text-faint">cycle {data?.cycle ?? 0}</span>
         <button
           type="button"
           aria-label={`Run cycle ${name}`}
@@ -88,7 +88,7 @@ function LoopRow({ name }: { name: string }) {
         </button>
         {running && <LoopRunDialog name={name} onClose={() => setRunning(false)} />}
       </div>
-      {error && <p className="px-3 pb-1 text-[11px] text-error">{error}</p>}
+      {error && <p className="px-3 pb-1 text-[length:var(--ui-text-label)] text-error">{error}</p>}
     </div>
   )
 }
@@ -111,7 +111,7 @@ export function Loops() {
       {dirty && (
         <div
           role="note"
-          className="m-2 rounded-panel border border-warn/40 bg-warn/10 px-3 py-2 text-[12px] text-warn"
+          className="m-2 rounded-panel border border-warn/40 bg-warn/10 px-3 py-2 text-[length:var(--ui-text-body)] text-warn"
         >
           {DIRTY_NOTE}
         </div>

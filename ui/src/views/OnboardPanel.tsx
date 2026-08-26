@@ -35,9 +35,9 @@ function checkStatus(check: ProposedCheck): { label: string; tone: Tone } {
 function ChecksTable({ checks }: { checks: ProposedCheck[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[420px] border-collapse text-[12px]">
+      <table className="w-full min-w-[420px] border-collapse text-[length:var(--ui-text-body)]">
         <thead>
-          <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
+          <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
             <th className="px-2 py-1 font-medium">Check</th>
             <th className="px-2 py-1 font-medium">Command / shell</th>
             <th className="px-2 py-1 font-medium">Status</th>
@@ -47,9 +47,9 @@ function ChecksTable({ checks }: { checks: ProposedCheck[] }) {
           {checks.map((c) => {
             const status = checkStatus(c)
             return (
-              <tr key={c.name} className="h-[28px] border-b border-border/60">
+              <tr key={c.name} className="h-[var(--ui-row-h)] border-b border-border/15">
                 <td className="px-2 font-mono text-primary">{c.name}</td>
-                <td className="px-2 font-mono text-[11px] text-muted">{checkForm(c)}</td>
+                <td className="px-2 font-mono text-[length:var(--ui-text-label)] text-muted">{checkForm(c)}</td>
                 <td className="px-2">
                   <Pill tone={status.tone}>{status.label}</Pill>
                 </td>
@@ -72,10 +72,10 @@ function AppliedSummary({ result }: { result: OnboardApplyResult }) {
     parts.push(`blueprints opted in: ${result.blueprints_opted_in.join(', ')}`)
   if (result.stage_set) parts.push('stage set')
   return (
-    <div className="rounded-panel border border-live/40 bg-live/10 px-3 py-2 text-[12px] text-live">
+    <div className="rounded-panel border border-live/40 bg-live/10 px-3 py-2 text-[length:var(--ui-text-body)] text-live">
       {parts.length > 0 ? `Adopted — ${parts.join('; ')}.` : 'Nothing to adopt.'}
       {result.notes.map((n) => (
-        <p key={n} className="mt-0.5 text-[11px] text-muted">
+        <p key={n} className="mt-0.5 text-[length:var(--ui-text-label)] text-muted">
           {n}
         </p>
       ))}
@@ -87,10 +87,10 @@ function AppliedSummary({ result }: { result: OnboardApplyResult }) {
  * editor's save error (rule + message). */
 function ViolationsNote({ error }: { error: ApiError }) {
   return (
-    <div className="rounded-panel border border-error/40 bg-error/10 px-3 py-2 text-[12px] text-error">
+    <div className="rounded-panel border border-error/40 bg-error/10 px-3 py-2 text-[length:var(--ui-text-body)] text-error">
       <p className="font-medium">{error.message}</p>
       {error.violations.length > 0 && (
-        <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[11px] text-error/90">
+        <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[length:var(--ui-text-label)] text-error/90">
           {error.violations.map((v, i) => (
             <li key={i}>
               <span className="text-faint">{v.rule}:</span> {v.message}
@@ -110,7 +110,7 @@ export function OnboardPanel() {
   const apply = useApplyOnboard(id)
   const [applied, setApplied] = useState<OnboardApplyResult | null>(null)
 
-  if (isLoading) return <p className="text-[12px] text-faint">Loading…</p>
+  if (isLoading) return <p className="text-[length:var(--ui-text-body)] text-faint">Loading…</p>
   if (!data) return null
 
   const projectChecks = data.check_sets.project ?? []
@@ -124,7 +124,7 @@ export function OnboardPanel() {
     // then the generic CLI hint. Never hard-code "none were harvested": it is
     // wrong once a project is already onboarded.
     return (
-      <div className="flex flex-col gap-1.5 text-[12px] text-faint">
+      <div className="flex flex-col gap-1.5 text-[length:var(--ui-text-body)] text-faint">
         {data.unknowns.map((note) => (
           <p key={note} className="flex items-start gap-1.5">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -154,7 +154,7 @@ export function OnboardPanel() {
     <div className="flex flex-col gap-3">
       {projectChecks.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11px] uppercase tracking-wide text-faint">
+          <p className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
             Proposed <span className="font-mono">project</span> check_set
           </p>
           <ChecksTable checks={projectChecks} />
@@ -162,7 +162,7 @@ export function OnboardPanel() {
       )}
 
       {optInNames.length > 0 && (
-        <p className="text-[12px] text-muted">
+        <p className="text-[length:var(--ui-text-body)] text-muted">
           Will insert <span className="font-mono text-primary">check_set: project</span> into:{' '}
           {optInNames.map((name, i) => (
             <span key={name}>
@@ -174,14 +174,14 @@ export function OnboardPanel() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-[11px] uppercase tracking-wide text-faint" htmlFor="onboard-stage">
+        <label className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint" htmlFor="onboard-stage">
           Stage
         </label>
         <select
           id="onboard-stage"
           value={stage}
           onChange={(e) => setStage(e.target.value)}
-          className="rounded-panel border border-border bg-panel px-2 py-1 text-[12px] text-primary"
+          className="rounded-panel border border-border bg-panel px-2 py-1 text-[length:var(--ui-text-body)] text-primary"
         >
           <option value="">none</option>
           {STAGES.map((s) => (
@@ -194,14 +194,14 @@ export function OnboardPanel() {
           type="button"
           onClick={doAdopt}
           disabled={apply.isPending}
-          className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 py-1 text-[12px] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 py-1 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
         >
           Adopt
         </button>
       </div>
 
       {selectedStage && data.team_hints.length > 0 && (
-        <p className="text-[12px] text-muted">
+        <p className="text-[length:var(--ui-text-body)] text-muted">
           stage <span className="text-primary">{selectedStage}</span> suggests hiring:{' '}
           {data.team_hints.join(', ')}{' '}
           <span className="text-faint">(advisory — a stage never changes execution)</span>

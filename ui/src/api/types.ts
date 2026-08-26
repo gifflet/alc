@@ -134,6 +134,10 @@ export interface Queue {
 export interface RunSummary {
   stem: string
   kind: string
+  /** What the run was asked to do (first line of the task); "" when unknown. */
+  title: string
+  /** The blueprint / flow / specialist that ran it; "" when unknown. */
+  unit: string
   mtime: number
   size: number
   finished: boolean
@@ -156,6 +160,55 @@ export interface RunEvent {
   [key: string]: unknown
 }
 
+/** A review note anchored to a line of a branch's diff. */
+export interface ReviewComment {
+  path: string
+  line: number | null
+  text: string
+}
+export interface ReviewResult {
+  stem: string
+  comments: number
+  branch: string
+}
+
+/** One decision waiting on a human (see src/alc/ui/inbox.py). */
+export type InboxKind = 'failure' | 'branch' | 'loop'
+export interface InboxItem {
+  kind: InboxKind
+  id: string
+  title: string
+  reason: string
+  /** failure */
+  stem?: string
+  retries?: number
+  /** A retry is already queued for this lineage — it has not run yet. */
+  retry_pending?: boolean
+  /** branch */
+  branch?: string
+  committed_at?: number
+  /** loop */
+  loop?: string
+  cycle?: number
+}
+export interface InboxResponse {
+  items: InboxItem[]
+  /** Always equals items.length — the badge and the list are one number. */
+  count: number
+}
+
+/** One unit executing right now, with the raw events the card folds itself. */
+export interface FleetUnit {
+  stem: string
+  kind: string
+  mtime: number
+  events: RunEvent[]
+  /** True when the log exceeded the per-unit cap and only its tail is carried. */
+  truncated: boolean
+}
+export interface FleetResponse {
+  units: FleetUnit[]
+}
 export interface RunDetail {
   events: RunEvent[]
   next_offset: number

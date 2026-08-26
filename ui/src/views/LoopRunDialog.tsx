@@ -70,7 +70,7 @@ export function LoopRunDialog({ name, onClose }: { name: string; onClose: () => 
 
         <Checkbox checked={reset} onChange={setReset} label="Reset the loop's stopped state first" />
 
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )

@@ -1,12 +1,16 @@
-// Dashboard.tsx — Project overview: scorecard, queue, recent runs, loops, engines.
-// Every card is backed by a live query invalidated over WS — no manual refresh.
+// Dashboard.tsx — The project's health panel.
+//
+// Deliberately NOT an index of the other views: Queue and Loops cards were cut
+// because the Queue, Loops and Inbox screens answer those questions with more
+// detail and an action attached. What remains is what only this screen answers —
+// the Scorecard trend, engine health, team mix and the cron schedule — plus
+// Recent runs, kept as the one shortcut worth having (it is what lets Runs leave
+// the mobile bar). Every card is a live query invalidated over WS.
 import { useState } from 'react'
-import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, ListTodo, PieChart, RefreshCw } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, PieChart } from 'lucide-react'
 import {
   useAudit,
-  useCollection,
   useEngines,
-  useLoopState,
   useQueue,
   useRuns,
   useSchedule,
@@ -29,7 +33,11 @@ import type { MixHealth } from '../api/types'
 function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.span))
   return (
-    <div className="mt-3 flex h-12 items-end gap-1 rounded-panel border border-border bg-base p-2">
+    // items-stretch, not items-end: with `items-end` each column sizes to its
+    // content, so the bar's percentage height resolved against a zero-height
+    // parent and NOTHING rendered — the card showed an empty box. The column
+    // stretches; `justify-end` inside it still anchors the bar to the bottom.
+    <div className="mt-3 flex h-12 items-stretch gap-1 rounded-panel border border-border bg-base p-2">
       {points.map((p) => (
         <div
           key={p.stem}
@@ -82,23 +90,8 @@ function ScorecardCard() {
           {history.length > 0 && <ScorecardHistory points={history} />}
         </>
       ) : (
-        <p className="text-[12px] text-faint">No archived reports yet.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No archived reports yet.</p>
       )}
-    </Card>
-  )
-}
-
-function QueueCard() {
-  const id = useProjectId()
-  const { data } = useQueue(id)
-  const pending = data?.pending.length ?? 0
-  const done = data?.done.length ?? 0
-  return (
-    <Card title="Queue" icon={ListTodo} action={<LinkButton onClick={() => openView('queue')} />}>
-      <div className="grid grid-cols-2 gap-3">
-        <Metric label="pending" value={pending} tone={pending > 0 ? 'running' : undefined} />
-        <Metric label="done" value={done} />
-      </div>
     </Card>
   )
 }
@@ -108,7 +101,7 @@ function LinkButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="text-[11px] text-accent transition-colors duration-120 hover:underline"
+      className="text-[length:var(--ui-text-label)] text-accent transition-colors duration-120 hover:underline"
     >
       open
     </button>
@@ -122,7 +115,7 @@ function RunsCard() {
   return (
     <Card title="Recent runs" icon={Activity} action={<LinkButton onClick={() => openView('runs')} />}>
       {runs.length === 0 ? (
-        <p className="text-[12px] text-faint">No runs recorded.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No runs recorded.</p>
       ) : (
         <ul className="flex flex-col">
           {runs.map((r) => (
@@ -130,52 +123,16 @@ function RunsCard() {
               <button
                 type="button"
                 onClick={() => uiStore.openTab({ target: { type: 'run', stem: r.stem }, title: r.stem })}
-                className="flex h-[26px] w-full items-center gap-2 text-left text-[12px] transition-colors duration-120 hover:bg-hover"
+                className="flex h-[26px] w-full items-center gap-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
               >
                 <StatusDot tone={r.finished ? 'idle' : 'running'} pulse={!r.finished} />
-                <span className="w-10 font-mono text-[11px] text-faint">{r.kind}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">{r.stem}</span>
+                <span className="w-10 font-mono text-[length:var(--ui-text-label)] text-faint">{r.kind}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--ui-text-label)] text-muted">{r.stem}</span>
                 <RelativeTime value={r.mtime} />
               </button>
             </li>
           ))}
         </ul>
-      )}
-    </Card>
-  )
-}
-
-function LoopRow({ name }: { name: string }) {
-  const id = useProjectId()
-  const { data } = useLoopState(id, name)
-  const tone = data?.status === 'running' ? 'running' : data?.status === 'stopped' ? 'error' : 'idle'
-  return (
-    <button
-      type="button"
-      onClick={() => uiStore.openTab({ target: { type: 'loop', name }, title: name })}
-      className="flex h-[26px] w-full items-center gap-2 text-left text-[12px] transition-colors duration-120 hover:bg-hover"
-    >
-      <StatusDot tone={tone} pulse={data?.status === 'running'} />
-      <span className="min-w-0 flex-1 truncate text-muted">{name}</span>
-      <span className="tabular text-[11px] text-faint">cycle {data?.cycle ?? 0}</span>
-    </button>
-  )
-}
-
-function LoopsCard() {
-  const id = useProjectId()
-  const { data } = useCollection(id, 'loops')
-  const loops = data ?? []
-  return (
-    <Card title="Loops" icon={RefreshCw} action={<LinkButton onClick={() => openView('loops')} />}>
-      {loops.length === 0 ? (
-        <p className="text-[12px] text-faint">No loops defined.</p>
-      ) : (
-        <div className="flex flex-col">
-          {loops.map((l) => (
-            <LoopRow key={l.name} name={l.name} />
-          ))}
-        </div>
       )}
     </Card>
   )
@@ -190,15 +147,15 @@ function EnginesCard() {
     <Card title="Engines" icon={Cpu}>
       <div className="flex flex-col gap-1.5">
         {engines.map((e) => (
-          <div key={e.name} className="flex items-center gap-2 text-[12px]">
+          <div key={e.name} className="flex items-center gap-2 text-[length:var(--ui-text-body)]">
             <StatusDot tone={e.healthy ? 'live' : 'error'} />
             <span className="text-primary">{e.name}</span>
             {e.default && <Pill tone="accent">default</Pill>}
-            <span className="ml-auto font-mono text-[11px] text-faint">{e.type}</span>
+            <span className="ml-auto font-mono text-[length:var(--ui-text-label)] text-faint">{e.type}</span>
           </div>
         ))}
         {mockIsDefault && (
-          <p className="text-[11px] text-warn">
+          <p className="text-[length:var(--ui-text-label)] text-warn">
             mock is a no-op engine — runs verify nothing. Set a real default (claude-code or
             gemini) in the Manifest.
           </p>
@@ -232,14 +189,14 @@ function MixHealthCard() {
   return (
     <Card title="Mix Health" icon={PieChart} action={<LinkButton onClick={() => openView('team')} />}>
       {!health || health.total_runs === 0 ? (
-        <p className="text-[12px] text-faint">No data yet — no archived runs.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No data yet — no archived runs.</p>
       ) : !health.stage ? (
-        <p className="text-[12px] text-faint">
+        <p className="text-[length:var(--ui-text-body)] text-faint">
           No stage declared — {health.total_runs} run{health.total_runs === 1 ? '' : 's'} unjudged.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] text-muted">
+          <p className="text-[length:var(--ui-text-body)] text-muted">
             Stage: <span className="text-primary">{health.stage}</span>
           </p>
           {(() => {
@@ -277,7 +234,7 @@ function AuditCard() {
           aria-label="Audit window"
           value={since}
           onChange={(e) => setSince(e.target.value as AuditWindowOption)}
-          className="rounded-panel border border-border bg-base px-1.5 py-0.5 text-[11px] text-primary outline-none focus:border-accent"
+          className="rounded-panel border border-border bg-base px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
         >
           {AUDIT_WINDOWS.map((w) => (
             <option key={w} value={w}>
@@ -299,7 +256,7 @@ function AuditCard() {
           <Metric label="cost" value={formatCost(data.cost_usd_total)} />
         </div>
       ) : (
-        <p className="text-[12px] text-faint">No archived tasks in this window.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No archived tasks in this window.</p>
       )}
     </Card>
   )
@@ -314,19 +271,19 @@ function ScheduleCard() {
   return (
     <Card title="Schedule" icon={CalendarClock}>
       {!data || !data.available ? (
-        <p className="text-[12px] text-faint">No crontab on this host.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No crontab on this host.</p>
       ) : entries.length === 0 ? (
-        <p className="text-[12px] text-faint">No ALC-scheduled entries.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No ALC-scheduled entries.</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {entries.map((line) => (
-            <li key={line} title={line} className="truncate font-mono text-[11px] text-muted">
+            <li key={line} title={line} className="truncate font-mono text-[length:var(--ui-text-label)] text-muted">
               {line}
             </li>
           ))}
         </ul>
       )}
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-2 text-[length:var(--ui-text-label)] text-faint">
         Read-only — install or remove a schedule with <code className="font-mono">alc schedule</code> on
         the CLI.
       </p>
@@ -344,10 +301,8 @@ export function Dashboard() {
   return (
     <div className="grid h-full grid-cols-1 content-start gap-3 overflow-auto p-4 md:grid-cols-2 xl:grid-cols-3">
       <ScorecardCard />
-      <QueueCard />
       <EnginesCard />
       <RunsCard />
-      <LoopsCard />
       <MixHealthCard />
       <AuditCard />
       <ScheduleCard />

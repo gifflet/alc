@@ -59,7 +59,7 @@ export function LoopDetail({ name }: { name: string }) {
         <RefreshCw className="h-4 w-4 text-muted" />
         <h1 className="text-[14px] font-medium text-primary">{name}</h1>
         <Pill tone={STATUS_TONE[s.status]}>{s.status}</Pill>
-        {s.stopped_reason && <span className="text-[12px] text-error">{s.stopped_reason}</span>}
+        {s.stopped_reason && <span className="text-[length:var(--ui-text-body)] text-error">{s.stopped_reason}</span>}
       </header>
 
       <div className="flex gap-6 rounded-panel border border-border bg-panel px-4 py-3">
@@ -70,58 +70,60 @@ export function LoopDetail({ name }: { name: string }) {
           tone={s.consecutive_no_progress > 0 ? 'warn' : undefined}
         />
         <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-[12px] text-primary">{budget(s.budget_used)}</span>
-          <span className="text-[11px] uppercase tracking-wide text-faint">budget used</span>
+          <span className="font-mono text-[length:var(--ui-text-body)] text-primary">{budget(s.budget_used)}</span>
+          <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">budget used</span>
         </div>
       </div>
 
       <section>
-        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Ledger</h2>
+        <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Ledger</h2>
         {records.length === 0 ? (
-          <p className="text-[12px] text-faint">This loop has not run any cycle yet.</p>
+          <p className="text-[length:var(--ui-text-body)] text-faint">This loop has not run any cycle yet.</p>
         ) : (
           <>
             <LedgerChart records={records} />
-            <table className="mt-3 w-full border-collapse text-[12px]">
-              <thead>
-                <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
-                  <th className="px-2 py-1 font-medium">Cycle</th>
-                  <th className="px-2 py-1 font-medium">Replenished</th>
-                  <th className="px-2 py-1 font-medium">Drained</th>
-                  <th className="px-2 py-1 font-medium">Ok</th>
-                  <th className="px-2 py-1 font-medium">Failed</th>
-                  <th className="px-2 py-1 font-medium">Merged</th>
-                  <th className="px-2 py-1 font-medium">Progress</th>
-                </tr>
-              </thead>
-              <tbody className="tabular">
-                {records.map((r) => (
-                  <tr key={r.cycle} className="h-[28px] border-b border-border/60">
-                    <td className="px-2 text-muted">{r.cycle}</td>
-                    <td className="px-2 text-muted">
-                      <span className="flex items-center gap-2">
-                        {r.replenished}
-                        {r.replenish_failed && <Pill tone="warn">replenish failed</Pill>}
-                      </span>
-                    </td>
-                    <td className="px-2 text-muted">{r.drained}</td>
-                    <td className="px-2 text-live">{r.succeeded}</td>
-                    <td className="px-2 text-error">{r.failed}</td>
-                    <td className="px-2 text-muted">
-                      {r.merged}
-                      {r.left > 0 && <span className="text-warn"> / {r.left} left</span>}
-                    </td>
-                    <td className="px-2">
-                      {r.progress ? (
-                        <span className="text-live">yes</span>
-                      ) : (
-                        <span className="text-faint">no</span>
-                      )}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="mt-3 w-full border-collapse text-[length:var(--ui-text-body)]">
+                <thead>
+                  <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+                    <th className="px-2 py-1 font-medium">Cycle</th>
+                    <th className="px-2 py-1 font-medium">Replenished</th>
+                    <th className="px-2 py-1 font-medium">Drained</th>
+                    <th className="px-2 py-1 font-medium">Ok</th>
+                    <th className="px-2 py-1 font-medium">Failed</th>
+                    <th className="px-2 py-1 font-medium">Merged</th>
+                    <th className="px-2 py-1 font-medium">Progress</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="tabular">
+                  {records.map((r) => (
+                    <tr key={r.cycle} className="h-[var(--ui-row-h)] border-b border-border/15">
+                      <td className="px-2 text-muted">{r.cycle}</td>
+                      <td className="px-2 text-muted">
+                        <span className="flex items-center gap-2">
+                          {r.replenished}
+                          {r.replenish_failed && <Pill tone="warn">replenish failed</Pill>}
+                        </span>
+                      </td>
+                      <td className="px-2 text-muted">{r.drained}</td>
+                      <td className="px-2 text-live">{r.succeeded}</td>
+                      <td className="px-2 text-error">{r.failed}</td>
+                      <td className="px-2 text-muted">
+                        {r.merged}
+                        {r.left > 0 && <span className="text-warn"> / {r.left} left</span>}
+                      </td>
+                      <td className="px-2">
+                        {r.progress ? (
+                          <span className="text-live">yes</span>
+                        ) : (
+                          <span className="text-faint">no</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </section>

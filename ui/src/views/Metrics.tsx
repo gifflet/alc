@@ -56,36 +56,38 @@ function MetricChart({ points }: { points: MetricPoint[] }) {
 function MetricSection({ check, points }: { check: string; points: MetricPoint[] }) {
   return (
     <section>
-      <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">{check}</h2>
+      <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">{check}</h2>
       <MetricChart points={points} />
-      <table className="mt-3 w-full border-collapse text-[12px]">
-        <thead>
-          <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
-            <th className="px-2 py-1 font-medium">When</th>
-            <th className="px-2 py-1 font-medium">Run</th>
-            <th className="px-2 py-1 font-medium">Value</th>
-            <th className="px-2 py-1 font-medium">Delta</th>
-            <th className="px-2 py-1 font-medium">Trend</th>
-            <th className="px-2 py-1 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody className="tabular">
-          {points.map((p, i) => (
-            <tr key={`${p.ts}-${i}`} className="h-[28px] border-b border-border/60">
-              <td className="px-2 text-muted">
-                <RelativeTime value={p.ts} />
-              </td>
-              <td className="px-2 truncate font-mono text-[11px] text-muted">{p.run}</td>
-              <td className="px-2 text-primary">{p.value}</td>
-              <td className="px-2 text-muted">{formatDelta(p.delta)}</td>
-              <td className="px-2 text-faint">{TREND_GLYPH[p.trend]}</td>
-              <td className="px-2">
-                <Pill tone={p.passed ? 'live' : 'error'}>{p.passed ? 'accepted' : 'rejected'}</Pill>
-              </td>
+      <div className="overflow-x-auto">
+        <table className="mt-3 w-full border-collapse text-[length:var(--ui-text-body)]">
+          <thead>
+            <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+              <th className="px-2 py-1 font-medium">When</th>
+              <th className="px-2 py-1 font-medium">Run</th>
+              <th className="px-2 py-1 font-medium">Value</th>
+              <th className="px-2 py-1 font-medium">Delta</th>
+              <th className="px-2 py-1 font-medium">Trend</th>
+              <th className="px-2 py-1 font-medium">Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="tabular">
+            {points.map((p, i) => (
+              <tr key={`${p.ts}-${i}`} className="h-[var(--ui-row-h)] border-b border-border/15">
+                <td className="px-2 text-muted">
+                  <RelativeTime value={p.ts} />
+                </td>
+                <td className="px-2 truncate font-mono text-[length:var(--ui-text-label)] text-muted">{p.run}</td>
+                <td className="px-2 text-primary">{p.value}</td>
+                <td className="px-2 text-muted">{formatDelta(p.delta)}</td>
+                <td className="px-2 text-faint">{TREND_GLYPH[p.trend]}</td>
+                <td className="px-2">
+                  <Pill tone={p.passed ? 'live' : 'error'}>{p.passed ? 'accepted' : 'rejected'}</Pill>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }

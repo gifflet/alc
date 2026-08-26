@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SourceEditor } from './SourceEditor'
-import { installFetch, renderWithProviders, res } from '../test/utils'
+import { clearMatchMedia, installFetch, mockMatchMedia, renderWithProviders, res } from '../test/utils'
 import type { FetchCall } from '../test/utils'
 import { tabId, uiStore } from '../app/uiStore'
 
@@ -143,5 +143,24 @@ checks:
     expect(raw).toContain('purpose: Do a bigger chore.')
     expect(raw).toContain('custom_field: keep-me')
     expect(raw).toContain('## Chore workflow\n\n1. Do the thing.')
+  })
+})
+
+describe('SourceEditor on a narrow screen', () => {
+  afterEach(() => clearMatchMedia())
+
+  it('renders the read-only viewer and never mounts the Monaco editor', async () => {
+    // Monaco is a ~2 MB chunk and overflows its container on a phone; a phone is
+    // for deciding, not editing.
+    mockMatchMedia(['max-width: 767px'])
+    installFetch({
+      '/manifest': { raw: 'default_engine: mock\n', parsed: { default_engine: 'mock' } },
+    })
+    renderWithProviders(<SourceEditor resource="manifest" name="manifest" />)
+
+    expect(await screen.findByText(/default_engine/)).toBeInTheDocument()
+    // The lazy Monaco boundary renders a Suspense fallback; the read-only view
+    // is plain markup, so no editor host element exists at all.
+    expect(document.querySelector('.monaco-editor')).toBeNull()
   })
 })

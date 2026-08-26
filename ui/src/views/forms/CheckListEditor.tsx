@@ -96,7 +96,7 @@ export function CheckListEditor({
   return (
     <div className="flex flex-col gap-2">
       {checks.length === 0 ? (
-        <p className="text-[12px] text-faint">No checks.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No checks.</p>
       ) : (
         checks.map((row, i) => (
           <div key={i} className="flex flex-col gap-1.5 rounded-panel border border-border p-2">
@@ -107,13 +107,13 @@ export function CheckListEditor({
                 placeholder="name"
                 aria-label="Check name"
                 spellCheck={false}
-                className="w-28 rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
+                className="w-28 rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               />
               <select
                 value={row.mode}
                 onChange={(e) => setCheck(i, { ...row, mode: e.target.value as CheckMode })}
                 aria-label="Check mode"
-                className="rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
+                className="rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               >
                 <option value="command">command</option>
                 <option value="shell">shell</option>
@@ -127,7 +127,7 @@ export function CheckListEditor({
                 }
                 aria-label="Check value"
                 spellCheck={false}
-                className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[12px] text-primary outline-none focus:border-accent"
+                className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               />
               <button
                 type="button"
@@ -141,38 +141,38 @@ export function CheckListEditor({
             <div className="flex items-center gap-3 pl-1">
               {row.mode === 'metric' && (
                 <>
-                  <label className="flex items-center gap-1 text-[11px] text-faint">
+                  <label className="flex items-center gap-1 text-[length:var(--ui-text-label)] text-faint">
                     direction
                     <select
                       value={row.direction}
                       onChange={(e) => setCheck(i, { ...row, direction: e.target.value as Direction })}
                       aria-label="Metric direction"
-                      className="rounded-panel border border-border bg-base px-1.5 py-0.5 text-[11px] text-primary outline-none focus:border-accent"
+                      className="rounded-panel border border-border bg-base px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
                     >
                       <option value="lower_is_better">lower_is_better</option>
                       <option value="higher_is_better">higher_is_better</option>
                     </select>
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] text-faint">
+                  <label className="flex items-center gap-1 text-[length:var(--ui-text-label)] text-faint">
                     tolerance %
                     <input
                       type="number"
                       value={row.tolerancePct}
                       onChange={(e) => setCheck(i, { ...row, tolerancePct: Number(e.target.value) })}
                       aria-label="Tolerance percent"
-                      className="w-16 rounded-panel border border-border bg-base px-1.5 py-0.5 text-[11px] text-primary outline-none focus:border-accent"
+                      className="w-16 rounded-panel border border-border bg-base px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
                     />
                   </label>
                 </>
               )}
-              <label className="flex items-center gap-1 text-[11px] text-faint">
+              <label className="flex items-center gap-1 text-[length:var(--ui-text-label)] text-faint">
                 flaky reruns
                 <input
                   type="number"
                   value={row.flaky}
                   onChange={(e) => setCheck(i, { ...row, flaky: Number(e.target.value) })}
                   aria-label="Flaky reruns"
-                  className="w-14 rounded-panel border border-border bg-base px-1.5 py-0.5 text-[11px] text-primary outline-none focus:border-accent"
+                  className="w-14 rounded-panel border border-border bg-base px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
                 />
               </label>
             </div>
@@ -182,7 +182,7 @@ export function CheckListEditor({
       <button
         type="button"
         onClick={addCheck}
-        className="flex w-fit items-center gap-1 rounded-panel border border-border px-2 py-1 text-[11px] text-muted hover:bg-hover hover:text-primary"
+        className="flex w-fit items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
       >
         <Plus className="h-3 w-3" />
         Add check

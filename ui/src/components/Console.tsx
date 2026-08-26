@@ -30,13 +30,13 @@ function ExecRow({ exec, active, onSelect }: { exec: ExecEntry; active: boolean;
     <button
       type="button"
       onClick={onSelect}
-      className={`flex h-[26px] w-full items-center gap-2 px-2 text-left text-[12px] transition-colors duration-120 ${
+      className={`flex h-[26px] w-full items-center gap-2 px-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 ${
         active ? 'bg-hover text-primary' : 'text-muted hover:bg-hover'
       }`}
     >
       <StatusDot tone={statusTone(exec)} pulse={exec.status === 'running'} />
       <span className="min-w-0 flex-1 truncate font-mono">{label(exec)}</span>
-      <span className="tabular shrink-0 text-[10px] text-faint">{exec.id.slice(0, 6)}</span>
+      <span className="tabular shrink-0 text-[length:var(--ui-text-label)] text-faint">{exec.id.slice(0, 6)}</span>
     </button>
   )
 }
@@ -44,7 +44,7 @@ function ExecRow({ exec, active, onSelect }: { exec: ExecEntry; active: boolean;
 function ExecHeader({ exec }: { exec: ExecEntry }) {
   const running = exec.status === 'running'
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-panel px-2 text-[11px]">
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-panel px-2 text-[length:var(--ui-text-label)]">
       <StatusDot tone={statusTone(exec)} pulse={running} />
       <span className="font-mono text-muted">{label(exec)}</span>
       {running ? (
@@ -58,7 +58,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           key={stem}
           type="button"
           onClick={() => uiStore.openTab({ target: { type: 'run', stem }, title: stem })}
-          className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[10px] text-muted hover:bg-hover hover:text-primary"
+          className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
         >
           <Radio className="h-3 w-3" />
           view run

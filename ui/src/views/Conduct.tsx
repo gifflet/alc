@@ -54,11 +54,11 @@ export function Conduct() {
     <div className="flex h-full flex-col overflow-auto">
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-panel px-4 py-2">
         <Wand2 className="h-3.5 w-3.5 text-muted" strokeWidth={1.75} />
-        <h2 className="text-[12px] font-medium text-primary">Conduct</h2>
+        <h2 className="text-[length:var(--ui-text-body)] font-medium text-primary">Conduct</h2>
       </div>
 
       <div className="mx-auto flex w-full max-w-[640px] flex-col gap-4 p-4">
-        <p className="text-[12px] text-muted">
+        <p className="text-[length:var(--ui-text-body)] text-muted">
           Describe a goal — the Conductor plans the flows and runs them now, or enqueues them for a
           drain.
         </p>
@@ -95,12 +95,12 @@ export function Conduct() {
             type="button"
             onClick={submit}
             disabled={!goal.trim() || saving}
-            className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3 py-1.5 text-[12px] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3 py-1.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
           >
             <Wand2 className="h-3.5 w-3.5" />
             Conduct goal
           </button>
-          {error && <span className="text-[11px] text-error">{error}</span>}
+          {error && <span className="text-[length:var(--ui-text-label)] text-error">{error}</span>}
         </div>
       </div>
     </div>

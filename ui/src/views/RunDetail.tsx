@@ -78,10 +78,10 @@ export function RunDetail({ stem }: { stem: string }) {
               <Pill tone="running">live</Pill>
             )}
           </div>
-          <p className="truncate text-[12px] text-muted">{timeline.task}</p>
+          <p className="truncate text-[length:var(--ui-text-body)] text-muted">{timeline.task}</p>
         </div>
         {timeline.engine && (
-          <span className="ml-auto font-mono text-[11px] text-faint">
+          <span className="ml-auto font-mono text-[length:var(--ui-text-label)] text-faint">
             {timeline.engine}
             {timeline.model ? `/${timeline.model}` : ''}
           </span>
@@ -94,10 +94,10 @@ export function RunDetail({ stem }: { stem: string }) {
         <>
           {timeline.checkConfigEdits.length > 0 && (
             <div className="mb-4 rounded-panel border border-warn/40 bg-warn/10 px-3 py-2 text-warn">
-              <p className="text-[12px] font-medium">
+              <p className="text-[length:var(--ui-text-body)] font-medium">
                 ⚠ This run modified check-defining config — review before trusting the result:
               </p>
-              <ul className="mt-1 font-mono text-[11px]">
+              <ul className="mt-1 font-mono text-[length:var(--ui-text-label)]">
                 {timeline.checkConfigEdits.map((f) => (
                   <li key={f}>{f}</li>
                 ))}
@@ -114,7 +114,7 @@ export function RunDetail({ stem }: { stem: string }) {
               <Metric label="streak" value={timeline.scorecard.streak} />
               <Metric label="touch" value={timeline.scorecard.touch} />
               {timeline.commitSha && (
-                <div className="ml-auto flex items-center font-mono text-[11px] text-faint">
+                <div className="ml-auto flex items-center font-mono text-[length:var(--ui-text-label)] text-faint">
                   commit {timeline.commitSha.slice(0, 10)}
                 </div>
               )}
@@ -123,21 +123,21 @@ export function RunDetail({ stem }: { stem: string }) {
 
           {evidence.length > 0 && (
             <section className="mt-4">
-              <h2 className="mb-1 text-[11px] uppercase tracking-wide text-faint">Evidence</h2>
-              <ul className="rounded-panel border border-border bg-base text-[12px]">
+              <h2 className="mb-1 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Evidence</h2>
+              <ul className="rounded-panel border border-border bg-base text-[length:var(--ui-text-body)]">
                 {evidence.map((a) => (
                   <li
                     key={a.path}
                     className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 last:border-b-0"
                   >
-                    <span className="w-12 shrink-0 font-mono text-[10px] uppercase tracking-wide text-faint">
+                    <span className="w-12 shrink-0 font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
                       {a.type}
                     </span>
                     <a
                       href={artifactFileUrl(id, a.path)}
                       target="_blank"
                       rel="noreferrer"
-                      className="min-w-0 flex-1 truncate font-mono text-[11px] text-accent hover:underline"
+                      className="min-w-0 flex-1 truncate font-mono text-[length:var(--ui-text-label)] text-accent hover:underline"
                     >
                       {a.path}
                     </a>
@@ -148,8 +148,8 @@ export function RunDetail({ stem }: { stem: string }) {
           )}
 
           <section className="mt-4">
-            <h2 className="mb-1 text-[11px] uppercase tracking-wide text-faint">Events</h2>
-            <ul className="rounded-panel border border-border bg-base font-mono text-[11px]">
+            <h2 className="mb-1 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Events</h2>
+            <ul className="rounded-panel border border-border bg-base font-mono text-[length:var(--ui-text-label)]">
               {events.map((e, i) => (
                 <li
                   key={i}

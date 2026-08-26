@@ -48,9 +48,13 @@ export function ProjectSelector({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-[80vh] w-[540px] flex-col rounded-panel border border-border bg-panel shadow-lg">
+      <div
+        role="dialog"
+        aria-label="Projects"
+        className="flex max-h-[80vh] w-full max-w-[540px] flex-col rounded-[var(--radius-lg)] bg-panel shadow-[var(--elev-3)] ring-1 ring-border/50"
+      >
         <header className="flex items-center justify-between border-b border-border px-3 py-2">
-          <h2 className="text-[13px] font-medium text-primary">Projects</h2>
+          <h2 className="text-[length:var(--ui-text-title)] font-medium text-primary">Projects</h2>
           <button
             type="button"
             aria-label="Close"
@@ -63,12 +67,12 @@ export function ProjectSelector({
 
         <div className="min-h-0 flex-1 overflow-auto">
           {isLoading ? (
-            <p className="p-4 text-[12px] text-muted">Loading…</p>
+            <p className="p-4 text-[length:var(--ui-text-body)] text-muted">Loading…</p>
           ) : projects && projects.length > 0 ? (
             projects.map((p) => (
               <div
                 key={p.id}
-                className={`flex h-[44px] items-center gap-2 border-b border-border/60 px-3 transition-colors duration-120 hover:bg-hover ${
+                className={`flex h-[44px] min-w-0 items-center gap-2 border-b border-border/15 px-3 transition-colors duration-120 hover:bg-hover ${
                   p.id === activeId ? 'bg-hover' : ''
                 }`}
               >
@@ -78,15 +82,15 @@ export function ProjectSelector({
                   onClick={() => onSelect(p.id)}
                   className="flex min-w-0 flex-1 flex-col items-start text-left"
                 >
-                  <span className="truncate text-[12px] text-primary">{p.name}</span>
-                  <span className="truncate font-mono text-[11px] text-faint">{p.path}</span>
+                  <span className="w-full truncate text-[length:var(--ui-text-body)] text-primary">{p.name}</span>
+                  <span className="w-full truncate font-mono text-[length:var(--ui-text-label)] text-faint">{p.path}</span>
                 </button>
-                <span className="tabular text-[11px] text-faint">{p.queue_pending} queued</span>
+                <span className="shrink-0 tabular text-[length:var(--ui-text-label)] text-faint">{p.queue_pending} queued</span>
                 <button
                   type="button"
                   aria-label={`Remove ${p.name}`}
                   onClick={() => remove.mutate(p.id)}
-                  className="flex h-6 w-6 items-center justify-center text-faint hover:text-error"
+                  className="flex h-[var(--ui-control-h)] w-[var(--ui-control-h)] shrink-0 items-center justify-center text-faint hover:text-error"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -110,25 +114,25 @@ export function ProjectSelector({
               onChange={(e) => setPath(e.target.value)}
               placeholder="/absolute/path/to/project"
               spellCheck={false}
-              className="rounded-panel border border-border bg-base px-2 py-1.5 font-mono text-[12px] text-primary outline-none focus:border-accent"
+              className="rounded-panel border border-border bg-base px-2 py-1.5 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
             />
             <div className="flex gap-2">
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="name (optional)"
-                className="flex-1 rounded-panel border border-border bg-base px-2 py-1.5 text-[12px] text-primary outline-none focus:border-accent"
+                className="flex-1 rounded-panel border border-border bg-base px-2 py-1.5 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               />
               <button
                 type="submit"
                 disabled={!path.trim() || add.isPending}
-                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3 py-1.5 text-[12px] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3 py-1.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
               >
                 <FolderPlus className="h-3.5 w-3.5" />
                 Register
               </button>
             </div>
-            {addError && <p className="text-[11px] text-error">{addError}</p>}
+            {addError && <p className="text-[length:var(--ui-text-label)] text-error">{addError}</p>}
           </div>
         </form>
       </div>

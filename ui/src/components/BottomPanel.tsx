@@ -10,7 +10,8 @@ import type { Violation } from '../api/types'
 import { Console } from './Console'
 import { EmptyState } from './EmptyState'
 
-/** Icon + colour class per severity (error #E5544B, warn #C9A23F). */
+/** Icon + colour class per severity; the colours come from the theme tokens
+ * (--color-error / --color-warn), never from a literal here. */
 function severityStyle(severity: string): { Icon: LucideIcon; color: string } {
   return severity === 'error'
     ? { Icon: CircleAlert, color: 'text-error' }
@@ -28,19 +29,19 @@ function ProblemRow({ v }: { v: Violation }) {
   const body = (
     <>
       <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${color}`} />
-      <span className="shrink-0 font-mono text-[11px] text-faint">{v.rule}</span>
+      <span className="shrink-0 font-mono text-[length:var(--ui-text-label)] text-faint">{v.rule}</span>
       <span className="text-muted">{v.message}</span>
     </>
   )
   if (!target) {
-    return <div className="flex items-start gap-2 px-3 py-1.5 text-[12px]">{body}</div>
+    return <div className="flex items-start gap-2 px-3 py-1.5 text-[length:var(--ui-text-body)]">{body}</div>
   }
   return (
     <button
       type="button"
       title={`Open ${target.title}`}
       onClick={() => uiStore.openTab(target)}
-      className="flex w-full items-start gap-2 px-3 py-1.5 text-left text-[12px] transition-colors duration-120 hover:bg-hover"
+      className="flex w-full items-start gap-2 px-3 py-1.5 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
     >
       {body}
     </button>
@@ -57,7 +58,7 @@ function ProblemsTab() {
   return (
     <div className="h-full overflow-auto">
       {violations.map((v, i) => (
-        <div key={i} className="border-b border-border/60">
+        <div key={i} className="border-b border-border/15">
           <ProblemRow v={v} />
         </div>
       ))}
@@ -82,7 +83,7 @@ function PanelTab({
     <button
       type="button"
       onClick={() => uiStore.setBottomTab(id)}
-      className={`relative px-3 py-1 text-[11px] uppercase tracking-wide transition-colors duration-120 ${
+      className={`relative px-3 py-1 text-[length:var(--ui-text-label)] uppercase tracking-wide transition-colors duration-120 ${
         active ? 'text-primary' : 'text-faint hover:text-muted'
       }`}
     >

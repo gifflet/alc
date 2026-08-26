@@ -31,22 +31,25 @@ function formatDuration(seconds: number): string {
  * least once (warn) vs it never did (idle), never a made-up threshold. */
 function HistoryTable({ entries }: { entries: CheckHistoryEntry[] }) {
   const columns: Column<CheckHistoryEntry>[] = [
-    { key: 'name', header: 'Check', className: 'font-mono text-primary', render: (h) => h.name },
-    { key: 'runs', header: 'Runs', className: 'w-16 tabular text-muted', render: (h) => h.runs },
+    { key: 'name', header: 'Check', className: 'font-mono text-primary', priority: 1, render: (h) => h.name },
+    { key: 'runs', header: 'Runs', className: 'w-16 tabular text-muted', priority: 3, render: (h) => h.runs },
     {
       key: 'pass_rate',
+      priority: 2,
       header: 'Pass rate',
       className: 'w-24 tabular text-muted',
       render: (h) => `${formatPercent(h.pass_rate)} (${h.passes}/${h.runs})`,
     },
     {
       key: 'mean_duration_s',
+      priority: 3,
       header: 'Mean duration',
       className: 'w-28 tabular text-muted',
       render: (h) => formatDuration(h.mean_duration_s),
     },
     {
       key: 'flake_score',
+      priority: 2,
       header: 'Flake score',
       className: 'w-28',
       render: (h) => (
@@ -75,14 +78,14 @@ function ProposalList({
   if (proposals.length === 0) return null
   return (
     <div className="mt-1.5">
-      <p className="text-[11px] uppercase tracking-wide text-faint">{title}</p>
+      <p className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">{title}</p>
       <ul className="mt-0.5 flex flex-col gap-0.5">
         {proposals.map(([name, command]) => (
-          <li key={name} className="flex items-center gap-2 text-[12px]">
+          <li key={name} className="flex items-center gap-2 text-[length:var(--ui-text-body)]">
             <Pill tone={tone}>{name}</Pill>
-            <span className="font-mono text-[11px] text-muted">{command.join(' ')}</span>
+            <span className="font-mono text-[length:var(--ui-text-label)] text-muted">{command.join(' ')}</span>
             {hints?.[name] && (
-              <span className="text-[11px] text-warn">{hints[name]}</span>
+              <span className="text-[length:var(--ui-text-label)] text-warn">{hints[name]}</span>
             )}
           </li>
         ))}
@@ -95,7 +98,7 @@ function CheckSetCard({ cs }: { cs: CheckSetAudit }) {
   return (
     <div className="rounded-panel border border-border bg-panel p-3">
       <div className="flex items-center gap-2">
-        <span className="text-[12px] font-medium text-primary">{cs.set_name}</span>
+        <span className="text-[length:var(--ui-text-body)] font-medium text-primary">{cs.set_name}</span>
         <Pill tone={cs.is_new ? 'accent' : 'idle'}>{cs.is_new ? 'new' : 'existing'}</Pill>
       </div>
       <ProposalList title="Available to add (binary on PATH)" proposals={cs.add} tone="live" />
@@ -113,12 +116,12 @@ function SmokeOnlySection({ blueprints }: { blueprints: SmokeOnlyBlueprint[] }) 
   if (blueprints.length === 0) return null
   return (
     <div>
-      <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">
+      <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
         Smoke-only Blueprints
       </h3>
       <ul className="flex flex-col gap-1">
         {blueprints.map((b) => (
-          <li key={b.blueprint} className="text-[12px] text-muted">
+          <li key={b.blueprint} className="text-[length:var(--ui-text-body)] text-muted">
             <span className="font-mono text-primary">{b.blueprint}</span>{' '}
             {b.stacks.length === 0 ? (
               <>
@@ -142,7 +145,7 @@ function AuditSection({ audit }: { audit: ChecksAudit }) {
   const empty = audit.check_sets.length === 0 && audit.smoke_only_blueprints.length === 0
   if (empty) {
     return (
-      <p className="text-[12px] text-faint">
+      <p className="text-[length:var(--ui-text-body)] text-faint">
         No upgrades proposed — check_sets are current with the detected stack(s).
       </p>
     )
@@ -178,7 +181,7 @@ export function Checks() {
       </header>
 
       <section>
-        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">History</h2>
+        <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">History</h2>
         {entries.length === 0 ? (
           <EmptyState
             icon={ShieldCheck}
@@ -190,12 +193,12 @@ export function Checks() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Audit</h2>
+        <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Audit</h2>
         {audit.data && <AuditSection audit={audit.data} />}
       </section>
 
       <section>
-        <h2 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Onboard</h2>
+        <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Onboard</h2>
         <OnboardPanel />
       </section>
     </div>

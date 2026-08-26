@@ -4,6 +4,7 @@
 // with capped backoff, and fan parsed messages out to handlers. It knows
 // nothing about React or TanStack Query — WsProvider wires those in.
 import type { WsMessage } from '../api/types'
+import { getToken } from '../app/token'
 
 export type WsStatus = 'connecting' | 'open' | 'closed'
 
@@ -20,6 +21,8 @@ export interface WebSocketLike {
 export interface WsClientOptions {
   url: string
   createSocket?: (url: string) => WebSocketLike
+  /** Overridable for tests; defaults to the browser's stored token. */
+  getToken?: () => string | null
   /** Backoff in ms for the nth consecutive reconnect attempt (0-based). */
   backoffMs?: (attempt: number) => number
 }
@@ -32,6 +35,7 @@ export class WsClient {
   private readonly url: string
   private readonly createSocket: (url: string) => WebSocketLike
   private readonly backoffMs: (attempt: number) => number
+  private readonly getToken: () => string | null
 
   private socket: WebSocketLike | null = null
   private projectId: string | null = null
@@ -47,6 +51,7 @@ export class WsClient {
     this.url = opts.url
     this.createSocket = opts.createSocket ?? ((u) => new WebSocket(u) as unknown as WebSocketLike)
     this.backoffMs = opts.backoffMs ?? defaultBackoff
+    this.getToken = opts.getToken ?? getToken
   }
 
   get status(): WsStatus {
@@ -71,6 +76,11 @@ export class WsClient {
     socket.onopen = () => {
       this.attempt = 0
       this.setStatus('open')
+      // The token goes in the FIRST frame, never the URL: a query-string token
+      // would be written to every proxy and server log on the path. An
+      // unauthenticated server ignores this frame, so it is always safe to send.
+      const token = this.token()
+      if (token) socket.send(JSON.stringify({ type: 'auth', token }))
       this.sendSubscribe()
     }
     socket.onmessage = (ev) => this.dispatch(ev.data)
@@ -106,6 +116,11 @@ export class WsClient {
     if (this.socket && this.projectId) {
       this.socket.send(JSON.stringify({ type: 'subscribe', project_id: this.projectId }))
     }
+  }
+
+  /** The token to open with; injectable so the handshake is testable. */
+  private token(): string | null {
+    return this.getToken()
   }
 
   /** Set the active project; resubscribes immediately when already connected. */

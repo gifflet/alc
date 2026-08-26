@@ -25,6 +25,7 @@ import type { SourceResource } from '../app/uiStore'
 import { getDraft, setDraft as cacheDraft } from '../lib/draftCache'
 import type { CollectionName } from '../api/types'
 import { CodeView } from '../components/CodeView'
+import { useNarrow } from '../app/useDensity'
 import { EmptyState } from '../components/EmptyState'
 import { Loading } from '../components/primitives'
 import { RunDialog } from './RunDialog'
@@ -87,6 +88,7 @@ function EditorShell({
   renderForm?: (value: string, onChange: (v: string) => void) => ReactNode
   headerExtra?: ReactNode
 }) {
+  const narrow = useNarrow()
   // Seed from the per-tab cache so edits survive switching away and back.
   const cached = getDraft(id)
   const [draft, setDraftState] = useState(cached?.draft ?? '')
@@ -151,7 +153,7 @@ function EditorShell({
 
   return (
     <div className="flex h-full min-h-0 flex-col" onKeyDownCapture={onKeyDownCapture}>
-      <div className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-panel px-2">
+      <div className="flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-panel px-2">
         <div className="flex items-center gap-2">
           {renderForm && (
             <div className="flex overflow-hidden rounded-panel border border-border">
@@ -160,7 +162,7 @@ function EditorShell({
                   key={m}
                   type="button"
                   onClick={() => setMode(m)}
-                  className={`px-2 py-0.5 text-[11px] capitalize transition-colors duration-120 ${
+                  className={`min-h-[var(--ui-control-h)] px-2 text-[length:var(--ui-text-label)] capitalize transition-colors duration-120 ${
                     mode === m ? 'bg-accent/15 text-accent' : 'text-muted hover:bg-hover'
                   }`}
                 >
@@ -173,24 +175,24 @@ function EditorShell({
         </div>
         <div className="flex items-center gap-2">
           {readOnly ? (
-            <span className="flex items-center gap-1 text-[11px] text-faint">
+            <span className="flex items-center gap-1 text-[length:var(--ui-text-label)] text-faint">
               <Lock className="h-3 w-3" />
               {readOnlyNote ?? 'read-only'}
             </span>
           ) : (
             <>
               {saved && !dirty && (
-                <span className="flex items-center gap-1 text-[11px] text-live">
+                <span className="flex items-center gap-1 text-[length:var(--ui-text-label)] text-live">
                   <Check className="h-3 w-3" />
                   saved
                 </span>
               )}
-              {dirty && <span className="text-[11px] text-warn">unsaved</span>}
+              {dirty && <span className="text-[length:var(--ui-text-label)] text-warn">unsaved</span>}
               <button
                 type="button"
                 onClick={revert}
                 disabled={!dirty}
-                className="flex items-center gap-1 rounded-panel border border-border px-2 py-0.5 text-[11px] text-muted transition-colors duration-120 hover:bg-hover hover:text-primary disabled:opacity-40"
+                className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted transition-colors duration-120 hover:bg-hover hover:text-primary disabled:opacity-40"
               >
                 <RotateCcw className="h-3 w-3" />
                 Revert
@@ -199,7 +201,7 @@ function EditorShell({
                 type="button"
                 onClick={() => void doSave()}
                 disabled={!dirty || save?.isPending}
-                className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[11px] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
               >
                 <Save className="h-3 w-3" />
                 Save
@@ -212,6 +214,11 @@ function EditorShell({
       <div className="min-h-0 flex-1 overflow-hidden">
         {mode === 'form' && renderForm ? (
           <Suspense fallback={<Loading />}>{renderForm(draft, onChange)}</Suspense>
+        ) : narrow ? (
+          // Monaco is a ~2 MB chunk built for a mouse, and it overflows its own
+          // container on a phone (measured on device). A phone is for deciding,
+          // not editing: show the read-only viewer and never fetch the editor.
+          <CodeView code={draft} lang={language} />
         ) : (
           <Suspense fallback={<CodeView code={draft} lang={language} />}>
             <CodeEditor value={draft} language={language} readOnly={readOnly} onChange={onChange} />
@@ -226,13 +233,13 @@ function EditorShell({
 
 function ErrorPanel({ error }: { error: ApiError }) {
   return (
-    <div className="max-h-32 shrink-0 overflow-auto border-t border-error/40 bg-error/10 px-3 py-2 text-[12px]">
+    <div className="max-h-32 shrink-0 overflow-auto border-t border-error/40 bg-error/10 px-3 py-2 text-[length:var(--ui-text-body)]">
       <div className="flex items-center gap-1.5 font-medium text-error">
         <AlertTriangle className="h-3.5 w-3.5" />
         {error.message}
       </div>
       {error.violations.length > 0 && (
-        <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[11px] text-error/90">
+        <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[length:var(--ui-text-label)] text-error/90">
           {error.violations.map((v, i) => (
             <li key={i}>
               <span className="text-faint">{v.rule}:</span> {v.message}
@@ -328,7 +335,7 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
     <button
       type="button"
       onClick={() => setRunning(true)}
-      className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-0.5 text-[11px] text-live transition-colors duration-120 hover:bg-live/20"
+      className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-0.5 text-[length:var(--ui-text-label)] text-live transition-colors duration-120 hover:bg-live/20"
     >
       <Play className="h-3 w-3" />
       Run

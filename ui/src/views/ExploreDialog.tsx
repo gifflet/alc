@@ -78,7 +78,7 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-[12px] text-muted">
+        <p className="text-[length:var(--ui-text-body)] text-muted">
           Runs N copies of the same Blueprint+task in isolated worktrees, side by side. Never
           auto-merges — Compare then Adopt closes the loop.
         </p>
@@ -101,9 +101,9 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
 
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-wide text-faint">Engines</span>
+            <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Engines</span>
             <div className="flex flex-col gap-1 rounded-panel border border-border bg-base p-2">
-              {engines.length === 0 && <p className="text-[11px] text-faint">No engines configured.</p>}
+              {engines.length === 0 && <p className="text-[length:var(--ui-text-label)] text-faint">No engines configured.</p>}
               {engines.map((e) => (
                 <Checkbox
                   key={e.name}
@@ -113,13 +113,13 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
                 />
               ))}
             </div>
-            <span className="text-[11px] text-faint">none selected = manifest default</span>
+            <span className="text-[length:var(--ui-text-label)] text-faint">none selected = manifest default</span>
           </div>
 
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-wide text-faint">Tiers</span>
+            <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Tiers</span>
             <div className="flex flex-col gap-1 rounded-panel border border-border bg-base p-2">
-              {tiers.length === 0 && <p className="text-[11px] text-faint">No tiers configured.</p>}
+              {tiers.length === 0 && <p className="text-[length:var(--ui-text-label)] text-faint">No tiers configured.</p>}
               {tiers.map((t) => (
                 <Checkbox
                   key={t}
@@ -129,11 +129,11 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
                 />
               ))}
             </div>
-            <span className="text-[11px] text-faint">none selected = blueprint default</span>
+            <span className="text-[length:var(--ui-text-label)] text-faint">none selected = blueprint default</span>
           </div>
         </div>
 
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )

@@ -64,11 +64,11 @@ function TaskBody({ task }: { task: QueueTask }) {
   return (
     <div className="border-l-2 border-border bg-base px-3 py-2">
       {task.retry_of && (
-        <div className="mb-1 font-mono text-[11px] text-faint">
+        <div className="mb-1 font-mono text-[length:var(--ui-text-label)] text-faint">
           ↩ retry lineage of <span className="text-muted">{task.retry_of}</span>
         </div>
       )}
-      <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted">
+      <pre className="whitespace-pre-wrap font-mono text-[length:var(--ui-text-label)] leading-relaxed text-muted">
         {task.task}
       </pre>
     </div>
@@ -109,11 +109,11 @@ function DrainDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-[12px] text-muted">Process every pending task once (alc tick), then exit.</p>
+        <p className="text-[length:var(--ui-text-body)] text-muted">Process every pending task once (alc tick), then exit.</p>
         <Field label="Concurrency">
           <NumberInput value={concurrency} onChange={setConcurrency} placeholder="1" />
         </Field>
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )
@@ -155,9 +155,9 @@ function BranchesSection() {
 
   if (!data?.available) {
     return (
-      <section>
-        <h3 className="mb-1 text-[11px] uppercase tracking-wide text-faint">Branches</h3>
-        <p className="text-[12px] text-faint">Not inside a git repository — branch actions are unavailable.</p>
+      <section className="min-w-0">
+        <h3 className="mb-1 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Branches</h3>
+        <p className="text-[length:var(--ui-text-body)] text-faint">Not inside a git repository — branch actions are unavailable.</p>
       </section>
     )
   }
@@ -191,10 +191,11 @@ function BranchesSection() {
   }
 
   const columns: Column<Branch>[] = [
-    { key: 'name', header: 'Branch', className: 'font-mono text-muted', render: (b) => b.name },
-    { key: 'label', header: 'Label', className: 'w-24 font-mono text-faint', render: (b) => b.label },
+    { key: 'name', header: 'Branch', className: 'font-mono text-muted', priority: 1, render: (b) => b.name },
+    { key: 'label', header: 'Label', className: 'w-24 font-mono text-faint', priority: 2, render: (b) => b.label },
     {
       key: 'actions',
+      priority: 1,
       header: '',
       className: 'w-36',
       render: (b) => (
@@ -204,7 +205,7 @@ function BranchesSection() {
             aria-label={`Land ${b.name}`}
             onClick={() => doLand(b.name)}
             disabled={land.isPending}
-            className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-1.5 py-0.5 text-[11px] text-live hover:bg-live/20 disabled:opacity-40"
+            className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
           >
             <GitMerge className="h-3 w-3" />
             Land
@@ -213,7 +214,7 @@ function BranchesSection() {
             type="button"
             aria-label={`Discard ${b.name}`}
             onClick={() => setDiscarding(b.name)}
-            className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[11px] text-muted hover:bg-hover hover:text-error"
+            className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-error"
           >
             <Trash2 className="h-3 w-3" />
             Discard
@@ -224,13 +225,13 @@ function BranchesSection() {
   ]
 
   return (
-    <section>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] uppercase tracking-wide text-faint">
+    <section className="min-w-0">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
           Branches <span className="tabular">({unmerged.length})</span>
         </h3>
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-faint">Land mode</span>
+          <span className="text-[length:var(--ui-text-label)] text-faint">Land mode</span>
           <div className="w-32">
             <Select
               value={landMode}
@@ -241,21 +242,21 @@ function BranchesSection() {
         </div>
       </div>
       {unmerged.length === 0 ? (
-        <p className="text-[12px] text-faint">No unmerged alc/* branches.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No unmerged alc/* branches.</p>
       ) : (
         <DataTable columns={columns} rows={unmerged} rowKey={(b) => b.name} />
       )}
       {landReport && landReport.conflicted.length > 0 && (
-        <p className="mt-1 text-[11px] text-warn">
+        <p className="mt-1 text-[length:var(--ui-text-label)] text-warn">
           Left for manual resolution: {landReport.conflicted.join(', ')}
         </p>
       )}
       {landReport?.warning && (
-        <p className="mt-1 text-[11px] text-warn">Delivery warning: {landReport.warning}</p>
+        <p className="mt-1 text-[length:var(--ui-text-label)] text-warn">Delivery warning: {landReport.warning}</p>
       )}
-      {apiMessage(land.error) && <p className="mt-1 text-[11px] text-error">{apiMessage(land.error)}</p>}
+      {apiMessage(land.error) && <p className="mt-1 text-[length:var(--ui-text-label)] text-error">{apiMessage(land.error)}</p>}
       {apiMessage(discard.error) && (
-        <p className="mt-1 text-[11px] text-error">{apiMessage(discard.error)}</p>
+        <p className="mt-1 text-[length:var(--ui-text-label)] text-error">{apiMessage(discard.error)}</p>
       )}
       {discarding && (
         <ConfirmDialog
@@ -278,7 +279,7 @@ function BranchesSection() {
                   <div className="w-20">
                     <NumberInput value={olderThanDays} onChange={setOlderThanDays} placeholder="30" />
                   </div>
-                  <span className="text-[11px] text-faint">days</span>
+                  <span className="text-[length:var(--ui-text-label)] text-faint">days</span>
                 </div>
               )}
             </div>
@@ -325,14 +326,16 @@ function SignalsSection() {
   const columns: Column<Signal>[] = [
     {
       key: 'kind',
+      priority: 2,
       header: 'Kind',
       className: 'w-20',
       render: (s) => <Pill tone={SIGNAL_KIND_TONE[s.kind]}>{s.kind}</Pill>,
     },
-    { key: 'source', header: 'Source', className: 'w-28 font-mono text-faint', render: (s) => s.source },
-    { key: 'title', header: 'Title', className: 'text-muted', render: (s) => s.title },
+    { key: 'source', header: 'Source', className: 'w-28 font-mono text-faint', priority: 3, render: (s) => s.source },
+    { key: 'title', header: 'Title', className: 'text-muted', priority: 1, render: (s) => s.title },
     {
       key: 'age',
+      priority: 2,
       header: 'Age',
       className: 'w-20',
       render: (s) => <RelativeTime value={s.ts} />,
@@ -340,27 +343,27 @@ function SignalsSection() {
   ]
 
   return (
-    <section>
-      <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-[11px] uppercase tracking-wide text-faint">
+    <section className="min-w-0">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
           Signals <span className="tabular">({signals.length})</span>
         </h3>
         <button
           type="button"
           onClick={() => setIngesting(true)}
-          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent hover:bg-accent/20"
+          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
         >
           <Plus className="h-3 w-3" />
           Ingest signal
         </button>
       </div>
       {signals.length === 0 ? (
-        <p className="text-[12px] text-faint">No pending signals.</p>
+        <p className="text-[length:var(--ui-text-body)] text-faint">No pending signals.</p>
       ) : (
         <DataTable columns={columns} rows={signals} rowKey={(s) => s.path} />
       )}
       {apiMessage(ingest.error) && (
-        <p className="mt-1 text-[11px] text-error">{apiMessage(ingest.error)}</p>
+        <p className="mt-1 text-[length:var(--ui-text-label)] text-error">{apiMessage(ingest.error)}</p>
       )}
       {ingesting && (
         <SignalIngestDialog
@@ -376,7 +379,7 @@ function SignalsSection() {
 
 function ReportSummary({ report }: { report: FlowReport }) {
   return (
-    <div className="border-l-2 border-border bg-base px-3 py-2 text-[11px]">
+    <div className="border-l-2 border-border bg-base px-3 py-2 text-[length:var(--ui-text-label)]">
       <div className="flex flex-wrap gap-4 font-mono text-faint">
         <span>flow: {report.flow}</span>
         <span>engine: {report.engine}</span>
@@ -394,90 +397,92 @@ function ReportSummary({ report }: { report: FlowReport }) {
 function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   return (
-    <table className="w-full border-collapse text-[12px]">
-      <thead>
-        <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
-          <th className="w-6 px-2 py-1" />
-          <th className="px-2 py-1 font-medium">Task</th>
-          <th className="w-20 px-2 py-1 font-medium">Result</th>
-          <th className="w-24 px-2 py-1 font-medium">When</th>
-          <th className="w-16 px-2 py-1 font-medium" />
-        </tr>
-      </thead>
-      <tbody>
-        {done.map((d) => {
-          const open = expanded === d.stem
-          const success = d.report?.success ?? null
-          return (
-            <Fragment key={d.stem}>
-              <tr
-                role="button"
-                tabIndex={0}
-                aria-expanded={open}
-                onClick={() => setExpanded(open ? null : d.stem)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setExpanded(open ? null : d.stem)
-                  }
-                }}
-                className="h-[28px] cursor-pointer border-b border-border/60 transition-colors duration-120 hover:bg-hover"
-              >
-                <td className="px-2">
-                  {d.report || d.task ? (
-                    open ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-faint" />
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[length:var(--ui-text-body)]">
+        <thead>
+          <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+            <th className="w-6 px-2 py-1" />
+            <th className="px-2 py-1 font-medium">Task</th>
+            <th className="w-20 px-2 py-1 font-medium">Result</th>
+            <th className="w-24 px-2 py-1 font-medium">When</th>
+            <th className="w-16 px-2 py-1 font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          {done.map((d) => {
+            const open = expanded === d.stem
+            const success = d.report?.success ?? null
+            return (
+              <Fragment key={d.stem}>
+                <tr
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={open}
+                  onClick={() => setExpanded(open ? null : d.stem)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setExpanded(open ? null : d.stem)
+                    }
+                  }}
+                  className="h-[var(--ui-row-h)] cursor-pointer border-b border-border/15 transition-colors duration-120 hover:bg-hover"
+                >
+                  <td className="px-2">
+                    {d.report || d.task ? (
+                      open ? (
+                        <ChevronDown className="h-3.5 w-3.5 text-faint" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5 text-faint" />
+                      )
+                    ) : null}
+                  </td>
+                  <td className="truncate px-2 text-muted">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate">{d.task ? firstLine(d.task.task) : d.stem}</span>
+                      <RetryBadge task={d.task} />
+                    </span>
+                  </td>
+                  <td className="px-2">
+                    {success === null ? (
+                      <span className="text-faint">—</span>
                     ) : (
-                      <ChevronRight className="h-3.5 w-3.5 text-faint" />
-                    )
-                  ) : null}
-                </td>
-                <td className="truncate px-2 text-muted">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate">{d.task ? firstLine(d.task.task) : d.stem}</span>
-                    <RetryBadge task={d.task} />
-                  </span>
-                </td>
-                <td className="px-2">
-                  {success === null ? (
-                    <span className="text-faint">—</span>
-                  ) : (
-                    <Pill tone={success ? 'live' : 'error'}>{success ? 'ok' : 'failed'}</Pill>
-                  )}
-                </td>
-                <td className="px-2">
-                  <RelativeTime value={d.mtime} />
-                </td>
-                <td className="px-2">
-                  {d.outstanding && (
-                    <button
-                      type="button"
-                      aria-label={`Retry ${d.stem}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onRetry(d.stem)
-                      }}
-                      className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[11px] text-muted hover:bg-hover hover:text-primary"
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                      retry
-                    </button>
-                  )}
-                </td>
-              </tr>
-              {open && (
-                <tr>
-                  <td colSpan={5} className="p-0">
-                    {d.task && <TaskBody task={d.task} />}
-                    {d.report && <ReportSummary report={d.report} />}
+                      <Pill tone={success ? 'live' : 'error'}>{success ? 'ok' : 'failed'}</Pill>
+                    )}
+                  </td>
+                  <td className="px-2">
+                    <RelativeTime value={d.mtime} />
+                  </td>
+                  <td className="px-2">
+                    {d.outstanding && (
+                      <button
+                        type="button"
+                        aria-label={`Retry ${d.stem}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onRetry(d.stem)
+                        }}
+                        className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        retry
+                      </button>
+                    )}
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          )
-        })}
-      </tbody>
-    </table>
+                {open && (
+                  <tr>
+                    <td colSpan={5} className="p-0">
+                      {d.task && <TaskBody task={d.task} />}
+                      {d.report && <ReportSummary report={d.report} />}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -490,87 +495,89 @@ function PendingRows({
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   return (
-    <table className="w-full border-collapse text-[12px]">
-      <thead>
-        <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
-          <th className="w-6 px-2 py-1" />
-          <th className="px-2 py-1 font-medium">Task</th>
-          <th className="w-20 px-2 py-1 font-medium">Kind</th>
-          <th className="w-28 px-2 py-1 font-medium">Unit</th>
-          <th className="w-16 px-2 py-1 font-medium">Isolate</th>
-          <th className="w-28 px-2 py-1 font-medium">Depends on</th>
-          <th className="w-10 px-2 py-1 font-medium" />
-        </tr>
-      </thead>
-      <tbody>
-        {pending.map((p) => {
-          const open = expanded === p.stem
-          return (
-            <Fragment key={p.stem}>
-              <tr
-                role="button"
-                tabIndex={0}
-                aria-expanded={open}
-                onClick={() => setExpanded(open ? null : p.stem)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    setExpanded(open ? null : p.stem)
-                  }
-                }}
-                className="group h-[28px] cursor-pointer border-b border-border/60 transition-colors duration-120 hover:bg-hover"
-              >
-                <td className="px-2">
-                  {open ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-faint" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-faint" />
-                  )}
-                </td>
-                <td className="truncate px-2 text-muted">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate">{firstLine(p.task.task)}</span>
-                    <RetryBadge task={p.task} />
-                  </span>
-                </td>
-                <td className="px-2 font-mono text-faint">{p.task.kind}</td>
-                <td className="px-2 text-muted">{p.task.name ?? p.task.flow}</td>
-                <td className="px-2">
-                  {p.task.isolate ? (
-                    <Pill tone="accent">yes</Pill>
-                  ) : (
-                    <span className="text-faint">no</span>
-                  )}
-                </td>
-                <td className="px-2 font-mono text-faint">
-                  {p.task.depends_on.length ? p.task.depends_on.join(', ') : '—'}
-                </td>
-                <td className="px-2">
-                  <button
-                    type="button"
-                    aria-label={`Delete ${p.stem}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(p.stem)
-                    }}
-                    className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-error group-hover:opacity-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </td>
-              </tr>
-              {open && (
-                <tr>
-                  <td colSpan={7} className="p-0">
-                    <TaskBody task={p.task} />
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[length:var(--ui-text-body)]">
+        <thead>
+          <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+            <th className="w-6 px-2 py-1" />
+            <th className="px-2 py-1 font-medium">Task</th>
+            <th className="w-20 px-2 py-1 font-medium">Kind</th>
+            <th className="w-28 px-2 py-1 font-medium">Unit</th>
+            <th className="w-16 px-2 py-1 font-medium">Isolate</th>
+            <th className="w-28 px-2 py-1 font-medium">Depends on</th>
+            <th className="w-10 px-2 py-1 font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          {pending.map((p) => {
+            const open = expanded === p.stem
+            return (
+              <Fragment key={p.stem}>
+                <tr
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={open}
+                  onClick={() => setExpanded(open ? null : p.stem)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setExpanded(open ? null : p.stem)
+                    }
+                  }}
+                  className="group h-[var(--ui-row-h)] cursor-pointer border-b border-border/15 transition-colors duration-120 hover:bg-hover"
+                >
+                  <td className="px-2">
+                    {open ? (
+                      <ChevronDown className="h-3.5 w-3.5 text-faint" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5 text-faint" />
+                    )}
+                  </td>
+                  <td className="truncate px-2 text-muted">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate">{firstLine(p.task.task)}</span>
+                      <RetryBadge task={p.task} />
+                    </span>
+                  </td>
+                  <td className="px-2 font-mono text-faint">{p.task.kind}</td>
+                  <td className="px-2 text-muted">{p.task.name ?? p.task.flow}</td>
+                  <td className="px-2">
+                    {p.task.isolate ? (
+                      <Pill tone="accent">yes</Pill>
+                    ) : (
+                      <span className="text-faint">no</span>
+                    )}
+                  </td>
+                  <td className="px-2 font-mono text-faint">
+                    {p.task.depends_on.length ? p.task.depends_on.join(', ') : '—'}
+                  </td>
+                  <td className="px-2">
+                    <button
+                      type="button"
+                      aria-label={`Delete ${p.stem}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(p.stem)
+                      }}
+                      className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-error group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          )
-        })}
-      </tbody>
-    </table>
+                {open && (
+                  <tr>
+                    <td colSpan={7} className="p-0">
+                      <TaskBody task={p.task} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -616,13 +623,13 @@ export function Queue() {
   return (
     <div className="flex h-full flex-col overflow-auto">
       <div className="flex shrink-0 items-center justify-between border-b border-border bg-panel px-4 py-2">
-        <h2 className="text-[12px] font-medium text-primary">Queue</h2>
+        <h2 className="text-[length:var(--ui-text-body)] font-medium text-primary">Queue</h2>
         <div className="flex items-center gap-2">
           {failures.length > 0 && (
             <button
               type="button"
               onClick={() => retry.mutate({ all: true })}
-              className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[11px] text-muted hover:bg-hover hover:text-primary"
+              className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
             >
               <RotateCcw className="h-3 w-3" />
               Retry all failures
@@ -632,7 +639,7 @@ export function Queue() {
             <button
               type="button"
               onClick={() => setDraining(true)}
-              className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[11px] text-live hover:bg-live/20"
+              className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[length:var(--ui-text-label)] text-live hover:bg-live/20"
             >
               <Play className="h-3 w-3" />
               Drain queue
@@ -641,7 +648,7 @@ export function Queue() {
           <button
             type="button"
             onClick={() => setEnqueuing(true)}
-            className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[11px] text-accent hover:bg-accent/20"
+            className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
           >
             <Plus className="h-3 w-3" />
             Enqueue task
@@ -652,24 +659,24 @@ export function Queue() {
       {empty ? (
         <EmptyState icon={ListTodo} message="The queue is empty — enqueue a task to fill it." />
       ) : (
-        <div className="flex flex-col gap-4 p-4">
-          <section>
-            <h3 className="mb-1 text-[11px] uppercase tracking-wide text-faint">
+        <div className="flex min-w-0 flex-col gap-4 p-4">
+          <section className="min-w-0">
+            <h3 className="mb-1 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
               Pending <span className="tabular">({pending.length})</span>
             </h3>
             {pending.length === 0 ? (
-              <p className="text-[12px] text-faint">Nothing pending.</p>
+              <p className="text-[length:var(--ui-text-body)] text-faint">Nothing pending.</p>
             ) : (
               <PendingRows pending={pending} onDelete={setDeleting} />
             )}
           </section>
 
-          <section>
-            <h3 className="mb-1 text-[11px] uppercase tracking-wide text-faint">
+          <section className="min-w-0">
+            <h3 className="mb-1 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
               Done <span className="tabular">({done.length})</span>
             </h3>
             {done.length === 0 ? (
-              <p className="text-[12px] text-faint">No archived tasks.</p>
+              <p className="text-[length:var(--ui-text-body)] text-faint">No archived tasks.</p>
             ) : (
               <DoneRows done={done} onRetry={(stem) => retry.mutate({ stem })} />
             )}

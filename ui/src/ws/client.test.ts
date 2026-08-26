@@ -116,3 +116,65 @@ describe('WsClient', () => {
     expect(statuses).toEqual(['connecting', 'open'])
   })
 })
+
+describe('WsClient token handshake', () => {
+  function connected(getToken: () => string | null) {
+    const socket = new FakeSocket()
+    const client = new WsClient({ url: 'ws://x/ws', createSocket: () => socket, getToken })
+    client.setProject('p1')
+    client.connect()
+    socket.fireOpen()
+    return { socket, client }
+  }
+
+  it('sends the auth frame BEFORE subscribing when a token is held', () => {
+    const { socket } = connected(() => 'secret')
+    const frames = socket.sent.map((f) => JSON.parse(f))
+    expect(frames[0]).toEqual({ type: 'auth', token: 'secret' })
+    expect(frames[1]).toEqual({ type: 'subscribe', project_id: 'p1' })
+  })
+
+  it('never puts the token in the socket URL', () => {
+    const socket = new FakeSocket()
+    let openedWith = ''
+    const client = new WsClient({
+      url: 'ws://x/ws',
+      createSocket: (u) => {
+        openedWith = u
+        return socket
+      },
+      getToken: () => 'secret',
+    })
+    client.connect()
+    // A query-string token would be written to every proxy log on the path.
+    expect(openedWith).not.toContain('secret')
+  })
+
+  it('subscribes without an auth frame when there is no token', () => {
+    const { socket } = connected(() => null)
+    const frames = socket.sent.map((f) => JSON.parse(f))
+    expect(frames).toHaveLength(1)
+    expect(frames[0]).toEqual({ type: 'subscribe', project_id: 'p1' })
+  })
+
+  it('re-authenticates after a reconnect', () => {
+    const sockets: FakeSocket[] = []
+    const client = new WsClient({
+      url: 'ws://x/ws',
+      createSocket: () => {
+        const s = new FakeSocket()
+        sockets.push(s)
+        return s
+      },
+      getToken: () => 'secret',
+      backoffMs: () => 0,
+    })
+    client.setProject('p1')
+    client.connect()
+    sockets[0].fireOpen()
+    sockets[0].fireClose()
+    vi.advanceTimersByTime(1)
+    sockets[1]?.fireOpen()
+    expect(JSON.parse(sockets[1].sent[0])).toEqual({ type: 'auth', token: 'secret' })
+  })
+})

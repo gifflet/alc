@@ -10,6 +10,7 @@ import type {
   CollectionName,
   DiscardBranchesBody,
   QueueTask,
+  ReviewComment,
   RunConfig,
   SignalIngestPayload,
 } from './types'
@@ -66,6 +67,38 @@ export function useQueue(id: string) {
 
 export function useRuns(id: string) {
   return useQuery({ queryKey: keys.runs(id), queryFn: () => api.listRuns(id), enabled: enabled(id) })
+}
+
+/** The live fleet: units executing right now. */
+export function useFleet(id: string) {
+  return useQuery({ queryKey: keys.fleet(id), queryFn: () => api.getFleet(id), enabled: enabled(id) })
+}
+
+/** Decisions waiting on a human; also drives the activity-bar badge. */
+export function useInbox(id: string) {
+  return useQuery({ queryKey: keys.inbox(id), queryFn: () => api.getInbox(id), enabled: enabled(id) })
+}
+
+/** A branch's diff; lazily fetched (null branch = disabled). */
+export function useBranchDiff(id: string, branch: string | null) {
+  return useQuery({
+    queryKey: keys.branchDiff(id, branch ?? ''),
+    queryFn: () => api.getBranchDiff(id, branch as string),
+    enabled: enabled(id) && Boolean(branch),
+  })
+}
+
+/** Submit review notes as one queue task. */
+export function useSubmitReview(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { branch: string; comments: ReviewComment[]; kind?: string; name?: string | null }) =>
+      api.submitReview(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.queue(id) })
+      qc.invalidateQueries({ queryKey: keys.inbox(id) })
+    },
+  })
 }
 
 export function useBranches(id: string) {
@@ -362,7 +395,11 @@ export function useRetryQueue(id: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: { stem?: string; all?: boolean }) => api.retryQueue(id, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.queue(id) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.queue(id) })
+      // Retrying resolves an Inbox item; the badge must drop with it.
+      qc.invalidateQueries({ queryKey: keys.inbox(id) })
+    },
   })
 }
 
@@ -374,7 +411,10 @@ export function useLandBranches(id: string) {
   return useMutation({
     mutationFn: (body: { branches?: string[]; mode?: 'local' | 'push' | 'pr' }) =>
       api.landBranches(id, body.branches, body.mode),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.branches(id) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.branches(id) })
+      qc.invalidateQueries({ queryKey: keys.inbox(id) })
+    },
   })
 }
 
@@ -384,7 +424,10 @@ export function useDiscardBranches(id: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: DiscardBranchesBody) => api.discardBranches(id, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.branches(id) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.branches(id) })
+      qc.invalidateQueries({ queryKey: keys.inbox(id) })
+    },
   })
 }
 

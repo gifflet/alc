@@ -56,7 +56,7 @@ export function SpikeDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-[12px] text-muted">
+        <p className="text-[length:var(--ui-text-body)] text-muted">
           A spike is a ceremony-free run: no blueprint, no manifest unit — just a task.
         </p>
 
@@ -68,7 +68,7 @@ export function SpikeDialog({ onClose }: { onClose: () => void }) {
           <Select value={engine} onChange={setEngine} options={engineOptions} />
         </Field>
 
-        {error && <p className="text-[11px] text-error">{error}</p>}
+        {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
   )

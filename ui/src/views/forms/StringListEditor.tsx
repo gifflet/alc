@@ -20,7 +20,7 @@ export function StringListEditor({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {values.length === 0 && <p className="text-[12px] text-faint">{emptyLabel}</p>}
+      {values.length === 0 && <p className="text-[length:var(--ui-text-body)] text-faint">{emptyLabel}</p>}
       {values.map((v, i) => (
         <div key={i} className="flex items-center gap-2">
           <input
@@ -28,7 +28,7 @@ export function StringListEditor({
             onChange={(e) => setAt(i, e.target.value)}
             placeholder={placeholder}
             spellCheck={false}
-            className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[12px] text-primary outline-none focus:border-accent"
+            className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
           />
           <button
             type="button"
@@ -43,7 +43,7 @@ export function StringListEditor({
       <button
         type="button"
         onClick={add}
-        className="flex w-fit items-center gap-1 rounded-panel border border-border px-2 py-1 text-[11px] text-muted hover:bg-hover hover:text-primary"
+        className="flex w-fit items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
       >
         <Plus className="h-3 w-3" />
         Add

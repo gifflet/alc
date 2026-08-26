@@ -24,7 +24,7 @@ export function PrimerForm({ value, onChange }: { value: string; onChange: (raw:
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto p-4">
-      <p className="flex items-center gap-1.5 text-[11px] text-faint">
+      <p className="flex items-center gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <Info className="h-3.5 w-3.5" />A Primer has no schema — only the leading heading is split out here; the
         rest is free text.
       </p>

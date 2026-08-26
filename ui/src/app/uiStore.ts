@@ -5,10 +5,14 @@
 // Panel sizing/collapse persists to localStorage; open tabs are session-only.
 import { useSyncExternalStore } from 'react'
 import type { CollectionName } from '../api/types'
+import type { Density } from './density'
+import type { Theme } from './useTheme'
 import { clearAllDrafts, clearDraft } from '../lib/draftCache'
 
 export type PrimaryView =
   | 'dashboard'
+  | 'fleet'
+  | 'inbox'
   | 'queue'
   | 'runs'
   | 'loops'
@@ -26,6 +30,7 @@ export type TabTarget =
   | { type: 'view'; view: PrimaryView }
   | { type: 'run'; stem: string }
   | { type: 'loop'; name: string }
+  | { type: 'review'; branch: string }
   | { type: 'source'; resource: SourceResource; name: string }
 
 export interface Tab {
@@ -45,6 +50,10 @@ export interface UiState {
   bottomHeight: number
   bottomCollapsed: boolean
   bottomTab: 'console' | 'problems'
+  /** Operator's explicit density choice; null = automatic detection. */
+  density: Density | null
+  /** Operator's explicit theme choice; null = follow the OS. */
+  theme: Theme | null
 }
 
 const LEFT_MIN = 160
@@ -62,6 +71,8 @@ export function tabId(target: TabTarget): string {
       return `run:${target.stem}`
     case 'loop':
       return `loop:${target.name}`
+    case 'review':
+      return `review:${target.branch}`
     case 'source':
       return `source:${target.resource}:${target.name}`
   }
@@ -73,6 +84,8 @@ interface PersistedPanels {
   bottomHeight: number
   bottomCollapsed: boolean
   bottomTab: 'console' | 'problems'
+  density: Density | null
+  theme: Theme | null
 }
 
 function loadPanels(): PersistedPanels {
@@ -82,6 +95,8 @@ function loadPanels(): PersistedPanels {
     bottomHeight: 200,
     bottomCollapsed: true,
     bottomTab: 'console',
+    density: null,
+    theme: null,
   }
   try {
     const raw = localStorage.getItem(PANELS_KEY)
@@ -113,6 +128,8 @@ function createStore() {
         bottomHeight: s.bottomHeight,
         bottomCollapsed: s.bottomCollapsed,
         bottomTab: s.bottomTab,
+        density: s.density,
+        theme: s.theme,
       }
       localStorage.setItem(PANELS_KEY, JSON.stringify(panels))
     } catch {
@@ -181,6 +198,12 @@ function createStore() {
     },
     setBottomTab(tab: 'console' | 'problems'): void {
       set({ ...state, bottomTab: tab, bottomCollapsed: false }, true)
+    },
+    setDensity(density: Density | null): void {
+      set({ ...state, density }, true)
+    },
+    setTheme(theme: Theme | null): void {
+      set({ ...state, theme }, true)
     },
   }
 }

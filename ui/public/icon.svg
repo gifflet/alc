@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="alc">
+  <!-- Instrument-panel lineage: dark surface, 1px-feel border, no gloss.
+       The open ring is the Assurance Loop (Act - Verify - Repair); the centre
+       dot is the unit under verification. -->
+  <rect width="512" height="512" rx="96" fill="#1b1d1f"/>
+  <rect x="8" y="8" width="496" height="496" rx="88" fill="none" stroke="#35393d" stroke-width="8"/>
+  <circle cx="256" cy="256" r="132" fill="none" stroke="#4d8ae0" stroke-width="28"
+          stroke-linecap="round" stroke-dasharray="622 208" transform="rotate(-58 256 256)"/>
+  <path d="M336 132 l52 26 -30 50" fill="none" stroke="#4d8ae0" stroke-width="28"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="46" fill="#5cc975"/>
+</svg>

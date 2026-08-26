@@ -27,7 +27,7 @@ export function TabBar() {
           <div
             key={tab.id}
             onClick={() => uiStore.setActiveTab(tab.id)}
-            className={`group relative flex cursor-pointer items-center gap-2 whitespace-nowrap border-r border-border px-3 text-[12px] transition-colors duration-120 ${
+            className={`group relative flex cursor-pointer items-center gap-2 whitespace-nowrap border-r border-border px-3 text-[length:var(--ui-text-body)] transition-colors duration-120 ${
               active ? 'bg-raised text-primary' : 'text-muted hover:bg-hover'
             }`}
           >

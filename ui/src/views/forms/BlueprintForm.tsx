@@ -28,7 +28,7 @@ export function BlueprintForm({
   const fmText = getFrontMatter(value)
   if (fmText === null) {
     return (
-      <div className="p-4 text-[12px] text-error">
+      <div className="p-4 text-[length:var(--ui-text-body)] text-error">
         No front-matter found. Edit this file in the Source view.
       </div>
     )
@@ -39,7 +39,7 @@ export function BlueprintForm({
     if (doc.errors.length) throw doc.errors[0]
   } catch {
     return (
-      <div className="p-4 text-[12px] text-error">
+      <div className="p-4 text-[length:var(--ui-text-body)] text-error">
         The front-matter has a syntax error. Fix it in the Source view to edit fields here.
       </div>
     )
@@ -68,7 +68,7 @@ export function BlueprintForm({
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
-      <p className="flex items-center gap-1.5 text-[11px] text-faint">
+      <p className="flex items-center gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <Info className="h-3.5 w-3.5" />
         Form edits the front-matter only — the workflow body, comments and other keys are preserved.
       </p>
@@ -129,7 +129,7 @@ export function BlueprintForm({
       </Field>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Team-metaphor / lifecycle</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Team-metaphor / lifecycle</h3>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Archetype">
             <Select
@@ -171,7 +171,7 @@ export function BlueprintForm({
       </Field>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Protected paths</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Protected paths</h3>
         <StringListEditor
           values={protect}
           onChange={(next) =>
@@ -183,7 +183,7 @@ export function BlueprintForm({
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Checks</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Checks</h3>
         <CheckListEditor doc={doc} path={['checks']} update={update} />
       </section>
     </div>

@@ -63,7 +63,7 @@ export function ManifestForm({
     if (doc.errors.length) throw doc.errors[0]
   } catch {
     return (
-      <div className="p-4 text-[12px] text-error">
+      <div className="p-4 text-[length:var(--ui-text-body)] text-error">
         The YAML has a syntax error. Fix it in the Source view to edit fields here.
       </div>
     )
@@ -119,7 +119,7 @@ export function ManifestForm({
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
-      <p className="flex items-center gap-1.5 text-[11px] text-faint">
+      <p className="flex items-center gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <Info className="h-3.5 w-3.5" />
         Form edits known fields only — comments and other keys are preserved.
       </p>
@@ -153,50 +153,52 @@ export function ManifestForm({
       </Field>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Compute tiers</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Compute tiers</h3>
         {tiers.length === 0 || columns.length === 0 ? (
-          <p className="text-[12px] text-faint">No tiers declared.</p>
+          <p className="text-[length:var(--ui-text-body)] text-faint">No tiers declared.</p>
         ) : (
-          <table className="w-full border-collapse text-[12px]">
-            <thead>
-              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-faint">
-                <th className="px-2 py-1 font-medium">Tier</th>
-                {columns.map((c) => (
-                  <th key={c} className="px-2 py-1 font-medium">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tiers.map((tier) => (
-                <tr key={tier} className="border-b border-border/60">
-                  <td className="px-2 py-1 font-mono text-muted">{tier}</td>
-                  {columns.map((engine) => (
-                    <td key={engine} className="px-2 py-1">
-                      <input
-                        value={cell(tier, engine)}
-                        onChange={(e) =>
-                          update((d) =>
-                            d.setIn(['compute_tiers', tier, engine], e.target.value),
-                          )
-                        }
-                        placeholder="model"
-                        spellCheck={false}
-                        className="w-full rounded-panel border border-border bg-base px-2 py-1 font-mono text-[12px] text-primary outline-none focus:border-accent"
-                      />
-                    </td>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[length:var(--ui-text-body)]">
+              <thead>
+                <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+                  <th className="px-2 py-1 font-medium">Tier</th>
+                  {columns.map((c) => (
+                    <th key={c} className="px-2 py-1 font-medium">
+                      {c}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tiers.map((tier) => (
+                  <tr key={tier} className="border-b border-border/15">
+                    <td className="px-2 py-1 font-mono text-muted">{tier}</td>
+                    {columns.map((engine) => (
+                      <td key={engine} className="px-2 py-1">
+                        <input
+                          value={cell(tier, engine)}
+                          onChange={(e) =>
+                            update((d) =>
+                              d.setIn(['compute_tiers', tier, engine], e.target.value),
+                            )
+                          }
+                          placeholder="model"
+                          spellCheck={false}
+                          className="w-full rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h3 className="text-[11px] uppercase tracking-wide text-faint">Check sets</h3>
+          <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Check sets</h3>
           <div className="flex items-center gap-1">
             <input
               value={newSetName}
@@ -204,13 +206,13 @@ export function ManifestForm({
               placeholder="set name"
               aria-label="New check set name"
               spellCheck={false}
-              className="w-32 rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
+              className="w-32 rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
             />
             <button
               type="button"
               onClick={addCheckSet}
               disabled={!newSetName.trim()}
-              className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[11px] text-muted hover:bg-hover hover:text-primary disabled:opacity-40"
+              className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary disabled:opacity-40"
             >
               <Plus className="h-3 w-3" />
               Add set
@@ -218,13 +220,13 @@ export function ManifestForm({
           </div>
         </div>
         {checkSetNames.length === 0 ? (
-          <p className="text-[12px] text-faint">No check sets.</p>
+          <p className="text-[length:var(--ui-text-body)] text-faint">No check sets.</p>
         ) : (
           <div className="flex flex-col gap-3">
             {checkSetNames.map((name) => (
               <div key={name} className="rounded-panel border border-border p-2">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="font-mono text-[12px] text-muted">{name}</span>
+                  <span className="font-mono text-[length:var(--ui-text-body)] text-muted">{name}</span>
                   <button
                     type="button"
                     aria-label={`Remove set ${name}`}
@@ -242,7 +244,7 @@ export function ManifestForm({
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Quarantined checks</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Quarantined checks</h3>
         <StringListEditor
           values={quarantinedChecks}
           onChange={(next) =>
@@ -254,18 +256,18 @@ export function ManifestForm({
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Notify</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Notify</h3>
         <div className="flex flex-col gap-2">
           {NOTIFY_EVENTS.map(({ key, label }) => {
             const row = readNotifyRow(doc, key)
             return (
               <div key={key} className="flex items-center gap-2">
-                <span className="w-40 shrink-0 text-[12px] text-muted">{label}</span>
+                <span className="w-40 shrink-0 text-[length:var(--ui-text-body)] text-muted">{label}</span>
                 <select
                   value={row.mode}
                   onChange={(e) => setNotify(key, { ...row, mode: e.target.value as NotifyRow['mode'] })}
                   aria-label={`${label} mode`}
-                  className="rounded-panel border border-border bg-base px-2 py-1 text-[12px] text-primary outline-none focus:border-accent"
+                  className="rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
                 >
                   <option value="none">off</option>
                   <option value="command">command</option>
@@ -278,7 +280,7 @@ export function ManifestForm({
                     placeholder={row.mode === 'command' ? 'notify-slack.sh' : 'https://hooks.example.com/…'}
                     aria-label={`${label} value`}
                     spellCheck={false}
-                    className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[12px] text-primary outline-none focus:border-accent"
+                    className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
                   />
                 )}
               </div>
@@ -288,7 +290,7 @@ export function ManifestForm({
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Delivery</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Delivery</h3>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Mode">
             <Select
@@ -319,7 +321,7 @@ export function ManifestForm({
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Knobs</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Knobs</h3>
         <div className="grid grid-cols-2 gap-3">
           {KNOBS.map((knob) => {
             const raw = doc.get(knob.key)
@@ -339,7 +341,7 @@ export function ManifestForm({
       </section>
 
       <section>
-        <h3 className="mb-2 text-[11px] uppercase tracking-wide text-faint">Directories</h3>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Directories</h3>
         <div className="grid grid-cols-3 gap-3">
           {DIR_KNOBS.map((knob) => {
             const raw = doc.get(knob.key)
