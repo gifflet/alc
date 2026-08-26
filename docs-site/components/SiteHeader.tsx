@@ -35,6 +35,12 @@ export function SiteHeader() {
           <Link href="/docs/reference/cli" className="inline-flex min-h-[44px] items-center rounded-sm px-2.5 text-muted transition-colors hover:text-primary">
             CLI
           </Link>
+          <Link
+            href="/changelog"
+            className="inline-flex min-h-[44px] items-center rounded-sm px-2.5 text-muted transition-colors hover:text-primary"
+          >
+            Changelog
+          </Link>
           <a
             href="https://github.com/gifflet/alc"
             className="inline-flex min-h-[44px] items-center rounded-sm px-2.5 text-muted transition-colors hover:text-primary"
