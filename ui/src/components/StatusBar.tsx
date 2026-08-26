@@ -1,9 +1,10 @@
 // StatusBar.tsx — 24px footer: project, engine health, WS link, active execs.
-import { ChevronsUpDown, Cpu, Keyboard, Loader2, SunMoon } from 'lucide-react'
+import { ChevronsUpDown, Keyboard, Loader2, SunMoon } from 'lucide-react'
 import { useEngines, useExecs } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useWs } from '../ws/WsProvider'
 import { setTheme, useTheme } from '../app/useTheme'
+import { Mark } from './Mark'
 import { RepoStatus } from './RepoStatus'
 import { StatusDot } from './StatusDot'
 
@@ -34,7 +35,7 @@ export function StatusBar({
         title="Switch project (Cmd/Ctrl+P)"
         className="flex items-center gap-1.5 rounded-xs text-primary hover:bg-hover"
       >
-        <Cpu className="h-3 w-3 text-muted" />
+        <Mark size={12} className="text-muted" />
         {projectName}
         <ChevronsUpDown className="h-3 w-3 text-faint" />
       </button>
