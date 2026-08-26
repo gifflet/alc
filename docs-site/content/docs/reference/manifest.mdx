@@ -1,0 +1,211 @@
+---
+title: Manifest
+description: Every field in .alc/manifest.yaml — the root of the Operator Layer — with its default and what it changes.
+order: 2
+---
+`.alc/manifest.yaml` is the root of the Operator Layer. Three fields are required; everything else has a default that matches the behaviour you get without declaring it.
+
+```yaml
+version: 1
+default_engine: claude-code
+
+compute_tiers:
+  standard:
+    mock: "mock-small"
+    claude-code: "claude-sonnet-4-6"
+    gemini: "gemini-2.5-flash"
+  deep:
+    mock: "mock-large"
+    claude-code: "claude-opus-4-8"
+    gemini: "gemini-2.5-pro"
+
+engines:
+  mock:
+    type: mock
+  claude-code:
+    type: claude-code
+  gemini:
+    type: gemini
+```
+
+## Required
+
+| Field | Type | Meaning |
+|---|---|---|
+| `default_engine` | string | Engine used when no `--engine` is passed. Must appear in `engines` |
+| `compute_tiers` | tier → engine → model id | Named compute levels. Every tier must map `default_engine` |
+| `engines` | name → config | Declared execution planes |
+| `version` | int | Schema version. Defaults to `1` |
+
+### Engine entries
+
+| Key | Applies to | Meaning |
+|---|---|---|
+| `type` | all | Adapter type: `mock`, `claude-code` or `gemini`. Required |
+| `clean_config` | `claude-code` | Restrict the CLI to user-level settings, skipping the host project's `.claude/` hooks and configuration. Default `false` |
+
+The engine **name** is yours; `type` is what resolves to an adapter. That is what lets you declare two entries of the same type with different settings.
+
+{/* VERIFY: `alc init` scaffolds `binary: claude` / `binary: gemini` on engine entries, but no Python module reads a `binary` key — `registry.resolve_engine` only consumes `type` and `clean_config`. Documented as inert below; confirm before shipping. */}
+
+> `alc init` writes a `binary:` key on the `claude-code` and `gemini` entries. Nothing currently reads it — the adapters call their tool by its conventional name. Treat it as documentation of intent rather than a working override.
+
+## Check sets
+
+Reusable named check sets a Blueprint may opt into with `check_set: <name>`.
+
+```yaml
+check_sets:
+  project:
+    - name: test
+      command: ["make", "test"]
+  security:
+    - name: secrets
+      command: ["gitleaks", "detect", "--no-banner"]
+```
+
+`alc init` pre-fills one set per detected stack, plus `security`. `alc onboard` adds a `project` set harvested from what you already declare. See [Make the checks real](/docs/getting-started/checks) and the [Blueprint reference](/docs/reference/blueprint) for the shape of a check entry.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `check_sets` | `{}` | Named sets of checks |
+| `quarantined_checks` | `[]` | Checks that still run but can never fail a run. Each produces a permanent `alc lint` warning |
+
+## Behavioural knobs
+
+| Field | Default | Meaning |
+|---|---|---|
+| `default_timeout_s` | `1800` | Per-turn engine kill timeout when a Blueprint sets none |
+| `check_timeout_s` | `600` | Per-check wall-clock kill deadline. Kills the check and its child process group |
+| `check_output_chars` | `4096` | Characters of a failing check's output captured into the repair directive |
+| `bundle_output_chars` | `1500` | Characters of `output_text` kept in a bundle replay summary |
+| `plan_tier` | `"standard"` | Compute tier for Conductor planning turns |
+| `plan_retries` | `2` | Corrective retries when a plan's JSON comes back malformed |
+| `fanout_concurrency` | `4` | Parallel workers for `alc conduct --parallel` and `alc explore` |
+
+## Queue and retries
+
+| Field | Default | Meaning |
+|---|---|---|
+| `max_task_retries` | `0` | Per-task retry cap for the queue drain. `0` disables automatic retries |
+| `retry_strategy` | `"immediate"` | `immediate` drains a retry in the same pass; `deferred` waits for the next one. Inert unless `max_task_retries > 0` |
+
+## Commits and worktrees
+
+| Field | Default | Meaning |
+|---|---|---|
+| `generate_commit_messages` | `true` | Ask the engine for a Conventional Commits subject from the staged diff. The static template is the fallback |
+| `worktree_commit_message` | `"alc: {branch}"` | Exit-commit template. `{branch}` is substituted |
+| `worktree_provision` | `[]` | Gitignored runtime dependencies provisioned into each worktree |
+| `worktree_ports` | `0` | Free TCP ports allocated per isolated **queue** task. `0` injects nothing |
+
+### `worktree_provision` entries
+
+Exactly one of `link`, `copy` or `clone` per entry; its value is a path relative to the project root. Absolute paths and `..` are rejected.
+
+```yaml
+worktree_provision:
+  - link: node_modules
+    refresh: ["npm", "install"]
+    when_changed: ["package.json", "package-lock.json"]
+  - clone: .env
+```
+
+| Key | Meaning |
+|---|---|
+| `link` | Symlink the path in. **Shared** across worktrees — read-only-safe only |
+| `copy` | A full, isolated deep copy per worktree |
+| `clone` | A copy-on-write clone: fast and isolated, falling back to a deep copy where the filesystem has no COW support |
+| `refresh` | Install command (argv) run before the checks when a `when_changed` path was modified |
+| `when_changed` | Globs that trigger `refresh` |
+
+`refresh` and `when_changed` are only meaningful together, and either one without the other is rejected at load time rather than silently ignored.
+
+With `worktree_ports > 0`, the queue drain injects `ALC_PORT`, `PORT`, `ALC_PORT_2` upward, and `ALC_PORTS` (comma-separated) into the engine's environment.
+
+## Runtime service
+
+The app ALC starts for runtime validation. Unset means ALC never owns a service.
+
+```yaml
+service:
+  start: "npm run dev"
+  health: "/health"
+  ready_timeout_s: 30
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `start` | required | Shell command that launches the app |
+| `health` | `"/health"` | Path polled until it returns HTTP 200 |
+| `ready_timeout_s` | `30` | Seconds to wait for health before giving up |
+
+Only Blueprints declaring `needs_service: true` use it. ALC starts the app on its allocated port, exposes `$ALC_BASE_URL`, and tears it down after the run.
+
+## Delivery
+
+How `alc land` hands an already-landed branch to the remote. The local cherry-pick is the actual landing; this is the last mile on top of it.
+
+```yaml
+delivery:
+  mode: local          # local | push | pr
+  remote: origin
+  base: main
+```
+
+`alc land --push` and `--pr` override `mode` for one invocation. A push failure or a missing `gh` never fails the land.
+
+## Notifications
+
+Each hook is either a command — an argv list, run with the JSON payload on stdin — or a webhook URL, which is POSTed the payload. Delivery never raises.
+
+```yaml
+notify:
+  on_task_failed: ["scripts/notify.sh"]
+  on_loop_stopped: ["scripts/notify.sh"]
+  on_budget_exceeded: ["scripts/notify.sh"]
+  on_merge_conflict: "https://hooks.example.com/alc"
+```
+
+## Stage
+
+Advisory throughout. The stage never changes how a mandate executes; its authority stops at warnings, reports and scaffolds.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `stage` | none | `pre-pmf`, `growth` or `strong-pmf` |
+| `stage_mix` | none | Replaces the built-in target mix wholesale |
+
+```yaml
+stage: growth
+stage_mix:
+  core: [builder, sweeper, grower]
+  secondary: [maintainer]
+```
+
+With no `stage` declared, no mix rule fires anywhere.
+
+## Directories
+
+Every path is relative to the project root. The defaults are what `alc init` writes.
+
+| Field | Default |
+|---|---|
+| `blueprints_dir` | `.alc/blueprints` |
+| `flows_dir` | `.alc/flows` |
+| `specialists_dir` | `.alc/specialists` |
+| `primers_dir` | `.alc/primers` |
+| `prompts_dir` | `.alc/prompts` |
+| `bundles_dir` | `.alc/bundles` |
+| `queue_dir` | `.alc/queue` |
+| `loops_dir` | `.alc/loops` |
+| `runs_dir` | `.alc/runs` |
+| `variants_dir` | `.alc/variants` |
+| `metrics_dir` | `.alc/metrics` |
+| `signals_dir` | `.alc/signals` |
+| `artifacts_dir` | `.alc/artifacts` |
+
+## Next
+
+- [Blueprint reference](/docs/reference/blueprint) — the other half of the Operator Layer.
+- [The Policy Gate](/docs/reference/policy-gate) — what `alc lint` checks in here.

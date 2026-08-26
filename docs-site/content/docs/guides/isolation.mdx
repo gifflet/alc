@@ -1,0 +1,183 @@
+---
+title: Isolation and landing
+description: Run the work on a throwaway branch in a git worktree, then integrate what you want by linear cherry-pick — or throw it away.
+order: 6
+---
+Without isolation, an agent edits your working tree. That is fine when you are watching. It is not fine when four demands are draining at 3am.
+
+`--isolate` contains a run to a git worktree on a throwaway branch:
+
+```bash
+alc run chore "tidy the imports" --isolate
+alc flow ship "add the changelog entry" --isolate
+```
+
+Queue tasks isolate by **default** — you opt out with `alc enqueue --no-isolate`, not in.
+
+## What actually happens
+
+1. A branch is created from your current HEAD, named `alc/<label>-<8 hex chars>`.
+2. A git worktree for it is checked out into a system temp directory — **not** inside your repo.
+3. The engine turn and the Assurance Loop run there. Your working tree is untouched.
+4. On exit, whatever the agent wrote is staged and committed to that branch, unless the run is one that must not commit.
+5. The worktree directory is always removed. If something was committed, the branch survives with the commit. If nothing was written, the branch is deleted too and the output says so.
+
+The label tells you where a branch came from:
+
+| Command | Branch |
+|---|---|
+| `alc run --isolate`, `alc spike` | `alc/run-<hex8>` |
+| `alc flow --isolate` | `alc/flow-<hex8>` |
+| queue drain (`alc tick`, `alc cycle`) | `alc/tick-<hex8>` |
+| `alc conduct --parallel` | `alc/fanout-<unit>-<hex8>` |
+| `alc explore` | `alc/variant-<n>-<hex8>` |
+
+Outside a git repository, `--isolate` degrades to a no-op with a note on stderr. The run still happens, in place.
+
+### Which runs never commit
+
+- A **spike**, always, whatever the outcome. Its branch is deleted every time.
+- A **committing Flow that did not succeed**.
+- A **committing queue demand that did not succeed**.
+
+A failed run leaves nothing behind to land by accident.
+
+### The commit message
+
+By default `worktree_commit_message` in the Manifest, which is `"alc: {branch}"`. When `generate_commit_messages` is on — it is by default — ALC asks the engine for a Conventional Commits subject from the staged diff instead, falling back to the template if generation fails or the output is invalid.
+
+## Gitignored dependencies
+
+A git worktree checks out only **tracked** files. Your `node_modules`, your `.env`, your local data directory are all absent, and the checks that need them fail.
+
+`worktree_provision` fills that gap, per path, with an explicit cost trade-off:
+
+```yaml
+# .alc/manifest.yaml
+worktree_provision:
+  - link: node_modules        # symlink — SHARED across worktrees
+  - copy: data/fixtures       # full isolated deep copy
+  - clone: .env               # copy-on-write clone: fast AND isolated
+```
+
+| Mode | Isolation | Cost |
+|---|---|---|
+| `link` | None — shared. A mutation corrupts siblings | Free |
+| `copy` | Full | A deep copy per worktree |
+| `clone` | Full | Copy-on-write, falling back to a deep copy where the filesystem has none |
+
+Use `link` only for paths the run will read and never write.
+
+Provisioned paths are explicitly un-staged before the exit commit, so a symlinked `node_modules` can never end up in a commit — a `.gitignore` entry with a trailing slash does not ignore a symlink.
+
+### Refreshing after a dependency change
+
+A `link:`ed `node_modules` is the *old* dependency tree. A run that bumps a major version would then be verified against the packages it just replaced — a false green.
+
+```yaml
+worktree_provision:
+  - link: node_modules
+    refresh: ["npm", "install"]
+    when_changed: ["package.json", "package-lock.json"]
+```
+
+When the run changes a path matching `when_changed`, the install runs before the checks. `link` plus `refresh` is legal: the symlink is cloned into the worktree the first time the install would write into it, so a mutating install never corrupts your shared copy.
+
+`refresh` and `when_changed` are only meaningful together, and ALC rejects either one without the other rather than leaving dead config in place.
+
+### Ports for parallel drains
+
+A full-stack demand runs a dev server. Four of them run four, and they collide on the same port.
+
+```yaml
+worktree_ports: 2             # 0 (default) = off
+```
+
+The **queue drain** then allocates that many free TCP ports per isolated task and injects them into the engine's environment as `ALC_PORT`, `PORT`, `ALC_PORT_2` upward, and `ALC_PORTS` as a comma-separated list. `PORT` is set alongside `ALC_PORT` so a standard app binds correctly with no ALC awareness at all.
+
+## Landing
+
+```bash
+alc land                      # no arguments: LIST the unmerged branches
+alc land --all                # integrate every unmerged alc/* branch
+alc land alc/tick-a1b2c3d4    # integrate specific ones
+alc land --all --json
+```
+
+`alc land` is a **linear cherry-pick** onto the branch you are currently on. Per branch:
+
+- Find the commits your HEAD lacks, oldest first.
+- Already contained in HEAD? Delete the branch, count it merged.
+- Cherry-pick cleanly? Delete the branch, count it merged.
+- **Conflict?** Abort the cherry-pick, **leave the branch intact**, count it left.
+
+Cherry-picking creates new commit SHAs, which is why merged branches are force-deleted — git would not otherwise consider them merged.
+
+**Conflicts are never resolved automatically.** A left branch is a branch waiting for you.
+
+`alc land` requires a git repository and exits 1 if there is none. It exits 1 when anything conflicted.
+
+### Push and PR
+
+```bash
+alc land --all --push         # push the current branch afterwards
+alc land --all --pr           # push, then open a PR via `gh`
+```
+
+Both are a last mile *on top of* a landing that already succeeded locally. Note that they push **the branch you are on** — the integration target — not the `alc/*` branch, which has just been deleted.
+
+`--pr` shells out to `gh pr create` against the delivery base. The PR body is generated: which branches merged cleanly, which were left, the scorecard counts, and the changed files.
+
+A push failure, a missing `gh`, or a missing `git` **never fails the land**. The local integration already succeeded; failures print a note to stderr and leave the exit code alone.
+
+Defaults live in the Manifest, and the flags override them for one invocation:
+
+```yaml
+delivery:
+  mode: local                 # local | push | pr
+  remote: origin
+  base: main
+```
+
+## When ALC merges without being asked
+
+Two paths, both narrow.
+
+**The queue drain** merges after each dependency wave, so the next wave's worktrees branch off the updated HEAD. A result is eligible only when *all* of these hold: the task was isolated, it ran in a git repo, it dispatched a **Flow that declares `commit: enabled: true`**, the flow **succeeded**, and something was actually staged. A non-committing isolated task still produces a branch — but it is left for you.
+
+**`alc conduct --parallel`** merges every successful unit that committed, after the fan-out.
+
+Everything else waits for `alc land`. `alc explore` never auto-merges, by design.
+
+## Discarding
+
+```bash
+alc discard                              # no arguments: LIST unmerged branches
+alc discard alc/run-a1b2c3d4 --yes       # force-delete specific branches
+alc discard --all-unmerged --yes         # force-delete every unmerged alc/* branch
+alc discard --worktrees                  # prune stale worktree admin entries
+alc discard --bundles --older-than 30 --yes
+```
+
+Any real deletion requires `--yes`, or an interactive confirmation at a TTY. Without either it refuses and deletes nothing.
+
+`--all-unmerged` is ignored when you name branches explicitly. Explicit names must carry the `alc/` prefix. The branch you are currently on is always skipped.
+
+If a branch cannot be deleted because an interrupted run still has it checked out in a worktree, that worktree is removed first and the delete is retried — never your main worktree.
+
+Deleting a branch also removes its archived run report, so a discarded run stops counting in `alc audit` and Mix Health.
+
+## Guardrails
+
+- **Nothing is ever committed empty.** Both the worktree exit and the Flow commit check for staged changes first.
+- **A committing Flow in a shared working directory requires a clean tree.** It aborts before any stage runs rather than sweeping your uncommitted work into its commit.
+- **A committing Flow that hard-fails reverts itself** — and its clean step never removes gitignored files.
+- **`.alc/` is always excluded from a Flow's terminal commit and from that revert.** Your `exclude:` list only adds to it. (A plain `alc run --isolate` exit-commit does not apply that exclusion; it rarely matters, because a worktree checks out only tracked files, but it does if you track `.alc/`.)
+- **The autonomous loop never sweeps your tree.** A `plan` replenish commits an explicit pathspec of only the paths that appeared after a snapshot taken immediately before the planner ran — never a blanket `git add -A`.
+- **Every git mutation is serialized.** Worktree creation, removal and branch deletion take a lock, so concurrent fan-out cannot race. The engine turn itself runs outside it.
+- **Missing tooling degrades, it does not crash.** A missing `git` or `gh` prints a note and carries on, rather than raising.
+
+## Next
+
+- [Exploring variants](/docs/guides/variants) — several attempts at once, and adopting one.
+- [Unattended work](/docs/guides/unattended) — where most of these branches come from.

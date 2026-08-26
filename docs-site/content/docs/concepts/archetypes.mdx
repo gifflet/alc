@@ -1,0 +1,89 @@
+---
+title: Archetype Packs
+description: The five Archetype Packs — prototyper, builder, sweeper, grower, maintainer — and the stage mix that decides which ones you hire.
+order: 5
+---
+An **Archetype Pack** is scaffolded content — Blueprints, Flows, Specialists, Loops — for one of the five roles a codebase moves through over its life.
+
+Packs are the implementation. `team` is the only verb you see:
+
+```bash
+alc team hire builder      # write the pack's missing files, then lint
+alc team list              # what is hired, and the state of any loops it brought
+alc team status            # …plus Mix Health
+alc team retire builder    # archive that member's loop definitions
+```
+
+Hiring is **additive**: it writes only the pack's missing files and refuses to overwrite one you already have. `--force` overwrites all of them, replacing local edits. A Specialist's Knowledge File is not a pack file and is never touched by hiring.
+
+A bare `alc team` is the same as `alc team status`, so the command family opens on observation rather than a usage error.
+
+## The five
+
+| Archetype | Role | What the pack ships |
+|---|---|---|
+| **Prototyper** | Churns out new ideas; most don't ship | A `spike` Blueprint (`mode: spike`) fencing the checks gate — `alc spike "…"` is the entry point |
+| **Builder** | Turns a prototype into production-quality product or infra | `test` (test authoring) and `qa` (live e2e) Blueprints, plus a hardened `ship-hardened` Flow |
+| **Sweeper** | Cleans the UI, simplifies code, removes features | A `janitor` Specialist that names the real dead-code command for your stack, a `refactor` Blueprint, a `sweep` Loop, and an `unship` Flow |
+| **Grower** | Iterates a built product to improve product-market fit | *Partial*: a do-it-yourself issue and error-sweep Specialist (`listen`). Real signal intake and a `regression` replenish kind are separate control-plane features, available to any Blueprint |
+| **Maintainer** | Keeps a mature system safe, reliable, fast and efficient at scale | A `patrol` Flow gated by the `security` check set, a `deps` Specialist, and a `deps-refresh` Loop |
+
+## The Sweeper's `unship` gate
+
+Worth singling out, because it shows what "checks are law" means in a case where the obvious approach is wrong.
+
+Removing a feature is only *done* when the codebase still holds together without it. So the `unship` Flow ends in a pure verification gate: a `remove` stage does the deletion, and a `gate` stage (`verify_only: true`) re-runs the project's **real** check set. A removal is judged by the same build, test and lint that guard every other change — not by a bespoke rule the Sweeper invents.
+
+Three deliberate choices around it:
+
+- **`expect: shrink` is advisory.** The `refactor` Blueprint declares it to state that this mandate should reduce the codebase. When a shrink run finishes net-positive, the control plane records a warning. It never fails the run — simplifying sometimes means growing before shrinking.
+- **Proving absence by text search is opt-in, and off by default.** An earlier design grepped for each removed symbol. Text search is only a heuristic: a name that is not unique can never be proven absent. The scaffolded `unship.yaml` carries that recipe as a commented block you can uncomment, and the `map` Blueprint still ships for it.
+- **A project with only placeholder checks is reported inconclusive.** When the only resolvable check is the `["true"]` smoke placeholder, `require_real_checks` reports the removal as honestly unverified rather than fabricating a green pass. The fix is to give the project a real `check_set`.
+
+To adopt the real-checks gate in a project that predates it, re-scaffold with `alc team hire sweeper --force`.
+
+## Stage and Mix Health
+
+`stage` in the Manifest declares which phase of product life the codebase is in:
+
+```yaml
+stage: growth     # pre-pmf | growth | strong-pmf
+```
+
+Each stage has a target archetype mix. Pre-PMF centres on prototyper, builder and sweeper; growth on builder, sweeper and grower with some maintainer; strong-PMF on sweeper, grower and maintainer with some builder.
+
+That is a health **heuristic**, not a law of physics. Override it wholesale:
+
+```yaml
+stage_mix:
+  core: [builder, maintainer]
+  secondary: [sweeper]
+```
+
+**Every rule the stage drives is advisory.** A core archetype with no Blueprint hiring it produces a warning and an `alc team hire <archetype>` hint. A `compute_tier: deep` Blueprint whose archetype sits outside the mix warns too. A Blueprint with no `archetype` is never penalised. The stage never changes how a mandate executes — its authority stops at warnings, reports and scaffolds.
+
+**Mix Health** (`alc team status`) answers the question the mix exists to ask: is the autonomous work actually the *right* work for this product's stage? It aggregates every archived run report by archetype — runs, span, cost, net lines — and sets the real spend against the target mix. With no `stage` declared it still shows the breakdown; it just never judges it.
+
+```bash
+alc init --stage growth      # sugar over `alc team hire` for that stage's combo
+```
+
+## The Conductor is stage-aware, in two parts
+
+Deliberately with different guarantees:
+
+- A prose briefing nudges the planning model toward the mix. Probabilistic — the model may ignore it.
+- A deterministic check runs *after* the plan comes back and warns when the planned units drift from the mix. That second part is the actual guarantee.
+
+`alc conduct --strict-stage` turns that warning into a refusal. With no `stage` declared, neither part changes anything.
+
+## `archetype:` is a label, not a switch
+
+`archetype:` on a Blueprint's front-matter is a **descriptive label with zero runtime effect**. It is copied to the run report and it is what Mix Health aggregates by. Behaviour always lives in a named field — `check_set`, `needs_service`, `mode` — never behind this string.
+
+That is a design rule, not an accident. A label that quietly changed execution would be an invisible second policy language.
+
+## Next
+
+- [The Scorecard](/docs/concepts/scorecard) — the per-run metrics Mix Health aggregates.
+- [Autonomous Loops](/docs/guides/autonomous-loops) — the loops these packs bring with them.

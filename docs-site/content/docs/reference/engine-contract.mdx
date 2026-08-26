@@ -1,0 +1,150 @@
+---
+title: Engine contract
+description: The narrow interface an adapter must satisfy to become an ALC execution plane — and everything the control plane supplies instead.
+order: 5
+---
+An **Engine** is an adapter over a coding tool. The contract is intentionally narrow: it is the smallest surface that lets ALC drive a tool while keeping every best practice in the control plane.
+
+## The bar
+
+To be pluggable, an engine must be able to:
+
+1. **Accept a fully composed directive headlessly** — no interactive session — and
+2. **Edit files** in a given working directory,
+
+and report whether the turn ran. That is the whole bar.
+
+ALC supplies single-mandate isolation, context curation, the Assurance Loop, the Scorecard and the gating. None of it is the engine's concern.
+
+## The interface
+
+The contract is a Python `Protocol` — structural typing. An engine does not subclass anything; it only matches the shape.
+
+```python
+@dataclass(frozen=True)
+class Capabilities:
+    """What an engine can do natively. Anything False is emulated by the control plane."""
+    native_tool_scoping: bool = False       # can restrict allowed/denied tools itself
+    native_system_append: bool = False      # can append to its own system prompt
+    native_structured_output: bool = False  # can emit schema-constrained output
+    native_subagents: bool = False          # can spawn its own sub-agents
+    native_mcp: bool = False                # supports MCP servers
+
+
+@dataclass(frozen=True)
+class EngineRequest:
+    """One Single-Mandate turn. Context is already curated by the control plane."""
+    directive: str                        # the composed prompt, ready to run
+    workdir: Path                         # sandbox / worktree to operate in
+    model: str | None = None              # concrete model id resolved from a Compute Tier
+    allowed_tools: tuple[str, ...] = ()   # best-effort; emulated if unsupported
+    denied_tools: tuple[str, ...] = ()    # best-effort; emulated if unsupported
+    system_append: str | None = None      # best-effort; prepended to directive if unsupported
+    timeout_s: int = 1800
+    env: dict[str, str] = field(default_factory=dict)
+    permission_mode: str | None = None    # engine-interpreted; None = the engine default
+
+
+@dataclass(frozen=True)
+class Usage:
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
+
+
+@dataclass(frozen=True)
+class EngineResult:
+    ok: bool                                  # did the turn run to completion?
+    output_text: str                          # final message / stdout
+    usage: Usage = field(default_factory=Usage)
+    raw: dict = field(default_factory=dict)   # engine-specific payload
+
+
+@runtime_checkable
+class Engine(Protocol):
+    name: str
+
+    def capabilities(self) -> Capabilities:
+        """Declare native capabilities so the control plane knows what to emulate."""
+        ...
+
+    def health_check(self) -> bool:
+        """Is the tool installed and authenticated? Cheap, no model call."""
+        ...
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        """Perform exactly one headless turn in request.workdir."""
+        ...
+```
+
+Three things about it are load-bearing:
+
+- **Changed files are not in the contract.** ALC derives them with `git diff` in the `workdir`. Engines do not have to track edits, which works for every tool.
+- **`run()` performs one turn.** Multi-step orchestration is the control plane's job — the Assurance Loop, Flows — never the engine's.
+- **`ok` means the process ran, not that the work is correct.** Correctness is decided by the Verifier, outside the engine.
+
+## Required and optional
+
+| Method or field | Requirement | If absent or unsupported |
+|---|---|---|
+| `run()` | must | No fallback — the engine is unusable |
+| `capabilities()` | must | — |
+| `health_check()` | must | — |
+| `model` resolution | should | The tool uses its own default model |
+| `native_tool_scoping` | optional | The control plane sandboxes the workdir |
+| `native_system_append` | optional | The control plane prepends to the directive |
+| `native_structured_output` | optional | The control plane validates and re-asks |
+| `native_subagents` | optional | The control plane runs extra invocations |
+| `usage` reporting | optional | The Scorecard omits cost and token figures |
+
+## Capability matrix
+
+Indicative native support. Gaps are emulated by the control plane.
+
+| Capability | Claude Code | Gemini CLI | Mock |
+|---|---|---|---|
+| Headless directive | yes | yes | yes |
+| Tool scoping | yes | partial | no |
+| System append | yes | yes | no |
+| Structured output | yes | yes | no |
+| Subagents | yes | partial | no |
+| MCP | yes | yes | no |
+
+An adapter's own `capabilities()` may deliberately declare a **subset** of what its tool supports — claiming only what is stable across CLI versions and leaving the rest to emulation. The Gemini adapter does exactly that: it reports native MCP but not native system-append or structured output, so ALC folds the system prompt into the directive and validates the output itself. The behaviour is then uniform regardless of which `gemini` version is installed.
+
+The **Mock** engine declares no capabilities on purpose. It exercises the full control plane — loop, gate, Scorecard — with no model call, so the practices can be tested for free and hermetically.
+
+## Adding an engine
+
+1. Implement `name`, `capabilities()`, `health_check()` and `run()`.
+2. Map ALC's Compute Tiers to the tool's model ids in the Manifest.
+3. In `run()`, invoke the tool **headlessly** in `request.workdir` and return an `EngineResult`. Do not implement loops, retries or verification — those belong to the control plane.
+4. Honour `allowed_tools`, `denied_tools` and `system_append` **only if** the corresponding capability is `True`. Otherwise leave them for emulation.
+5. Register the adapter in the engine registry under a stable `type` name.
+
+If you find yourself adding orchestration logic to an adapter, it belongs in the control plane instead. The adapter stays a thin translation layer.
+
+## Progress output
+
+Adapters that stream a subprocess's output route lines through a shared progress printer, which truncates long lines, collapses immediate repeats, and caps the total — summarising what it suppressed at the end.
+
+The filtering is content-agnostic: it never inspects meaning, so it is not a per-tool or per-error heuristic. The authoritative full output still lives in the returned `EngineResult`, so the live view can be bounded without losing anything.
+
+Give a printer a generous cap for a real progress stream of tool calls, and a tight one for verbose diagnostic stderr.
+
+## Reference adapter
+
+Sketch of the Claude Code adapter, which translates the contract to `claude --print`:
+
+```python
+# capabilities(): tool scoping, system append, structured output, subagents, mcp = True
+# run(): shells out to `claude --print --output-format stream-json
+#        [--model <model>] [--append-system-prompt <system_append>]
+#        [--allowedTools ...] [--disallowedTools ...]`
+#        in request.workdir, parses the final result, returns EngineResult.
+# health_check(): `claude --version` exits 0.
+```
+
+## Next
+
+- [The control plane](/docs/concepts/control-plane) — what sits on the other side of this door.

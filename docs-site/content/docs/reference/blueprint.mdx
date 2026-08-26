@@ -1,0 +1,174 @@
+---
+title: Blueprint
+description: Every field a Blueprint's front-matter can declare, plus the shape of a check entry and a Specialist file.
+order: 3
+---
+A Blueprint is a markdown file in `.alc/blueprints/`. YAML front-matter declares the contract; the markdown body is the workflow the engine is given.
+
+```yaml
+---
+name: chore
+purpose: Apply a low-risk, well-scoped maintenance change.
+compute_tier: standard
+check_set: project
+checks:
+  - name: lint
+    command: ["ruff", "check", "."]
+report:
+  format: json
+  schema:
+    status: string
+    summary: string
+---
+
+## Chore Workflow
+
+You are executing a Single-Mandate chore: one change, one purpose, nothing more.
+```
+
+## Fields
+
+| Field | Default | Meaning |
+|---|---|---|
+| `name` | required | Blueprint name — what `alc run <name>` takes |
+| `purpose` | required | One sentence stating the single mandate |
+| `compute_tier` | `"standard"` | Named tier from `manifest.compute_tiers` |
+| `checks` | `[]` | Inline checks. See below |
+| `check_set` | none | Name of a reusable set in `manifest.check_sets` |
+| `report` | none | Structured-output schema. Absent produces an `alc lint` warning |
+| `max_repairs` | `3` | Assurance Loop repair budget. `0` = one shot |
+| `timeout_s` | `default_timeout_s` | Per-turn engine kill timeout |
+| `permission_mode` | engine default | One of `acceptEdits`, `auto`, `bypassPermissions`, `default` |
+| `needs_service` | `false` | Have ALC run `manifest.service` for the duration of the run |
+| `capture` | none | Shell command run after the health poll, to collect e2e evidence |
+| `protect` | `[]` | Globs an Act must never touch |
+| `allow_check_config` | `false` | Waive the `check-config-integrity` guard |
+| `mode` | none | `spike` — the one fenced exception to the checks gate |
+| `expect` | none | `shrink` — advisory: this mandate should reduce the codebase |
+| `archetype` | none | Descriptive label. **Zero runtime effect** |
+
+A Blueprint's **resolved checks** are the `check_set`'s checks plus its own `checks`. A Blueprint referencing only a `check_set` still satisfies the Policy Gate.
+
+## Check entries
+
+Exactly one of `command`, `shell` or `metric` per entry.
+
+```yaml
+checks:
+  - name: test
+    command: ["pytest", "-q"]
+    flaky: 2
+
+  - name: clean-tree
+    shell: 'test -z "$(git status --porcelain)"'
+
+  - name: bundle-size
+    metric: ["scripts/bundle-size.sh"]
+    direction: lower_is_better
+    tolerance_pct: 2.0
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `name` | required | Check name, as it appears in logs and reports |
+| `command` | — | Argv list, run directly with no shell |
+| `shell` | — | One-liner run via `sh -c` |
+| `metric` | — | Argv list or one-liner printing a single number on stdout |
+| `direction` | — | `lower_is_better` or `higher_is_better`. **Required with `metric`** |
+| `tolerance_pct` | `0.0` | Percent slack around the baseline before a metric regression fails |
+| `flaky` | `0` | Re-runs of this check after a failing attempt, before spending a repair turn |
+
+Pass and fail are decided **solely by the exit code**. Stdout and stderr are captured and fed to the repair directive, but they never affect the decision.
+
+A metric check with no recorded history always passes — its value becomes the first baseline. Non-numeric stdout is a failed check, not a crash.
+
+## Report spec
+
+```yaml
+report:
+  format: json
+  schema:
+    type: object
+    required: [summary, files_changed]
+    properties:
+      summary:
+        type: string
+      files_changed:
+        type: array
+        items:
+          type: string
+```
+
+Structured output makes a run parseable and traceable. It is also what a Flow's `derive_checks` reads from an upstream stage — the schema is the contract between stages.
+
+`alc lint` warns when a Blueprint declares no `report`.
+
+## The guards
+
+### `protect`
+
+```yaml
+protect: ["tests/**", "test/**"]
+```
+
+Fnmatch globs, relative to the working directory. After every Act, any changed path matching one of them becomes a synthetic failed check that feeds the normal repair cycle.
+
+Globs must be relative and must not escape via `..`. An absolute or escaping glob can never match a changed-file path, so the Policy Gate errors on it rather than letting it silently protect nothing.
+
+Outside a git repository the guard degrades to a no-op.
+
+### `allow_check_config`
+
+Waives the always-on `check-config-integrity` guard for a Blueprint whose job *is* to edit lint or test configuration. The edit is then permitted, the evidence still fires on the report, and `alc lint` warns for as long as the waiver is set.
+
+### `mode: spike`
+
+The one relaxation of the checks gate. In this mode the "blueprint has checks" rule drops from error to warn, and every other guarantee tightens: isolation is forced, `max_repairs` becomes `0`, commit and auto-merge are forbidden, and the run is excluded from the Scorecard streak.
+
+`mode: spike` combined with an enabled Flow commit block is a Policy Gate **error**.
+
+### `expect: shrink`
+
+Advisory only. When a run declaring it finishes net-positive, the control plane records a warning on the report. It never fails the run.
+
+## Runtime validation
+
+```yaml
+needs_service: true
+capture: "scripts/screenshot.sh"
+```
+
+Only meaningful together with a Manifest `service:` block; inert otherwise. ALC starts the app, polls its health path, exposes `$ALC_BASE_URL`, runs `capture:` with `$ALC_ARTIFACTS_DIR` pointing at the run's artifacts directory, and tears the app down afterwards. A failing or absent capture warns; the run carries on.
+
+Read the collected evidence back with `alc artifacts`.
+
+## `archetype` is a label
+
+`archetype` is one of `prototyper`, `builder`, `sweeper`, `grower`, `maintainer`. It is copied to the run report and aggregated by Mix Health, and it changes **nothing** about execution. An unrecognised value produces an `alc lint` warning, because a typo'd label silently lands in the wrong bucket.
+
+## Specialist files
+
+A Specialist is a YAML file in `.alc/specialists/`.
+
+```yaml
+name: db
+area: "the database access layer"
+blueprint: chore
+knowledge_path: .alc/specialists/db.knowledge.md
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `name` | required | What `alc specialist <name>` takes |
+| `area` | `""` | Human description of the area covered |
+| `blueprint` | required | Blueprint used for the Act step |
+| `knowledge_path` | required | Knowledge File path, relative to the project root |
+
+The Knowledge File itself is written by the Learn step and is never touched by `alc team hire`.
+
+For the Flow and Loop schemas, see [Flows](/docs/guides/flows) and [Autonomous Loops](/docs/guides/autonomous-loops).
+
+## Next
+
+- [The Policy Gate](/docs/reference/policy-gate) — every rule `alc lint` applies to this file.
+- [Make the checks real](/docs/getting-started/checks) — choosing checks that mean something.

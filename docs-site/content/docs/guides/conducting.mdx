@@ -1,0 +1,90 @@
+---
+title: Conducting a goal
+description: Give the Conductor a goal instead of a task — it plans which Flows and Specialists to run, then runs or queues them.
+order: 3
+---
+`alc conduct` is the top rung of the ladder. You describe an outcome; the Conductor plans which units get you there.
+
+```bash
+alc conduct "the README is stale, refresh the docs"
+```
+
+| Flag | Effect |
+|---|---|
+| `--engine NAME` | Override the default engine |
+| `--tier NAME` | Compute tier for the **planning** turn (default: `plan_tier`) |
+| `--enqueue` | Write queue task files instead of running immediately |
+| `--parallel` | Dispatch independent units concurrently, each in its own worktree |
+| `--concurrency N` | Fan-out width for `--parallel` (default: `fanout_concurrency`) |
+| `--strict-stage` | Refuse a plan that drifts from the declared stage mix, instead of warning |
+
+## What the plan is
+
+Not prose. The planning turn returns a structured list of units, each naming:
+
+- **`kind`** — `flow` or `specialist`;
+- **`name`** — validated against your catalog of Flows and Specialists;
+- **`task`** — the free-text task for that unit;
+- **`id`** and **`depends_on`** — optional ordering;
+- **`touches`** — file paths or globs the unit will create or edit.
+
+The planning turn is a mandate like any other. `plan_tier` in the Manifest picks its compute tier, and `plan_retries` caps the corrective retries when the returned plan is malformed. Both default sensibly: `standard` and `2`.
+
+## Ordering does not depend on the planner
+
+`touches` is the important field, because ALC does not trust the planner to get `depends_on` right.
+
+The control plane derives dependencies from **overlapping touches** itself: two units that will edit the same file are serialized, whether or not the plan said so. Interdependency safety is a control-plane guarantee, not a planning outcome.
+
+Units with no overlap are independent and can run at the same time.
+
+## Three ways to dispatch
+
+### Serial (the default)
+
+```bash
+alc conduct "add rate limiting to the public API"
+```
+
+Each planned unit runs in turn, in your working directory. Simple, visible, and slow when the units are genuinely independent.
+
+### Parallel
+
+```bash
+alc conduct "refresh the docs after the 0.41 changes" --parallel --concurrency 6
+```
+
+Independent units run concurrently, each in its own isolated git worktree on its own branch. After the fan-out, every successful unit that committed is merged into your current branch by linear cherry-pick; conflicts leave the branch intact for you to resolve.
+
+Outside a git repository, `--parallel` is ignored and the plan runs serially, with a note on stderr.
+
+### Enqueue
+
+```bash
+alc conduct "clean up the dead admin screens" --enqueue
+```
+
+Writes queue task files and exits. Nothing runs until `alc tick` drains them. This is how a plan made during the day gets executed overnight — see [Unattended work](/docs/guides/unattended).
+
+## Stage awareness
+
+If your Manifest declares a `stage`, the Conductor is aware of the target archetype mix in two parts with deliberately different guarantees:
+
+- A **prose briefing** nudges the planning model toward the mix. Probabilistic — the model may ignore it.
+- A **deterministic check** runs after the plan comes back and warns when the planned units drift from the mix. That is the actual guarantee.
+
+`--strict-stage` turns the second one from a warning into a refusal, before anything is dispatched. With no `stage` declared, neither part changes anything.
+
+## When conduct is the wrong tool
+
+`alc conduct` plans against the units you have. Pointed at a project with one placeholder Blueprint, it has nothing to plan with, and the result is a plan that looks reasonable and does nothing useful.
+
+The prerequisite is a real Operator Layer: several Blueprints that describe your actual classes of work, at least one Flow worth composing, and checks that mean something. Build that from the Attended rung first.
+
+If you already know which unit you want, say so directly. `alc flow ship "…"` skips a planning turn you did not need.
+
+## Next
+
+- [Unattended work](/docs/guides/unattended) — the queue that `--enqueue` writes to.
+- [Isolation and landing](/docs/guides/isolation) — what `--parallel` creates, and what it merges.
+- [Archetype Packs](/docs/concepts/archetypes) — the stage mix `--strict-stage` enforces.

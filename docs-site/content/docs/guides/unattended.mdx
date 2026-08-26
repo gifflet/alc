@@ -1,0 +1,168 @@
+---
+title: Unattended work
+description: Drop tasks in a queue, let cron drain them in isolation while you are away, and land what survived the checks.
+order: 4
+---
+Unattended Mode has four elements. ALC supplies all of them:
+
+| Element | What it is | In ALC |
+|---|---|---|
+| **Source** | Where the task comes from | A YAML task queue in `.alc/queue/` |
+| **Trigger** | What starts it | `alc tick` from cron, or `alc serve --webhook` |
+| **Sandbox** | Isolated environment | A git worktree on a throwaway branch |
+| **Gate** | How the result is reviewed | Your checks, then `alc land` |
+
+## Filling the queue
+
+```bash
+alc enqueue ship "add the changelog entry for 0.42"
+alc enqueue db "add an index for the orders lookup" --kind specialist
+```
+
+| Flag | Effect |
+|---|---|
+| `--kind flow\|specialist` | What to dispatch (default: `flow`) |
+| `--engine NAME` | Engine for this task |
+| `--isolate` / `--no-isolate` | Isolate in a worktree (default: **on**) |
+| `--id ID` | Short slug so another task can depend on this one |
+| `--depends-on ID` | Id of a task this one builds on (repeatable) |
+| `--touches PATH` | File path or glob this task will edit (repeatable) |
+| `--priority N` | Tie-breaker among tasks ready in the same wave, higher first |
+| `--from-file PATH` | Batch-enqueue from a file |
+| `--json` | Print the written filenames as JSON |
+
+`alc enqueue` writes the task file directly, with **no planning turn**. That is the difference from `alc conduct --enqueue`, which spends an engine turn deciding what to write.
+
+### Ordering and safety
+
+The drain is waved: it runs everything whose dependencies have merged, then the next wave, and so on. Two mechanisms decide the order.
+
+**`--depends-on`** is an explicit precedence you declare. **`--touches`** is the one that actually protects you: tasks whose touched paths overlap are serialized automatically, so two demands never edit the same file concurrently. Declare `--touches` and you rarely need `--depends-on`.
+
+`--priority` only breaks ties *within* a wave. It can never move a task ahead of one it depends on.
+
+### Batching
+
+```bash
+alc enqueue ship --from-file tasks.txt
+```
+
+A `.jsonl` file takes one JSON object per line, with `task` required and the other keys optional. A plain text file takes one task per line; blank lines and `#` comments are skipped.
+
+## Draining it
+
+```bash
+alc tick                      # process everything pending once, then exit
+alc tick --concurrency 4      # up to 4 isolated tasks in parallel
+```
+
+| Flag | Effect |
+|---|---|
+| `--concurrency N` | Process up to N queue tasks in parallel, each in its own worktree |
+| `--engine NAME` | Override the engine for every demand in this drain |
+| `--allow-dirty` | Silence the dirty working-tree notice |
+
+`alc tick` is designed to be called from cron: it drains once and exits, rather than running as a daemon.
+
+Only tasks with `isolate: true` — in a git repository — run concurrently. Everything else is forced serial, with a note saying how many.
+
+`--allow-dirty` only quiets the warning. The run proceeds either way, and never commits your uncommitted work.
+
+Each processed task is archived to `done/` with its report alongside it.
+
+## Scheduling it
+
+```bash
+alc schedule install tick --every 15m
+alc schedule install cycle deliver --every 1h
+alc schedule list
+alc schedule remove tick
+```
+
+This generates and manages the crontab entry for you. Install is idempotent — running it twice never produces two entries — and remove is scoped to ALC's own marker, so it never touches a line you wrote by hand. Where no `crontab` binary is available, it prints the line to paste.
+
+## Handling failures
+
+A failed task is archived like any other. Re-enqueue it with the failure feedback appended, so the next drain fixes the specific reason rather than starting over:
+
+```bash
+alc retry                     # list the outstanding failures
+alc retry <stem>              # re-enqueue one
+alc retry --all               # re-enqueue all of them
+alc retry --json
+```
+
+The stem is the `done/` filename stem, which `alc retry` with no arguments prints.
+
+### Automatic retries
+
+Two Manifest fields turn this into a policy rather than a chore:
+
+```yaml
+max_task_retries: 2           # 0 (default) = off
+retry_strategy: immediate     # or: deferred
+```
+
+`immediate` drains the retry in the **same** pass, bounded by the cap, so a transient failure is fixed promptly and works under `alc tick`. `deferred` waits for the next pass.
+
+A retry carries the whole lineage: how many attempts have happened, and the root stem every attempt in the chain descends from.
+
+### Getting told
+
+```yaml
+# .alc/manifest.yaml
+notify:
+  on_task_failed: ["scripts/notify.sh"]
+  on_merge_conflict: "https://hooks.example.com/alc"
+  on_loop_stopped: ["scripts/notify.sh"]
+  on_budget_exceeded: ["scripts/notify.sh"]
+```
+
+Each hook is either a command — an argv list, run with the JSON payload on stdin — or a webhook URL, which is POSTed the JSON payload. There are no per-service adapters, because you already know how to fan a command or a URL out to Slack, email or a pager.
+
+Delivery never raises. A broken notify hook cannot fail a run.
+
+## Checking on it
+
+```bash
+alc status                    # pending tasks, outstanding failures,
+alc status --json             # loop states, unmerged branches
+```
+
+`alc status` always exits 0, which makes it safe to wrap in a monitoring script that cares about the payload rather than the exit code.
+
+```bash
+alc audit --since 7d          # what actually happened over a window
+```
+
+## An HTTP door
+
+For triggers that are not cron, `alc serve --webhook` is a minimal HTTP server in front of signal intake and the enqueue path:
+
+```bash
+alc serve --webhook --port 8787 --token "$ALC_WEBHOOK_TOKEN"
+```
+
+| Route | Purpose |
+|---|---|
+| `POST /signal` | Ingest a typed real-usage signal |
+| `POST /enqueue` | Write a queue task |
+| `GET /health` | Liveness |
+
+It **validates and writes only, and never executes anything**. `alc tick` or `alc cycle` drains what lands, on its own turn. That separation is deliberate: an external caller can create demand, but it cannot make the control plane skip a step.
+
+`--webhook` is required — it is the only mode `alc serve` offers today, so the command reads as an explicit choice rather than an accidental default. `--token` is a bearer token checked on every request. Omit it and the port answers unauthenticated requests, with a warning on stderr.
+
+## Landing what survived
+
+A drain leaves branches. Nothing merges into your work without the conditions being met — see [Isolation and landing](/docs/guides/isolation) for exactly which, and for `alc land`.
+
+```bash
+alc land                      # list the unmerged branches
+alc land --all                # integrate them
+```
+
+## Next
+
+- [Autonomous Loops](/docs/guides/autonomous-loops) — a queue that refills itself.
+- [Isolation and landing](/docs/guides/isolation) — the branches a drain produces.

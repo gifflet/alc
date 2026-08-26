@@ -1,0 +1,130 @@
+---
+title: Flows
+description: Compose Blueprints into a pipeline where each stage is its own mandate — including pure verification gates and a terminal commit.
+order: 2
+---
+A Flow is a deterministic pipeline of Single Mandates. Each stage is a separate engine invocation; the output of one stage becomes upstream context for the next.
+
+```bash
+alc flow ship "add a changelog entry for 0.42"
+```
+
+| Flag | Effect |
+|---|---|
+| `--engine NAME` | Override the default engine for every stage |
+| `--tier NAME` | Override the compute tier for every stage |
+| `--isolate` | Run all stages inside **one shared** git worktree |
+| `--primer NAME` | Inject a Primer into every stage's directive |
+| `--bundle` | Record the flow's result for later replay |
+| `--from-bundle REF` | Replay a prior bundle into every stage's directive |
+
+`--isolate` on a Flow is one worktree for the whole pipeline, not one per stage. That is what preserves the plan-to-build file hand-off.
+
+## The schema
+
+A Flow is a YAML file in `.alc/flows/`.
+
+```yaml
+name: ship
+description: Plan a change, then implement it — each stage in its own focused mandate.
+stages:
+  - name: plan
+    blueprint: plan
+  - name: build
+    blueprint: chore
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | Flow name — what `alc flow <name>` takes |
+| `description` | Free text |
+| `stages` | Ordered list of stages |
+| `commit` | Optional terminal commit, made on success only |
+
+Each stage:
+
+| Field | Meaning |
+|---|---|
+| `name` | Stage name, referenced by `derive_checks` |
+| `blueprint` | Blueprint to run — exactly one of this or `specialist` |
+| `specialist` | Specialist to run (its `Recall → Act → Learn` cycle) |
+| `compute_tier` | Override the Blueprint's tier for this stage |
+| `verify_only` | Run the Blueprint's checks as a pure gate, with no engine turn |
+| `derive_checks` | On a `verify_only` stage, materialize checks from an earlier stage's report |
+| `require_real_checks` | On a `verify_only` stage, report inconclusive rather than passing on the smoke placeholder |
+
+## Verification gates
+
+A `verify_only: true` stage runs no engine turn at all. It resolves the named Blueprint's checks and runs them. That is how you end a pipeline with "and the project still has to build":
+
+```yaml
+stages:
+  - name: remove
+    blueprint: refactor
+  - name: gate
+    blueprint: refactor
+    verify_only: true
+    require_real_checks: true
+```
+
+A `verify_only` stage must reference a Blueprint, because it runs that Blueprint's checks. A Specialist has none of its own.
+
+`require_real_checks` handles the honest case where a project has nothing to verify against. If the only resolvable check is the `["true"]` smoke placeholder, the gate reports the result as **inconclusive** — the work ran but is unverified — instead of vacuously passing. An inconclusive flow is neither committed nor reverted; its changes stay in the tree for you to look at.
+
+## Derived checks
+
+Some check lists are only knowable after an earlier stage ran. `derive_checks` reads a field out of an earlier stage's JSON report and turns each list item into a check:
+
+```yaml
+- name: gate
+  blueprint: map
+  verify_only: true
+  derive_checks:
+    from_stage: map
+    field: symbols
+    shell_template: "! grep -rn {value} src/"
+```
+
+The value comes out of a model's report and lands in a shell command, so it is a security boundary. ALC always `shlex.quote`s the value before substituting it, and drops any list item that is not a plain string, with a warning, rather than trusting it.
+
+> Write `{value}` **unquoted** in the template, exactly as above. `shlex.quote` produces a value that is already safe as a bare shell word. Wrapping it in your own quotes nests a quoted string inside another quoted string, which does not re-escape it — and reopens the exact injection this handling exists to close.
+
+Text search is a heuristic, not a proof: a name that is not unique can never be proven absent. Prefer real checks where you have them.
+
+## The terminal commit
+
+A Flow can commit its own work, on success only:
+
+```yaml
+commit:
+  enabled: true
+  message: "chore(cycle): {name}"
+  exclude:
+    - "docs/generated/"
+```
+
+`{name}` is the flow name and `{task}` is the flow's task, first line only. The rendered message goes to git verbatim.
+
+This is a deterministic control-plane commit, not the engine's — it carries no co-author trailer. `.alc/` is **always** excluded from it; your `exclude:` list only adds to that.
+
+Two behaviours around it are worth knowing before you enable it:
+
+- **A committing Flow requires a clean tree** when it runs in your working directory rather than an isolated worktree. If there are uncommitted non-`.alc/` changes it aborts before any stage runs, rather than sweeping your work into its commit. Inside a worktree the tree is fresh from HEAD, so it always passes.
+- **A committing Flow that hard-fails reverts its own changes** — reset, checkout, and a clean that never removes gitignored files. An inconclusive flow is not reverted.
+
+By default a Flow declares no `commit:` at all, and simply leaves its changes in the tree.
+
+## When a Flow earns its keep
+
+A Flow is worth the extra file when the stages genuinely need different mandates. The `ship` Flow's `plan` and `build` stages are a good example: planning wants a different Blueprint, a different workflow, and often a different tier from building.
+
+A Flow whose stages are all the same Blueprint with the same tier is just a longer `alc run`.
+
+## Which Flows commit matters downstream
+
+Auto-merge in the queue drain only ever fires for a **committing** Flow. A non-committing isolated task still produces a branch, but it is left for you to land by hand. See [Isolation and landing](/docs/guides/isolation).
+
+## Next
+
+- [Conducting a goal](/docs/guides/conducting) — letting ALC pick the Flows.
+- [Unattended work](/docs/guides/unattended) — running Flows off a queue.

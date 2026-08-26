@@ -1,0 +1,84 @@
+---
+title: Exploring variants
+description: Run the same unit N ways at once, compare the results side by side, and adopt the one you want.
+order: 7
+---
+Some tasks have more than one reasonable answer, and the cheapest way to find out which is better is to get several and look at them.
+
+```bash
+alc explore chore "restructure the config loader" --variants 3
+```
+
+Three copies of the same unit run concurrently, each in its own isolated worktree on its own branch. **Nothing auto-merges.** You get a per-variant table and three branches to choose from.
+
+## Crossing engines and tiers
+
+`--engine` and `--tier` are repeatable, and they cross with each other and with `--variants` as a cartesian product:
+
+```bash
+alc explore feature "add the export endpoint" \
+  --variants 2 --engine claude-code --engine gemini --tier standard --tier deep
+```
+
+That is 2 × 2 × 2 = eight variants. Which is a good way to learn something expensive about your Blueprint, so start smaller.
+
+Fan-out width comes from `fanout_concurrency` in the Manifest, which defaults to 4.
+
+`alc explore` requires a git repository and exits 1 without one. It exits 0 only if every variant succeeded.
+
+## What the table shows
+
+Both `explore` and `compare` print the same columns: branch, checks, scorecard, cost, diffstat. That is the point — checks and cost are comparable across variants in a way that "which diff looks nicer" is not.
+
+Each variant is archived as a JSON file under `variants_dir`, which defaults to `.alc/variants/`.
+
+## Comparing
+
+```bash
+alc compare                              # every archived variant
+alc compare variant-1-a1b2c3d4           # by bare stem
+alc compare alc/variant-1-a1b2c3d4       # or by full branch name
+alc compare --diff                       # …with each variant's unified diff
+alc compare --json
+```
+
+A bare `alc compare` lists everything archived, so the read opens on observation rather than a usage error.
+
+`compare` is a pure read. It marks each row live or resolved — a row whose branch is gone prints `resolved (branch gone — adopted or discarded)`, which is why the archive is worth keeping: it is the history of what you tried.
+
+`--diff` needs a git repository. Without one it still prints the table, with a note that diffs are unavailable.
+
+## Adopting one
+
+```bash
+alc adopt alc/variant-2-e5f6a7b8
+alc adopt alc/variant-2-e5f6a7b8 --yes --json
+```
+
+`alc adopt` closes the loop: integrate the winner, discard the losers.
+
+In order:
+
+1. Refuse anything that is not an `alc/` branch, and refuse to run outside a git repository.
+2. **Ask for confirmation before touching anything.** `--yes` passes; otherwise it prompts at a TTY. A non-TTY without `--yes` is never confirmed — it exits 1 having merged nothing and deleted nothing.
+3. Integrate the chosen branch by the same linear cherry-pick `alc land` uses.
+4. Force-delete the other unmerged `alc/variant-*` branches.
+
+It exits 1 if the merge conflicted. Note that the losing branches are deleted after the merge either way, so a conflicted adopt leaves you with the conflict to resolve and the alternatives already gone. If you want to keep your options open, `alc land` the winner instead and discard the rest yourself once you are happy.
+
+The archived variant JSON files are never deleted, by adopt or by anything else. They stay as history.
+
+## When this is worth it
+
+Explore costs N times a normal run. It earns that back when:
+
+- the task is genuinely open-ended and you cannot specify the answer in the prompt;
+- you are calibrating a new Blueprint and want to see the spread;
+- you are choosing between engines or tiers for a class of work, and want the checks and the cost side by side rather than a vibe.
+
+It is not worth it for mechanical changes. If the task has one right answer, one run finds it.
+
+## Next
+
+- [Isolation and landing](/docs/guides/isolation) — the branch mechanics underneath this.
+- [Running a unit of work](/docs/guides/running-units) — the single-variant version.

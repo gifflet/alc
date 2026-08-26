@@ -1,0 +1,71 @@
+---
+title: Installation
+description: Install the alc command with uv, optionally with the web UI, and verify it works.
+order: 2
+---
+ALC needs Python 3.12 or newer. The PyPI package is **`alc-runtime`**; it puts the **`alc`** command on your PATH.
+
+## Install
+
+```bash
+uv tool install alc-runtime          # installs the `alc` command
+uv tool install "alc-runtime[ui]"    # …with the web UI (dashboard, live runs)
+```
+
+Verify:
+
+```bash
+alc --version                        # alc X.Y.Z
+```
+
+If the command is not found, `uv tool install` put it in `~/.local/bin` — make sure that directory is on your PATH.
+
+## Pick an engine
+
+ALC does not ship a model. It drives one you already have installed:
+
+| Engine | Flag value | Requirement |
+|---|---|---|
+| Claude Code | `claude-code` | the `claude` CLI, installed and authenticated |
+| Gemini CLI | `gemini` | the `gemini` CLI, installed and authenticated |
+| Mock | `mock` | nothing — a free, hermetic no-op |
+
+`alc init` probes your PATH and picks one for you: `claude` found means `default_engine: claude-code`, `gemini` found means `gemini`, neither means `mock`. The init output tells you which it chose.
+
+The Mock engine is not a toy you have to skip past. It exercises the whole control plane — the Policy Gate, the Assurance Loop, the Scorecard — with no model call, so you can prove your Operator Layer works before you spend anything on it.
+
+## The optional web UI
+
+`alc ui` serves a local, single-user web IDE for every registered project. It needs the `ui` extra:
+
+```bash
+uv tool install "alc-runtime[ui]"
+alc ui                               # http://127.0.0.1:8642
+```
+
+See [Web UI](/docs/web-ui/overview) for what it can do.
+
+## Working on ALC itself
+
+Clone the repository and use `uv sync`. Every command below then needs a `uv run` prefix:
+
+```bash
+uv sync                              # or: uv sync --extra ui
+uv run alc lint
+```
+
+One trap worth knowing: `uv tool install --force` silently reuses a cached build when the version is unchanged. If you are iterating on ALC and reinstalling as a tool, bump the version first or your changes will not land.
+
+## Editor skill (optional)
+
+`alc setup` installs a user-level skill that teaches your editor's agent to drive the `alc` CLI instead of editing files directly:
+
+```bash
+alc setup --engine claude-code       # or: --engine gemini
+```
+
+`alc init --setup` does this as part of scaffolding a project, so you rarely need to call it on its own. Re-run it to pick up a newer version of the skill.
+
+## Next
+
+[First run](/docs/getting-started/first-run) — ten minutes from an empty project to a verified change.
