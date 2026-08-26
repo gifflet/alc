@@ -9,12 +9,20 @@ import { useNarrow } from './useDensity'
 
 export function Shell({
   projectName,
+  onSwitchProject,
   onOpenProjects,
 }: {
   projectName: string
+  onSwitchProject: () => void
   onOpenProjects: () => void
 }) {
   const narrow = useNarrow()
   const Layout = narrow ? OperatorShell : IdeShell
-  return <Layout projectName={projectName} onOpenProjects={onOpenProjects} />
+  return (
+    <Layout
+      projectName={projectName}
+      onOpenProjects={onOpenProjects}
+      onSwitchProject={onSwitchProject}
+    />
+  )
 }

@@ -1,5 +1,5 @@
 // StatusBar.tsx — 24px footer: project, engine health, WS link, active execs.
-import { Cpu, Keyboard, Loader2, SunMoon } from 'lucide-react'
+import { ChevronsUpDown, Cpu, Keyboard, Loader2, SunMoon } from 'lucide-react'
 import { useEngines, useExecs } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useWs } from '../ws/WsProvider'
@@ -10,9 +10,11 @@ import { StatusDot } from './StatusDot'
 export function StatusBar({
   projectName,
   onOpenShortcuts,
+  onSwitchProject,
 }: {
   projectName: string
   onOpenShortcuts: () => void
+  onSwitchProject: () => void
 }) {
   const id = useProjectId()
   const { status } = useWs()
@@ -23,10 +25,19 @@ export function StatusBar({
 
   return (
     <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-border bg-panel px-3 text-[length:var(--ui-text-label)] text-muted">
-      <span className="flex items-center gap-1.5 text-primary">
+      {/* The project name was already the first thing here; making it the
+          switcher means the control sits where the eye goes to answer "which
+          project am I in?" rather than in a menu somewhere else. */}
+      <button
+        type="button"
+        onClick={onSwitchProject}
+        title="Switch project (Cmd/Ctrl+P)"
+        className="flex items-center gap-1.5 rounded-xs text-primary hover:bg-hover"
+      >
         <Cpu className="h-3 w-3 text-muted" />
         {projectName}
-      </span>
+        <ChevronsUpDown className="h-3 w-3 text-faint" />
+      </button>
 
       <button
         type="button"
