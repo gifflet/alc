@@ -50,6 +50,7 @@ import type {
   Violation,
   WorktreeStatus,
   DirectoryListing,
+  CloneStarted,
 } from './types'
 
 import { clearToken, getToken } from '../app/token'
@@ -128,6 +129,13 @@ export const api = {
     const suffix = query.toString()
     return request<DirectoryListing>(`/api/fs/browse${suffix ? `?${suffix}` : ''}`)
   },
+
+  /** Start `git clone` on the host; returns the exec to follow. */
+  cloneRepository: (url: string, parent: string, name?: string) =>
+    request<CloneStarted>('/api/fs/clone', {
+      method: 'POST',
+      body: JSON.stringify({ url, parent, name }),
+    }),
 
   // Config viewers
   getManifest: (id: string) => request<RawParsed>(`${proj(id)}/manifest`),

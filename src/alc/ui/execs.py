@@ -22,7 +22,7 @@ class Exec:
     """In-memory record of one subprocess run."""
 
     id: str
-    project_id: str
+    project_id: str | None
     command: str
     argv: list[str]
     status: str = "running"  # running | finished | cancelled | error
@@ -52,7 +52,9 @@ class RunManager:
         self._execs: dict[str, Exec] = {}
         self._lock = threading.Lock()
 
-    def start(self, project_id: str, cwd: str, command: str, argv: list[str]) -> Exec:
+    def start(
+        self, project_id: str | None, cwd: str, command: str, argv: list[str]
+    ) -> Exec:
         """Spawn the subprocess and return its Exec record (status=running)."""
         exec_id = uuid.uuid4().hex[:12]
         ex = Exec(
