@@ -49,6 +49,7 @@ import type {
   VariantRow,
   Violation,
   WorktreeStatus,
+  DirectoryListing,
 } from './types'
 
 import { clearToken, getToken } from '../app/token'
@@ -118,6 +119,15 @@ export const api = {
     }),
   removeProject: (id: string) =>
     request<void>(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  /** List the directories inside `path` (defaults to the server's $HOME). */
+  browseDirectory: (path?: string, showHidden = false) => {
+    const query = new URLSearchParams()
+    if (path) query.set('path', path)
+    if (showHidden) query.set('show_hidden', 'true')
+    const suffix = query.toString()
+    return request<DirectoryListing>(`/api/fs/browse${suffix ? `?${suffix}` : ''}`)
+  },
 
   // Config viewers
   getManifest: (id: string) => request<RawParsed>(`${proj(id)}/manifest`),

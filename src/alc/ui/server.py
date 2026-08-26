@@ -21,6 +21,7 @@ from alc.ui import (
     routes_fleet,
     routes_inbox,
     routes_metrics,
+    routes_browse,
     routes_projects,
     routes_queue,
     routes_run_configs,
@@ -122,6 +123,9 @@ def create_app(
     # routes_config is included LAST so it never shadows queue/runs/exec routes.
     api_guard = [Depends(require_token)]
     app.include_router(routes_projects.router, dependencies=api_guard)
+    # Same token gate as everything else: this widens what the API can
+    # read, so it must not be the one route that skips the guard.
+    app.include_router(routes_browse.router, dependencies=api_guard)
     app.include_router(routes_queue.router, dependencies=api_guard)
     app.include_router(routes_run_configs.router, dependencies=api_guard)
     app.include_router(routes_run_configs.project_router, dependencies=api_guard)
