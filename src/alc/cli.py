@@ -3366,8 +3366,27 @@ def cmd_ui(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
-    app = create_app(default_registry_path(), ui_dist=frontend)
-    print(f"Serving alc ui on http://{args.host}:{args.port} ({location})")
+    # getattr, not args.token: cmd_ui is also called programmatically with a
+    # hand-built Namespace that predates this flag — a new option must never
+    # break an existing caller.
+    token = getattr(args, "token", None) or os.environ.get("ALC_UI_TOKEN") or None
+    # Reaching a non-loopback interface without a token exposes every registered
+    # project — and the exec endpoints that RUN things — to the local network.
+    # Warn loudly; never silently refuse, since the operator may be behind a
+    # trusted tunnel and knows better than we do.
+    if not token and args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"[WARNING] Binding {args.host} without --token: anyone who can reach "
+            "this port can read every registered project and dispatch runs. "
+            "Pass --token T (or set ALC_UI_TOKEN), or bind 127.0.0.1 and use a tunnel.",
+            file=sys.stderr,
+        )
+
+    app = create_app(default_registry_path(), ui_dist=frontend, token=token)
+    auth_note = " · token required" if token else ""
+    print(f"Serving alc ui on http://{args.host}:{args.port} ({location}{auth_note})")
+    if token:
+        print(f"Hand the token to a browser once: http://{args.host}:{args.port}/?t={token}")
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
 
@@ -4552,6 +4571,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Serve only the API and WebSocket (do not serve any frontend).",
+    )
+    ui_parser.add_argument(
+        "--token",
+        default=None,
+        metavar="T",
+        help=(
+            "Require this bearer token on every /api request and on the "
+            "WebSocket handshake (env: ALC_UI_TOKEN). Omit for the local, "
+            "unauthenticated default. Open the UI once at "
+            "http://HOST:PORT/?t=<token> to hand it to the browser."
+        ),
     )
 
     # alc serve --webhook [--host H] [--port P] [--token T]

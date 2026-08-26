@@ -10,7 +10,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from alc.ui import (
@@ -18,6 +18,8 @@ from alc.ui import (
     routes_checks,
     routes_config,
     routes_exec,
+    routes_fleet,
+    routes_inbox,
     routes_metrics,
     routes_projects,
     routes_queue,
@@ -28,6 +30,7 @@ from alc.ui import (
     routes_variants,
     ws,
 )
+from alc.ui.auth import require_token
 from alc.ui.bus import EventBus
 from alc.ui.errors import ApiError
 from alc.ui.execs import RunManager
@@ -61,6 +64,7 @@ def create_app(
     *,
     ui_dist: Path | None = None,
     enable_watch: bool = True,
+    token: str | None = None,
 ) -> FastAPI:
     """Build the `alc ui` FastAPI application.
 
@@ -69,6 +73,10 @@ def create_app(
         ui_dist: If given and it exists, the built frontend is served as an SPA.
         enable_watch: Start the .alc/ file watcher in the lifespan (off in tests
             that drive the EventBus directly).
+        token: When set, every /api request must carry
+            ``Authorization: Bearer <token>`` and the WebSocket must open with an
+            auth frame. Unset (the default) leaves the server exactly as it was:
+            local and unauthenticated.
     """
     registry = ProjectRegistry(registry_path)
     bus = EventBus()
@@ -87,6 +95,7 @@ def create_app(
 
     app = FastAPI(title="alc ui", lifespan=lifespan)
     app.state.registry = registry
+    app.state.token = token
     app.state.bus = bus
     app.state.run_manager = run_manager
     app.state.watcher = watcher
@@ -111,20 +120,23 @@ def create_app(
 
     # Specific/literal routers first; the generic /{collection} catch-all in
     # routes_config is included LAST so it never shadows queue/runs/exec routes.
-    app.include_router(routes_projects.router)
-    app.include_router(routes_queue.router)
-    app.include_router(routes_run_configs.router)
-    app.include_router(routes_run_configs.project_router)
-    app.include_router(routes_exec.project_router)
-    app.include_router(routes_exec.router)
-    app.include_router(routes_team.router)
-    app.include_router(routes_branches.router)
-    app.include_router(routes_variants.router)
-    app.include_router(routes_signals.router)
-    app.include_router(routes_metrics.router)
-    app.include_router(routes_checks.router)
-    app.include_router(routes_schedule.router)
-    app.include_router(routes_config.router)
+    api_guard = [Depends(require_token)]
+    app.include_router(routes_projects.router, dependencies=api_guard)
+    app.include_router(routes_queue.router, dependencies=api_guard)
+    app.include_router(routes_run_configs.router, dependencies=api_guard)
+    app.include_router(routes_run_configs.project_router, dependencies=api_guard)
+    app.include_router(routes_exec.project_router, dependencies=api_guard)
+    app.include_router(routes_exec.router, dependencies=api_guard)
+    app.include_router(routes_fleet.router, dependencies=api_guard)
+    app.include_router(routes_inbox.router, dependencies=api_guard)
+    app.include_router(routes_team.router, dependencies=api_guard)
+    app.include_router(routes_branches.router, dependencies=api_guard)
+    app.include_router(routes_variants.router, dependencies=api_guard)
+    app.include_router(routes_signals.router, dependencies=api_guard)
+    app.include_router(routes_metrics.router, dependencies=api_guard)
+    app.include_router(routes_checks.router, dependencies=api_guard)
+    app.include_router(routes_schedule.router, dependencies=api_guard)
+    app.include_router(routes_config.router, dependencies=api_guard)
     # The WebSocket route is registered BEFORE the SPA catch-all so /ws always
     # resolves to the WS handler.
     ws.register(app)

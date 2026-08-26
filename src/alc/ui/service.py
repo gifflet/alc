@@ -432,6 +432,48 @@ def read_run(root: Path, stem: str, offset: int = 0) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Fleet — the runs executing RIGHT NOW, for the live card grid.
+# ---------------------------------------------------------------------------
+
+# A live run's log is small (a finished chore run on disk is ~2.6 KB), but a long
+# flow under repair could grow; cap what one fleet response carries per unit so
+# the grid can never be held hostage by a single runaway log.
+FLEET_MAX_EVENTS = 2000
+
+
+def fleet(root: Path) -> dict:
+    """Return the active runs with their events, newest first.
+
+    "Active" is exactly what ``list_runs`` already computes: a run whose log has
+    no terminal event (``finished``) and is still being written (``not stale``).
+    Nothing is derived here on purpose — the fold from events to display state
+    lives in the frontend's ``buildTimeline`` and is unit-tested there. Deriving
+    it again in Python would duplicate control-plane semantics in the UI backend,
+    which this layer never does.
+    """
+    listing = list_runs(root, limit=200)
+    units = []
+    for summary in listing["runs"]:
+        if summary["finished"] or summary["stale"]:
+            continue
+        detail = read_run(root, summary["stem"])
+        events = detail["events"]
+        truncated = len(events) > FLEET_MAX_EVENTS
+        units.append(
+            {
+                "stem": summary["stem"],
+                "kind": summary["kind"],
+                "mtime": summary["mtime"],
+                # Keep the TAIL: the newest events carry the current phase, the
+                # attempt and the running check — what the card actually shows.
+                "events": events[-FLEET_MAX_EVENTS:] if truncated else events,
+                "truncated": truncated,
+            }
+        )
+    return {"units": units}
+
+
+# ---------------------------------------------------------------------------
 # Checks (`alc checks history` / `alc checks audit`) — two read-only Maintainer
 # reads over checks.py; neither ever writes.
 # ---------------------------------------------------------------------------
@@ -1118,13 +1160,13 @@ def adopt_variant(root: Path, branch: str) -> dict:
     }
 
 
-def variant_diff(root: Path, branch: str) -> dict:
-    """Return *branch*'s unified diff vs the current branch (mirrors `alc compare --diff`).
+def alc_branch_diff(root: Path, branch: str) -> dict:
+    """Return an `alc/*` branch's unified diff vs the current branch.
 
-    The Compare view's summary metrics (checks, scorecard, cost, diffstat) can be
-    identical across variants; this exposes the ONE thing that always differs —
-    the actual change — so metric-tied variants can be told apart. Read-only: it
-    only runs ``git diff`` (via ``branches.branch_diff``), never a mutation.
+    Read-only: it only runs ``git diff`` (via ``branches.branch_diff``), never a
+    mutation. Used by BOTH Compare (telling metric-tied variants apart, mirroring
+    `alc compare --diff`) and branch review (reading the change before landing) —
+    the diff of an `alc/*` branch is one thing, not two.
     """
     if not branch.startswith("alc/"):
         raise ApiError(f"not an alc/ branch: {branch}", status=422)
@@ -1144,6 +1186,15 @@ def variant_diff(root: Path, branch: str) -> dict:
     # disk); `current_branch` is the same helper `delivery` uses, "HEAD" if unknown.
     base = current_branch(repo_root) or "HEAD"
     return {"branch": branch, "base": base, "diff": bd.text, "truncated": bd.truncated}
+
+
+def variant_diff(root: Path, branch: str) -> dict:
+    """A variant's diff — the same operation as any `alc/*` branch's diff.
+
+    Kept as a named entry point so the Compare view (and its tests) read as what
+    they are; it delegates rather than duplicating the git call.
+    """
+    return alc_branch_diff(root, branch)
 
 
 # ---------------------------------------------------------------------------

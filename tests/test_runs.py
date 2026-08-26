@@ -1,6 +1,7 @@
 # test_runs.py — Hermetic tests for the core run-log readers.
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -155,3 +156,71 @@ class TestReadRunEvents:
 
         result = read_run(runs_dir, "20260101T000000-run-x-aaaaaa", stale_after=1800)
         assert result["stale"] is True
+
+
+# ---------------------------------------------------------------------------
+# Run headline — a stem is an address; the list should show what was ASKED for.
+# ---------------------------------------------------------------------------
+
+
+class TestRunHeadline:
+    def _write(self, runs_dir: Path, stem: str, events: list[dict]) -> None:
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        (runs_dir / f"{stem}.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in events)
+        )
+
+    def test_a_bare_mandate_run_is_named_by_its_task(self, tmp_path: Path) -> None:
+        self._write(
+            tmp_path,
+            "20260825T110000-run-chore-tidy-aa1",
+            [{"ts": "t", "event": "mandate_started", "blueprint": "chore", "task": "tidy the imports"}],
+        )
+        run = list_runs(tmp_path, 1800)["runs"][0]
+        assert run["title"] == "tidy the imports"
+        assert run["unit"] == "chore"
+
+    def test_a_flow_run_is_named_by_the_flow_task(self, tmp_path: Path) -> None:
+        self._write(
+            tmp_path,
+            "20260825T110001-flow-ship-changelog-bb2",
+            [
+                {"ts": "t", "event": "flow_started", "flow": "ship", "task": "add a changelog entry"},
+                {"ts": "t", "event": "mandate_started", "blueprint": "feature", "task": "add a changelog entry"},
+            ],
+        )
+        run = list_runs(tmp_path, 1800)["runs"][0]
+        assert run["title"] == "add a changelog entry"
+        # The FLOW is the unit that ran, not the blueprint of its first stage.
+        assert run["unit"] == "ship"
+
+    def test_only_the_first_line_of_a_multi_line_task_is_used(self, tmp_path: Path) -> None:
+        self._write(
+            tmp_path,
+            "20260825T110002-run-chore-multi-cc3",
+            [{"ts": "t", "event": "mandate_started", "blueprint": "chore",
+              "task": "fix the guard\n\n## Previous attempt failed\nblah"}],
+        )
+        assert list_runs(tmp_path, 1800)["runs"][0]["title"] == "fix the guard"
+
+    def test_a_log_with_no_header_yet_degrades_to_empty(self, tmp_path: Path) -> None:
+        # A run that has only just been created still has to list.
+        self._write(tmp_path, "20260825T110003-run-chore-empty-dd4", [{"ts": "t", "event": "act_started", "attempt": 0}])
+        run = list_runs(tmp_path, 1800)["runs"][0]
+        assert run["title"] == ""
+        assert run["unit"] == ""
+
+    def test_a_corrupt_line_does_not_break_the_listing(self, tmp_path: Path) -> None:
+        runs_dir = tmp_path
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        (runs_dir / "20260825T110004-run-chore-bad-ee5.jsonl").write_text(
+            "{ not json\n" + json.dumps({"ts": "t", "event": "mandate_started", "blueprint": "chore", "task": "still works"}) + "\n"
+        )
+        assert list_runs(runs_dir, 1800)["runs"][0]["title"] == "still works"
+
+    def test_the_scan_stops_early_instead_of_reading_a_huge_log(self, tmp_path: Path) -> None:
+        # The header is at the top; a 10k-event log must not be walked for it.
+        events = [{"ts": "t", "event": "mandate_started", "blueprint": "chore", "task": "at the top"}]
+        events += [{"ts": "t", "event": "engine_activity", "note": f"step {i}"} for i in range(5000)]
+        self._write(tmp_path, "20260825T110005-run-chore-big-ff6", events)
+        assert list_runs(tmp_path, 1800)["runs"][0]["title"] == "at the top"
