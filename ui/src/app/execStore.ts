@@ -136,6 +136,10 @@ function createStore() {
         }
       })
       const added = views
+          // Execs with no project — a clone, for instance — are followed by
+          // the component that started them, over the socket. They have no
+          // place in a store whose every query is scoped to a project id.
+          .filter((v): v is ExecView & { project_id: string } => v.project_id !== null)
         .filter((v) => !known.has(v.id))
         .map<ExecEntry>((v) => ({
           id: v.id,

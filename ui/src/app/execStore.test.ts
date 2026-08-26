@@ -100,3 +100,32 @@ describe('execStore', () => {
     expect(e2.status).toBe('running')
   })
 })
+
+describe('execs that belong to no project', () => {
+  it('are not seeded into the store', () => {
+    // A clone runs before any project exists and is followed by the component
+    // that started it. Seeding it here would create an entry that byProject and
+    // noteRun can never reach, since both compare against a concrete id.
+    execStore.reset()
+    execStore.seed([
+      {
+        id: 'clone-1',
+        project_id: null,
+        command: 'git clone https://h/o/r.git',
+        status: 'running',
+        exit_code: null,
+        output: [],
+      },
+      {
+        id: 'run-1',
+        project_id: 'p1',
+        command: 'alc run chore',
+        status: 'running',
+        exit_code: null,
+        output: [],
+      },
+    ])
+
+    expect(execStore.getState().execs.map((e) => e.id)).toEqual(['run-1'])
+  })
+})
