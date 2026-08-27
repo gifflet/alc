@@ -27,12 +27,24 @@ interface Item {
   label: string
 }
 
+// Two groups, one divider. Twelve equal icons say every destination is equally
+// likely to be what you want, which is false on the first day and false on the
+// hundredth: three of them answer "what happened" and "what needs me", and the
+// rest are for driving a project you already understand.
+//
+// Grouped, not hidden. Hiding a destination until it has content means the rail
+// changes shape underneath someone who is learning where things are, and a
+// feature nobody can find is a feature nobody adopts.
 const ITEMS: Item[] = [
   { view: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { view: 'fleet', icon: LayoutGrid, label: 'Fleet' },
   { view: 'inbox', icon: InboxIcon, label: 'Inbox' },
-  { view: 'queue', icon: ListTodo, label: 'Queue' },
   { view: 'runs', icon: Radio, label: 'Runs' },
+]
+
+/** Everything for steering work already under way. */
+const ADVANCED: Item[] = [
+  { view: 'fleet', icon: LayoutGrid, label: 'Fleet' },
+  { view: 'queue', icon: ListTodo, label: 'Queue' },
   { view: 'loops', icon: RefreshCw, label: 'Loops' },
   { view: 'conduct', icon: Wand2, label: 'Conduct' },
   { view: 'team', icon: Users, label: 'Team' },
@@ -132,6 +144,18 @@ export function ActivityBar({
             label={item.label}
             active={activeTabId === `view:${item.view}`}
             badge={item.view === 'inbox' ? inboxCount : undefined}
+            onClick={() => openView(item.view)}
+          />
+        ))}
+
+        <span aria-hidden className="my-1 h-px w-5 self-center bg-border" />
+
+        {ADVANCED.map((item) => (
+          <RailButton
+            key={item.view}
+            icon={item.icon}
+            label={item.label}
+            active={activeTabId === `view:${item.view}`}
             onClick={() => openView(item.view)}
           />
         ))}

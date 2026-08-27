@@ -40,3 +40,23 @@ describe('ActivityBar inbox badge', () => {
     ).not.toThrow()
   })
 })
+
+describe('rail grouping', () => {
+  it('puts the three first-hour destinations above the divider', () => {
+    render(<ActivityBar onOpenProjects={() => {}} onOpenSpike={() => {}} />)
+    // Twelve equal icons claim every destination is equally likely to be what
+    // you want. Three answer "what happened" and "what needs me"; the rest are
+    // for steering a project you already understand.
+    const buttons = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(buttons.slice(0, 3)).toEqual(['Dashboard', 'Inbox', 'Runs'])
+  })
+
+  it('still reaches every destination — grouped, not hidden', () => {
+    render(<ActivityBar onOpenProjects={() => {}} onOpenSpike={() => {}} />)
+    const labels = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    for (const view of ['Fleet', 'Queue', 'Loops', 'Conduct', 'Team', 'Metrics', 'Compare', 'Checks']) {
+      // A feature nobody can find is a feature nobody adopts.
+      expect(labels.some((l) => l?.startsWith(view))).toBe(true)
+    }
+  })
+})
