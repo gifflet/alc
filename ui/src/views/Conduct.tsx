@@ -11,6 +11,7 @@ import { useEngines } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
 import { Checkbox, Field, Select, TextArea } from '../components/fields'
+import { ActionButton } from '../components/ActionButton'
 
 export function Conduct() {
   const id = useProjectId()
@@ -91,15 +92,15 @@ export function Conduct() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            type="button"
+          <ActionButton
             onClick={submit}
             disabled={!goal.trim() || saving}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+            tone="accent"
+            size="md"
           >
             <Wand2 className="h-3.5 w-3.5" />
             Conduct goal
-          </button>
+          </ActionButton>
           {error && <span className="text-[length:var(--ui-text-label)] text-error">{error}</span>}
         </div>
       </div>
