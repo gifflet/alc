@@ -1581,7 +1581,11 @@ def _team_roster(args: argparse.Namespace) -> int:
             continue  # not hired
 
         member_loops = []
-        for rel_path in sorted(files):
+        # `present`, not `files`: retiring a member MOVES its loop into
+        # loops/retired/, and iterating the pack definition kept listing that
+        # loop — with a state — for a file no longer there. The roster is meant
+        # to report the disk, not the pack it came from.
+        for rel_path in sorted(present):
             if rel_path.startswith(loops_prefix) and rel_path.endswith(".yaml"):
                 loop_name = Path(rel_path).stem
                 state = load_loop_state(state_path(loops_directory, loop_name), loop_name)
