@@ -1,10 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="alc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ALC">
+  <title>ALC</title>
   <!-- Maskable: the platform may crop to a circle, so everything meaningful
-       stays inside the 80% safe zone (r <= 205 from centre). -->
+       stays inside the 80% safe zone (r <= 205 from centre). The mark spans 22
+       units of its own 32-unit box, so its half-diagonal is 15.56 units — at
+       scale 13 that is 202, just inside. Scale 16 (the naive fit) would put the
+       corners at 249 and let a circular mask clip them.
+
+       Unlike the tab icon this one cannot be transparent: a maskable icon is
+       composited onto the platform's own shape, so it brings its own ground. -->
   <rect width="512" height="512" fill="#1b1d1f"/>
-  <circle cx="256" cy="256" r="106" fill="none" stroke="#4d8ae0" stroke-width="24"
-          stroke-linecap="round" stroke-dasharray="500 166" transform="rotate(-58 256 256)"/>
-  <path d="M320 156 l44 22 -25 42" fill="none" stroke="#4d8ae0" stroke-width="24"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="256" cy="256" r="38" fill="#5cc975"/>
+  <g transform="translate(256 256) scale(13) translate(-16 -16)" fill="none" stroke="#d5d8dc"
+     stroke-width="4">
+    <path d="M27 19V23a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4h14a4 4 0 0 1 4 4v4"/>
+    <rect x="13" y="11" width="6" height="10" rx="1" fill="#d5d8dc" stroke="none"/>
+  </g>
 </svg>

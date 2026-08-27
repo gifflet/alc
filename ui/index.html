@@ -6,7 +6,10 @@
     <meta name="theme-color" content="#1b1d1f" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <!-- PNG, not the SVG: iOS Safari does not render SVG for apple-touch-icon,
+         so pointing this at icon.svg meant "Add to Home Screen" silently fell
+         back to a screenshot of the page. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>alc — control room</title>
   </head>
   <body>

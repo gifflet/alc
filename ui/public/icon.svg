@@ -1,12 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="alc">
-  <!-- Instrument-panel lineage: dark surface, 1px-feel border, no gloss.
-       The open ring is the Assurance Loop (Act - Verify - Repair); the centre
-       dot is the unit under verification. -->
-  <rect width="512" height="512" rx="96" fill="#1b1d1f"/>
-  <rect x="8" y="8" width="496" height="496" rx="88" fill="none" stroke="#35393d" stroke-width="8"/>
-  <circle cx="256" cy="256" r="132" fill="none" stroke="#4d8ae0" stroke-width="28"
-          stroke-linecap="round" stroke-dasharray="622 208" transform="rotate(-58 256 256)"/>
-  <path d="M336 132 l52 26 -30 50" fill="none" stroke="#4d8ae0" stroke-width="28"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="256" cy="256" r="46" fill="#5cc975"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img">
+  <title>ALC</title>
+  <!-- Byte-for-byte the geometry of docs-site/public/brand/favicon.svg and of
+       the Mark component this app already draws in the rail and the status bar.
+       The tab was the one surface still showing a different mark, so the site
+       and the app read as two products in the one place they sit side by side:
+       a row of browser tabs.
+
+       Two classes, not one: a CSS rule outranks a presentation attribute, so a
+       shared class carrying `fill` would override the path's own fill="none"
+       and fill the ring solid. The ring styles stroke only; the core fill only.
+
+       Colours are explicit because a favicon is an isolated document and never
+       inherits currentColor — but it does honour its own media query. -->
+  <style>
+    .ring { stroke: #1e2124; }
+    .core { fill: #1e2124; }
+    @media (prefers-color-scheme: dark) {
+      .ring { stroke: #d5d8dc; }
+      .core { fill: #d5d8dc; }
+    }
+  </style>
+  <path class="ring" d="M27 19V23a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4h14a4 4 0 0 1 4 4v4"
+        fill="none" stroke-width="4"/>
+  <rect class="core" x="13" y="11" width="6" height="10" rx="1"/>
 </svg>
