@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { RunOutcome } from './RunOutcome'
 
 const base = { finished: true, success: true, aborted: false, commitSha: 'abc1234' }
@@ -41,5 +41,36 @@ describe('RunOutcome', () => {
     for (const term of ['Assurance Loop', 'Scorecard', 'Single Mandate', 'Blueprint', 'span']) {
       expect(screen.queryByText(new RegExp(term))).not.toBeInTheDocument()
     }
+  })
+})
+
+describe('RunOutcome — reading the diff', () => {
+  it('offers no button when the run left no branch to read', () => {
+    // A run against the working tree has no diff of its own; a button here would
+    // open nothing.
+    render(<RunOutcome finished success aborted={false} onSeeChanges={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /See what changed/ })).not.toBeInTheDocument()
+  })
+
+  it('opens the branch it actually committed on', () => {
+    const seen = vi.fn()
+    render(
+      <RunOutcome finished success aborted={false} branch="alc/run-ab12cd34" onSeeChanges={seen} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /See what changed/ }))
+    expect(seen).toHaveBeenCalledWith('alc/run-ab12cd34')
+  })
+
+  it('stays quiet on a failure — there is nothing landed to review', () => {
+    render(
+      <RunOutcome
+        finished
+        success={false}
+        aborted={false}
+        branch="alc/run-ab12cd34"
+        onSeeChanges={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /See what changed/ })).not.toBeInTheDocument()
   })
 })

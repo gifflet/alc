@@ -48,6 +48,10 @@ export interface Timeline {
    * definitive abort, distinct from the transient "stale" guess in RunDetail. */
   aborted: boolean
   commitSha?: string | null
+  /** The `alc/*` branch the isolated work committed on, when the run was
+   * isolated and actually changed something. Null otherwise — the run either ran
+   * against the working tree or made no change worth committing. */
+  branch?: string | null
   /** Check-defining files (`"path (reason)"`) the run's net diff touched — the
    * always-on tamper-evidence (check_config_edited events). Empty when clean. */
   checkConfigEdits: string[]
@@ -228,6 +232,12 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         timeline.finished = true
         break
 
+      case 'isolation_finished':
+        // Emitted after the worktree exits, so it always arrives last.
+        // `committed` false means nothing changed — no branch to point at.
+        timeline.branch = event.committed === true ? (str(event, 'branch') ?? null) : null
+        break
+
       case 'run_aborted':
         // Interrupted (Ctrl-C / SIGTERM). Terminal for ANY kind — bare mandate,
         // flow, or task — mirroring the backend (runs._run_finished). Leaves
@@ -297,6 +307,10 @@ export function describeEvent(event: RunEvent): string {
       return `Task ${str(event, 'name')} (${str(event, 'kind')})`
     case 'task_finished':
       return `Task finished — ${event.success ? 'success' : 'failure'}`
+    case 'isolation_finished':
+      return event.committed === true
+        ? `Committed on ${str(event, 'branch')}`
+        : 'Nothing changed — no branch created'
     case 'run_aborted':
       return `aborted — ${str(event, 'reason') ?? 'interrupted'}`
     case 'engine_activity':

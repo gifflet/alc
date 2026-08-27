@@ -16,6 +16,7 @@ import type { RunEvent } from '../api/types'
 import { TimelineView } from '../components/Timeline'
 import { Metric, Pill } from '../components/primitives'
 import { RunOutcome } from '../components/RunOutcome'
+import { uiStore } from '../app/uiStore'
 import { StatusDot } from '../components/StatusDot'
 import { EmptyState } from '../components/EmptyState'
 
@@ -114,6 +115,10 @@ export function RunDetail({ stem }: { stem: string }) {
               success={timeline.success}
               aborted={timeline.aborted}
               commitSha={timeline.commitSha}
+              branch={timeline.branch}
+              onSeeChanges={(branch) =>
+                uiStore.openTab({ target: { type: 'review', branch }, title: branch })
+              }
             />
           </div>
 

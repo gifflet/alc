@@ -219,3 +219,23 @@ describe('describeEvent', () => {
     expect(describeEvent({ ts: 't', event: 'run_aborted' })).toBe('aborted — interrupted')
   })
 })
+
+describe('isolation_finished', () => {
+  it('records the branch the isolated work committed on', () => {
+    const t = buildTimeline([
+      { ts: '1', event: 'mandate_started', blueprint: 'chore' },
+      { ts: '2', event: 'mandate_finished', success: true },
+      { ts: '3', event: 'isolation_finished', committed: true, branch: 'alc/run-ab12cd34' },
+    ])
+    expect(t.branch).toBe('alc/run-ab12cd34')
+  })
+
+  it('records no branch when nothing changed', () => {
+    // committed:false is "there was nothing to commit", not "look elsewhere".
+    const t = buildTimeline([
+      { ts: '1', event: 'mandate_started', blueprint: 'chore' },
+      { ts: '2', event: 'isolation_finished', committed: false, branch: null },
+    ])
+    expect(t.branch).toBeNull()
+  })
+})
