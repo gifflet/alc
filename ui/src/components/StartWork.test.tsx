@@ -1,7 +1,18 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { StartWork } from './StartWork'
 import { ApiError } from '../api/client'
+import { installFetch, renderWithProviders } from '../test/utils'
+
+// The guarantee line is derived from the project's engine and checks, so the
+// component needs both providers and a fetch that answers those two reads.
+const render = (ui: React.ReactElement) => {
+  installFetch({
+    '/engines': [{ name: 'claude-code', type: 'claude-code', default: true, healthy: true }],
+    '/checks/audit': { check_sets: [{ set_name: 'python' }], smoke_only_blueprints: [] },
+  })
+  return renderWithProviders(ui)
+}
 
 const start = vi.fn()
 vi.mock('../app/useStartExec', () => ({ useStartExec: () => start }))
@@ -37,11 +48,19 @@ describe('StartWork', () => {
 
   it('states the guarantee without naming the mechanism', () => {
     render(<StartWork />)
-    const promise = screen.getByText(/runs this project's checks before/)
-    expect(promise).toBeInTheDocument()
+    expect(screen.getByText(/runs this project's own checks before/)).toBeInTheDocument()
     // The value has to be legible to someone who has never read the docs.
     expect(screen.queryByText(/Assurance Loop/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Blueprint/)).not.toBeInTheDocument()
+  })
+
+  it('never claims a guarantee the project cannot keep', () => {
+    render(<StartWork />)
+    // The first version promised "a change that fails them is never reported as
+    // finished". A quarantined check fails and the run still succeeds; a
+    // smoke-only Blueprint verifies nothing; mock makes no call at all. An
+    // absolute claim would be a misreport in each of those states.
+    expect(screen.queryByText(/never reported as finished/)).not.toBeInTheDocument()
   })
 
   it('clears the field after a successful start', async () => {
@@ -70,5 +89,32 @@ describe('what it tells you before you press it', () => {
     // a search bar, and it edits their repository.
     expect(screen.getByText(/Edits happen in your working tree/)).toBeInTheDocument()
     expect(screen.getByText(/commit or stash anything you do not want touched/)).toBeInTheDocument()
+  })
+})
+
+describe('the guarantee is read, not asserted', () => {
+  it('warns instead of promising when the engine is mock', async () => {
+    installFetch({
+      '/engines': [{ name: 'mock', type: 'mock', default: true, healthy: true }],
+      '/checks/audit': { check_sets: [{ set_name: 'python' }], smoke_only_blueprints: [] },
+    })
+    renderWithProviders(<StartWork />)
+    // mock makes no model call. Promising verification here would describe a
+    // run that cannot happen.
+    await waitFor(() =>
+      expect(screen.getByText(/makes no model call, changes nothing/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/before calling anything done/)).not.toBeInTheDocument()
+  })
+
+  it('warns when the only check is a placeholder that always passes', async () => {
+    installFetch({
+      '/engines': [{ name: 'claude-code', type: 'claude-code', default: true, healthy: true }],
+      '/checks/audit': { check_sets: [], smoke_only_blueprints: [{ name: 'chore' }] },
+    })
+    renderWithProviders(<StartWork />)
+    await waitFor(() =>
+      expect(screen.getByText(/only a placeholder that always passes/)).toBeInTheDocument(),
+    )
   })
 })

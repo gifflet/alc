@@ -13,15 +13,54 @@
 // is verified before it is reported done. That is the whole promise, in the
 // words of the outcome rather than the mechanism.
 import { useState } from 'react'
-import { ArrowRight, FolderGit2, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, FolderGit2, Loader2, ShieldCheck } from 'lucide-react'
 import { ApiError } from '../api/client'
+import { useChecksAudit, useEngines } from '../api/hooks'
+import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
+
+/** What this project can actually promise, read rather than assumed.
+ *
+ *  The first version of this component stated the guarantee as an absolute:
+ *  "a change that fails them is never reported as finished". That sentence is
+ *  false in states the product genuinely has — a quarantined check fails and
+ *  the run still succeeds (assurance.py), a smoke-only Blueprint verifies
+ *  nothing but a `true` placeholder, and a `mock` engine makes no model call at
+ *  all. Claiming a guarantee that did not run is the one thing this product
+ *  forbids of itself, so the claim is now derived from the project. */
+function useGuarantee(): { tone: 'ok' | 'warn'; text: string } {
+  const id = useProjectId()
+  const { data: engines } = useEngines(id)
+  const { data: audit } = useChecksAudit(id)
+
+  const defaultEngine = (engines ?? []).find((e) => e.default)
+  if (defaultEngine?.type === 'mock') {
+    return {
+      tone: 'warn',
+      text: 'This project runs on the mock engine — it makes no model call, changes nothing and verifies nothing. Set a real engine in the Manifest before trusting a result.',
+    }
+  }
+
+  const smokeOnly = audit?.smoke_only_blueprints ?? []
+  if (audit && smokeOnly.length > 0 && (audit.check_sets ?? []).length === 0) {
+    return {
+      tone: 'warn',
+      text: 'This project has no real checks yet — only a placeholder that always passes. ALC will run the work, but nothing will verify it until you wire up your tests.',
+    }
+  }
+
+  return {
+    tone: 'ok',
+    text: "ALC plans the work, runs it, and runs this project's own checks before calling anything done.",
+  }
+}
 
 export function StartWork({ compact = false }: { compact?: boolean }) {
   const [goal, setGoal] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const start = useStartExec()
+  const guarantee = useGuarantee()
 
   const submit = async () => {
     const trimmed = goal.trim()
@@ -74,12 +113,12 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
 
       <div className="mt-2.5 flex flex-col gap-1.5 text-[length:var(--ui-text-label)] text-faint">
         <p className="flex items-start gap-1.5">
-          <ShieldCheck className="mt-[1px] h-3 w-3 shrink-0 text-live" />
-          {/* The promise in the words of the outcome. "Assurance Loop" is the
-              mechanism; this is what it buys you. */}
-          ALC plans the work, runs it, and runs this project's checks before
-          calling anything done. A change that fails them is never reported as
-          finished.
+          {guarantee.tone === 'ok' ? (
+            <ShieldCheck className="mt-[1px] h-3 w-3 shrink-0 text-live" />
+          ) : (
+            <AlertTriangle className="mt-[1px] h-3 w-3 shrink-0 text-warn" />
+          )}
+          {guarantee.text}
         </p>
         <p className="flex items-start gap-1.5">
           <FolderGit2 className="mt-[1px] h-3 w-3 shrink-0 text-warn" />
