@@ -47,16 +47,22 @@ function Landing() {
 
   if (isLoading) return <EmptyState icon={Boxes} message="Loading projects…" />
   return (
-    <div className="h-full">
-      <EmptyState icon={Boxes} message="No project open. Register one to begin." />
-      {open && (
-        <ProjectSelector
-          activeId={null}
-          onClose={() => setOpen(false)}
-          onSelect={(id) => navigate(`/projects/${id}`)}
-        />
-      )}
-    </div>
+    // ProjectSelector needs the socket: cloning a repo and creating a project
+    // report progress over it, as global execs with no project attached. There
+    // is no project here yet, which is exactly what `projectId={null}` is for —
+    // the client subscribes to the global bus and nothing else.
+    <WsProvider projectId={null}>
+      <div className="h-full">
+        <EmptyState icon={Boxes} message="No project open. Register one to begin." />
+        {open && (
+          <ProjectSelector
+            activeId={null}
+            onClose={() => setOpen(false)}
+            onSelect={(id) => navigate(`/projects/${id}`)}
+          />
+        )}
+      </div>
+    </WsProvider>
   )
 }
 
@@ -96,14 +102,16 @@ function ProjectShell() {
           onOpenProjects={() => setSelectorOpen(true)}
         />
         {selectorOpen && (
-          <ProjectSelector
-            activeId={null}
-            onClose={() => setSelectorOpen(false)}
-            onSelect={(next) => {
-              setSelectorOpen(false)
-              navigate(`/projects/${next}`)
-            }}
-          />
+          <WsProvider projectId={null}>
+            <ProjectSelector
+              activeId={null}
+              onClose={() => setSelectorOpen(false)}
+              onSelect={(next) => {
+                setSelectorOpen(false)
+                navigate(`/projects/${next}`)
+              }}
+            />
+          </WsProvider>
         )}
       </>
     )
@@ -150,7 +158,7 @@ function ProjectShell() {
   )
 }
 
-function Authenticated() {
+export function Authenticated() {
   // Replaces the whole app: with no credential there is no project state to
   // show, and a view's empty state would misreport the project.
   if (useUnauthorized()) return <TokenPrompt />

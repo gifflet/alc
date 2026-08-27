@@ -12,6 +12,17 @@ const ROUTES = [
   'review/alc%2Frun-a1b2c3d4',
 ]
 
+// Screens that exist ABOVE any project. They were never swept, because every
+// route above is /projects/<id>/…, and that is how a crash on the very first
+// screen of a fresh install shipped: ProjectSelector calls useWs, was mounted
+// with no WsProvider above it, threw during render, and left a blank page.
+const ROOT_ROUTES = [
+  { path: '/', label: '(landing)' },
+  // A project id that cannot exist reaches the "not registered" branch, which
+  // mounts ProjectSelector outside the project shell — the same shape.
+  { path: '/projects/__sweep_nonexistent__', label: '(unregistered)' },
+]
+
 const pages = await (await fetch(`http://localhost:${PORT}/json`)).json()
 const page = pages.find((p) => p.type === 'page' && p.url.includes(fragment))
 if (!page) { console.error('no page matching', fragment); process.exit(1) }
@@ -91,9 +102,17 @@ const PROBE = `(() => {
 })()`
 
 const results = []
-for (const route of ROUTES) {
+const targets = [
+  ...ROUTES.map((route) => ({
+    label: route || '(dashboard)',
+    url: `${baseUrl}/projects/${projectId}${route ? '/' + route : ''}`,
+  })),
+  ...ROOT_ROUTES.map(({ path, label }) => ({ label, url: `${baseUrl}${path}` })),
+]
+
+for (const target of targets) {
   logs = []
-  const url = `${baseUrl}/projects/${projectId}${route ? '/' + route : ''}`
+  const url = target.url
   await send('Page.navigate', { url })
   await new Promise((r) => setTimeout(r, 4000))
   let probe = {}
@@ -101,7 +120,7 @@ for (const route of ROUTES) {
     const out = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true })
     probe = JSON.parse(out.result.value)
   } catch (err) { probe = { error: err.message } }
-  results.push({ route: route || '(dashboard)', ...probe, logs: [...new Set(logs)] })
+  results.push({ route: target.label, ...probe, logs: [...new Set(logs)] })
 }
 
 let bad = 0
