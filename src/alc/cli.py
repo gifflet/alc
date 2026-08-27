@@ -174,6 +174,21 @@ def _print_isolation_result(wt) -> None:
         print("No changes were made; nothing to isolate.")
 
 
+def _emit_isolation_result(run_log: "Path", wt) -> None:
+    """Record which branch the isolated work landed on, into the run's own log.
+
+    The branch name is only known once the worktree has exited, which is after
+    the run's own binding closed — so rebind (bind_run_log is reentrant and this
+    is the same path) and append. Without this the UI can tell an operator their
+    change is committed but not where to read it: the branch is
+    ``alc/<label>-<random>``, unguessable from the run alone.
+    """
+    from alc.events import bind_run_log, emit
+
+    with bind_run_log(run_log):
+        emit("isolation_finished", committed=wt.committed, branch=wt.branch if wt.committed else None)
+
+
 def _print_skill_result(path: "Path", changed: bool, version: str, engine: str) -> None:
     """Print the outcome of an install_skill() call to stdout."""
     if changed:
@@ -867,6 +882,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         _print_run_report(report)
         _print_isolation_result(wt)
+        _emit_isolation_result(run_log, wt)
         if report.success and blueprint.mode != "spike":
             from alc.branches import run_report_filename
 
@@ -1893,6 +1909,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
 
         _print_flow_report(report)
         _print_isolation_result(wt)
+        _emit_isolation_result(run_log, wt)
         if args.bundle:
             bundles_dir = operator_layer.parent / manifest.bundles_dir
             path = write_bundle(bundles_dir, args.flow_name, args.task, report)
