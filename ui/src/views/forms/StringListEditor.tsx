@@ -2,6 +2,7 @@
 // (protected-path globs, quarantined check names, …). Shared by BlueprintForm
 // (`protect`) and ManifestForm (`quarantined_checks`).
 import { Plus, Trash2 } from 'lucide-react'
+import { ActionButton } from '../../components/ActionButton'
 
 export function StringListEditor({
   values,
@@ -40,14 +41,14 @@ export function StringListEditor({
           </button>
         </div>
       ))}
-      <button
-        type="button"
+      <ActionButton
         onClick={add}
-        className="flex w-fit items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+        tone="ghost"
+        size="sm"
       >
         <Plus className="h-3 w-3" />
         Add
-      </button>
+      </ActionButton>
     </div>
   )
 }

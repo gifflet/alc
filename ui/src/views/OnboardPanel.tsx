@@ -13,6 +13,7 @@ import { useProjectId } from '../app/ProjectContext'
 import { Pill } from '../components/primitives'
 import type { Tone } from '../components/StatusDot'
 import type { OnboardApplyResult, ProposedCheck } from '../api/types'
+import { ActionButton } from '../components/ActionButton'
 
 const STAGES = ['pre-pmf', 'growth', 'strong-pmf'] as const
 
@@ -190,14 +191,14 @@ export function OnboardPanel() {
             </option>
           ))}
         </select>
-        <button
-          type="button"
+        <ActionButton
           onClick={doAdopt}
           disabled={apply.isPending}
-          className="flex min-h-[var(--ui-control-h)] items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+          tone="accent"
+          size="md"
         >
           Adopt
-        </button>
+        </ActionButton>
       </div>
 
       {selectedStage && data.team_hints.length > 0 && (

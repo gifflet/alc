@@ -14,6 +14,7 @@ import { ConsolePane } from './ConsolePane'
 import { EmptyState } from './EmptyState'
 import { StatusDot } from './StatusDot'
 import type { Tone } from './StatusDot'
+import { ActionButton } from './ActionButton'
 
 function statusTone(exec: ExecEntry): Tone {
   if (exec.status === 'running') return 'running'
@@ -54,27 +55,27 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
       )}
 
       {exec.runStems.map((stem) => (
-        <button
+        <ActionButton
           key={stem}
-          type="button"
           onClick={() => uiStore.openTab({ target: { type: 'run', stem }, title: stem })}
-          className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-1.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+          tone="ghost"
+          size="sm"
         >
           <Radio className="h-3 w-3" />
           view run
-        </button>
+        </ActionButton>
       ))}
 
       <div className="ml-auto flex items-center gap-1">
         {running && (
-          <button
-            type="button"
+          <ActionButton
             onClick={() => void api.cancelExec(exec.id).catch(() => {})}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-error/50 px-1.5 text-error hover:bg-error/10"
+            tone="error"
+            size="md"
           >
             <Square className="h-3 w-3" />
             Cancel
-          </button>
+          </ActionButton>
         )}
         <button
           type="button"

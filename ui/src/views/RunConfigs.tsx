@@ -13,6 +13,7 @@ import { EmptyState } from '../components/EmptyState'
 import { Loading, Pill } from '../components/primitives'
 import { RunConfigForm } from './RunConfigForm'
 import type { RunConfig } from '../api/types'
+import { ActionButton } from '../components/ActionButton'
 
 /** The compact run selector: pick a saved config and run it. */
 function RunSelector({ configs }: { configs: RunConfig[] }) {
@@ -39,16 +40,16 @@ function RunSelector({ configs }: { configs: RunConfig[] }) {
           </option>
         ))}
       </select>
-      <button
-        type="button"
+      <ActionButton
         aria-label="Run selected configuration"
         onClick={run}
         disabled={!selected}
-        className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
+        tone="live"
+        size="sm"
       >
         <Play className="h-3 w-3" />
         Run
-      </button>
+      </ActionButton>
     </div>
   )
 }
@@ -116,14 +117,14 @@ export function RunConfigs() {
         </div>
         <div className="flex items-center gap-2">
           {configs.length > 0 && <RunSelector configs={configs} />}
-          <button
-            type="button"
+          <ActionButton
             onClick={() => setCreating(true)}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+            tone="accent"
+            size="sm"
           >
             <Plus className="h-3 w-3" />
             New configuration
-          </button>
+          </ActionButton>
         </div>
       </div>
 

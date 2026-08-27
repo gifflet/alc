@@ -15,6 +15,7 @@ import { EmptyState } from '../components/EmptyState'
 import { Loading } from '../components/primitives'
 import { anchorKey } from '../lib/diff'
 import { ApiError } from '../api/client'
+import { ActionButton } from '../components/ActionButton'
 
 export function BranchReview({ branch }: { branch: string }) {
   const id = useProjectId()
@@ -97,8 +98,7 @@ export function BranchReview({ branch }: { branch: string }) {
               ))}
             </select>
           </label>
-          <button
-            type="button"
+          <ActionButton
             disabled={count === 0 || !chosen || submit.isPending}
             onClick={() =>
               submit.mutate(
@@ -111,20 +111,21 @@ export function BranchReview({ branch }: { branch: string }) {
                 },
               )
             }
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20 disabled:opacity-40"
+            tone="accent"
+            size="sm"
           >
             <Send className="h-3.5 w-3.5" />
             Send notes
-          </button>
-          <button
-            type="button"
+          </ActionButton>
+          <ActionButton
             disabled={land.isPending}
             onClick={() => land.mutate({ branches: [branch] })}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover disabled:opacity-40"
+            tone="ghost"
+            size="sm"
           >
             <GitMerge className="h-3.5 w-3.5" />
             Land
-          </button>
+          </ActionButton>
         </div>
       </header>
 
@@ -164,23 +165,23 @@ export function BranchReview({ branch }: { branch: string }) {
             />
           </label>
           <div className="mt-2 flex gap-2">
-            <button
-              type="button"
+            <ActionButton
               onClick={saveDraft}
-              className="min-h-[var(--ui-control-h)] rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+              tone="accent"
+              size="sm"
             >
               Save note
-            </button>
-            <button
-              type="button"
+            </ActionButton>
+            <ActionButton
               onClick={() => {
                 setEditing(null)
                 setDraftText('')
               }}
-              className="min-h-[var(--ui-control-h)] rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover"
+              tone="ghost"
+              size="sm"
             >
               Cancel
-            </button>
+            </ActionButton>
           </div>
         </div>
       )}

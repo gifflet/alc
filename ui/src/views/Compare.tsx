@@ -18,6 +18,7 @@ import { Loading, Pill } from '../components/primitives'
 import { formatCost } from '../lib/format'
 import { ExploreDialog } from './ExploreDialog'
 import type { AdoptResult, VariantRow } from '../api/types'
+import { ActionButton } from '../components/ActionButton'
 
 function apiMessage(error: unknown): string | null {
   if (error instanceof ApiError) return error.message
@@ -96,25 +97,25 @@ export function Compare() {
       render: (r) =>
         !r.branch ? null : r.live ? (
           <div className="flex items-center justify-end gap-1.5">
-            <button
-              type="button"
+            <ActionButton
               aria-label={`View diff of ${r.branch}`}
               aria-pressed={diffBranch === r.branch}
               // Toggling the already-open row closes it — a second click hides the panel.
               onClick={() => setDiffBranch(diffBranch === r.branch ? null : (r.branch as string))}
-              className="rounded-panel border border-border px-2 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-panel aria-pressed:border-accent/60 aria-pressed:text-accent"
+              tone="accent"
+              size="sm"
             >
               Diff
-            </button>
-            <button
-              type="button"
+            </ActionButton>
+            <ActionButton
               aria-label={`Adopt ${r.branch}`}
               onClick={() => setAdopting(r.branch as string)}
               disabled={adopt.isPending}
-              className="rounded-panel border border-accent/60 bg-accent/10 px-2 py-0.5 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20 disabled:opacity-40"
+              tone="accent"
+              size="sm"
             >
               Adopt
-            </button>
+            </ActionButton>
           </div>
         ) : (
           // Resolved: the branch is gone (adopted or discarded), so Diff/Adopt would
@@ -134,14 +135,14 @@ export function Compare() {
           <GitCompare className="h-4 w-4 text-muted" />
           <h1 className="text-[14px] font-medium text-primary">Compare</h1>
         </div>
-        <button
-          type="button"
+        <ActionButton
           onClick={() => setExploring(true)}
-          className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+          tone="accent"
+          size="sm"
         >
           <Sparkles className="h-3 w-3" />
           Explore
-        </button>
+        </ActionButton>
       </header>
 
       {rows.length === 0 ? (

@@ -11,6 +11,7 @@ import { Field, NumberInput, Select, TextInput } from '../../components/fields'
 import { mapKeys, safeDeleteIn, seqStrings } from '../../lib/yamlDoc'
 import { CheckListEditor } from './CheckListEditor'
 import { StringListEditor } from './StringListEditor'
+import { ActionButton } from '../../components/ActionButton'
 
 const KNOBS: { key: string; label: string; def: number }[] = [
   { key: 'default_timeout_s', label: 'Default timeout (s)', def: 1800 },
@@ -208,15 +209,15 @@ export function ManifestForm({
               spellCheck={false}
               className="w-32 rounded-panel border border-border bg-base px-2 py-1 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
             />
-            <button
-              type="button"
+            <ActionButton
               onClick={addCheckSet}
               disabled={!newSetName.trim()}
-              className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary disabled:opacity-40"
+              tone="ghost"
+              size="sm"
             >
               <Plus className="h-3 w-3" />
               Add set
-            </button>
+            </ActionButton>
           </div>
         </div>
         {checkSetNames.length === 0 ? (

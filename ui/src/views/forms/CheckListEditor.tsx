@@ -6,6 +6,7 @@
 import type { Document } from 'yaml'
 import { Plus, Trash2 } from 'lucide-react'
 import { safeDeleteIn } from '../../lib/yamlDoc'
+import { ActionButton } from '../../components/ActionButton'
 
 type CheckMode = 'command' | 'shell' | 'metric'
 type Direction = 'lower_is_better' | 'higher_is_better'
@@ -179,14 +180,14 @@ export function CheckListEditor({
           </div>
         ))
       )}
-      <button
-        type="button"
+      <ActionButton
         onClick={addCheck}
-        className="flex w-fit items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+        tone="ghost"
+        size="sm"
       >
         <Plus className="h-3 w-3" />
         Add check
-      </button>
+      </ActionButton>
     </div>
   )
 }

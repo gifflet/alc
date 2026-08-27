@@ -35,6 +35,7 @@ import { RelativeTime } from '../components/RelativeTime'
 import type { Tone } from '../components/StatusDot'
 import { EnqueueDialog } from './EnqueueDialog'
 import { SignalIngestDialog } from './SignalIngestDialog'
+import { ActionButton } from '../components/ActionButton'
 import { ApiError } from '../api/client'
 import type {
   Branch,
@@ -203,25 +204,25 @@ function BranchesSection() {
       className: 'w-36',
       render: (b) => (
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <ActionButton
             aria-label={`Land ${b.name}`}
             onClick={() => doLand(b.name)}
             disabled={land.isPending}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-1.5 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
+            tone="live"
+            size="sm"
           >
             <GitMerge className="h-3 w-3" />
             Land
-          </button>
-          <button
-            type="button"
+          </ActionButton>
+          <ActionButton
             aria-label={`Discard ${b.name}`}
             onClick={() => setDiscarding(b.name)}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-1.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-error"
+            tone="ghost"
+            size="sm"
           >
             <Trash2 className="h-3 w-3" />
             Discard
-          </button>
+          </ActionButton>
         </div>
       ),
     },
@@ -351,14 +352,14 @@ function SignalsSection() {
         <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
           Signals <span className="tabular">({signals.length})</span>
         </h3>
-        <button
-          type="button"
+        <ActionButton
           onClick={() => setIngesting(true)}
-          className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-1.5 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+          tone="accent"
+          size="sm"
         >
           <Plus className="h-3 w-3" />
           Ingest signal
-        </button>
+        </ActionButton>
       </div>
       {signals.length === 0 ? (
         <p className="text-[length:var(--ui-text-body)] text-faint">No pending signals.</p>
@@ -457,18 +458,18 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                   </td>
                   <td className="px-2">
                     {d.outstanding && (
-                      <button
-                        type="button"
+                      <ActionButton
                         aria-label={`Retry ${d.stem}`}
                         onClick={(e) => {
                           e.stopPropagation()
                           onRetry(d.stem)
                         }}
-                        className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-1.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+                        tone="ghost"
+                        size="sm"
                       >
                         <RotateCcw className="h-3 w-3" />
                         retry
-                      </button>
+                      </ActionButton>
                     )}
                   </td>
                 </tr>
@@ -629,33 +630,33 @@ export function Queue() {
         <h2 className="text-[length:var(--ui-text-body)] font-medium text-primary">Queue</h2>
         <div className="flex items-center gap-2">
           {failures.length > 0 && (
-            <button
-              type="button"
+            <ActionButton
               onClick={() => retry.mutate({ all: true })}
-              className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+              tone="ghost"
+              size="sm"
             >
               <RotateCcw className="h-3 w-3" />
               Retry all failures
-            </button>
+            </ActionButton>
           )}
           {pending.length > 0 && (
-            <button
-              type="button"
+            <ActionButton
               onClick={() => setDraining(true)}
-              className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 text-[length:var(--ui-text-label)] text-live hover:bg-live/20"
+              tone="live"
+              size="sm"
             >
               <Play className="h-3 w-3" />
               Drain queue
-            </button>
+            </ActionButton>
           )}
-          <button
-            type="button"
+          <ActionButton
             onClick={() => setEnqueuing(true)}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+            tone="accent"
+            size="sm"
           >
             <Plus className="h-3 w-3" />
             Enqueue task
-          </button>
+          </ActionButton>
         </div>
       </div>
 

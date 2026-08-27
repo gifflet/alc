@@ -18,6 +18,7 @@ import { ApiError } from '../api/client'
 import { useChecksAudit, useEngines } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
+import { ActionButton } from './ActionButton'
 
 /** What this project can actually promise, read rather than assumed.
  *
@@ -109,15 +110,16 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
           disabled={busy}
           className="min-h-[var(--ui-control-h)] min-w-0 flex-1 rounded-panel border border-border bg-base px-3 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent disabled:opacity-50"
         />
-        <button
-          type="button"
+        <ActionButton
           onClick={submit}
           disabled={!goal.trim() || busy}
-          className="flex min-h-[var(--ui-control-h)] shrink-0 items-center justify-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-4 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+          tone="accent"
+          size="lg"
+          className="shrink-0 justify-center"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
           Start
-        </button>
+        </ActionButton>
       </div>
 
       <div className="mt-2.5 flex flex-col gap-1.5 text-[length:var(--ui-text-label)] text-faint">

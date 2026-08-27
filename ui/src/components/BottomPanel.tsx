@@ -41,7 +41,7 @@ function ProblemRow({ v }: { v: Violation }) {
       type="button"
       title={`Open ${target.title}`}
       onClick={() => uiStore.openTab(target)}
-      className="flex w-full items-start gap-2 px-3 py-1.5 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
+      className="flex min-h-[var(--ui-row-h)] w-full items-start gap-2 px-3 py-1.5 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
     >
       {body}
     </button>

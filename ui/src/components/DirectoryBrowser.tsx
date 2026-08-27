@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowUp, Check, FolderGit2, Folder, Home, Loader2 } from 'lucide-react'
 import { api } from '../api/client'
 import type { DirectoryListing } from '../api/types'
+import { ActionButton } from './ActionButton'
 
 export function DirectoryBrowser({
   onPick,
@@ -148,21 +149,21 @@ export function DirectoryBrowser({
           </span>
           <div className="flex shrink-0 gap-1.5">
             {onAdopt && !data.is_alc_project && (
-              <button
-                type="button"
+              <ActionButton
                 onClick={() => onAdopt(data.path)}
-                className="rounded-xs border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+                tone="accent"
+                size="sm"
               >
                 Set up ALC here
-              </button>
+              </ActionButton>
             )}
-            <button
-              type="button"
+            <ActionButton
               onClick={() => onPick(data.path)}
-              className="rounded-xs border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-primary hover:bg-hover"
+              tone="ghost"
+              size="sm"
             >
               Use this directory
-            </button>
+            </ActionButton>
           </div>
         </div>
       )}
