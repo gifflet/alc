@@ -95,7 +95,7 @@ export function Conduct() {
             type="button"
             onClick={submit}
             disabled={!goal.trim() || saving}
-            className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3 py-1.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-3.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
           >
             <Wand2 className="h-3.5 w-3.5" />
             Conduct goal

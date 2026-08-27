@@ -135,7 +135,7 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
           <button
             type="button"
             onClick={addStage}
-            className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
           >
             <Plus className="h-3 w-3" />
             Add stage
@@ -178,7 +178,7 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
                     type="button"
                     aria-label={`Remove ${row.name || `stage ${i + 1}`}`}
                     onClick={() => removeStage(i)}
-                    className="flex h-6 w-6 items-center justify-center text-faint hover:text-error"
+                    className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-error"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

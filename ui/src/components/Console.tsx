@@ -58,7 +58,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           key={stem}
           type="button"
           onClick={() => uiStore.openTab({ target: { type: 'run', stem }, title: stem })}
-          className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+          className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-1.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
         >
           <Radio className="h-3 w-3" />
           view run
@@ -70,7 +70,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           <button
             type="button"
             onClick={() => void api.cancelExec(exec.id).catch(() => {})}
-            className="flex items-center gap-1 rounded-panel border border-error/50 px-1.5 py-0.5 text-error hover:bg-error/10"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-error/50 px-1.5 text-error hover:bg-error/10"
           >
             <Square className="h-3 w-3" />
             Cancel
@@ -80,7 +80,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           type="button"
           aria-label="Clear output"
           onClick={() => execStore.clear(exec.id)}
-          className="flex h-5 w-5 items-center justify-center text-faint hover:text-primary"
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-primary"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -88,7 +88,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           type="button"
           aria-label="Close exec"
           onClick={() => execStore.remove(exec.id)}
-          className="flex h-5 w-5 items-center justify-center text-faint hover:text-primary"
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-primary"
         >
           <X className="h-3.5 w-3.5" />
         </button>

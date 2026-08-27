@@ -221,7 +221,7 @@ export function Team() {
                 type="button"
                 onClick={() => doHire(a)}
                 disabled={hire.isPending && hiring === a}
-                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-[length:var(--ui-text-body)] capitalize text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                className="flex min-h-[var(--ui-control-h)] items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5.5 text-[length:var(--ui-text-body)] capitalize text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
               >
                 <UserPlus className="h-3.5 w-3.5" />
                 Hire {a}

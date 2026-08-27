@@ -194,7 +194,7 @@ export function OnboardPanel() {
           type="button"
           onClick={doAdopt}
           disabled={apply.isPending}
-          className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 py-1 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+          className="flex min-h-[var(--ui-control-h)] items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
         >
           Adopt
         </button>

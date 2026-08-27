@@ -34,7 +34,7 @@ export function TabBar() {
             {active && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />}
             <span className="truncate">{tab.title}</span>
             {tab.closable && (
-              <span className="relative flex h-4 w-4 items-center justify-center">
+              <span className="relative flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center">
                 {isDirty && (
                   <span className="pointer-events-none h-1.5 w-1.5 rounded-full bg-muted transition-opacity duration-120 group-hover:opacity-0" />
                 )}

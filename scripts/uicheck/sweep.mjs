@@ -1,4 +1,5 @@
-// sweep.mjs — Walk every route, collecting console errors and layout overflow.
+// sweep.mjs — Walk every route, collecting console errors, layout overflow and
+// undersized touch targets.
 // usage: CDP_PORT=9333 node sweep.mjs <baseUrl> <projectId> [urlFragment]
 import WebSocket from '../../ui/node_modules/ws/index.js'
 
@@ -62,6 +63,30 @@ const PROBE = `(() => {
     overflowing: [...document.querySelectorAll('body *')].filter(leaks)
       .map((e) => e.tagName + '.' + String(e.className || '').slice(0, 40)).slice(0, 4),
     density: document.documentElement.dataset.density,
+    // WCAG 2.2 SC 2.5.8. Only meaningful on a coarse pointer, where 44px is the
+    // floor; on a mouse surface this reports nothing rather than a false alarm.
+    // The standard's exception for a link inside a sentence is honoured: an <a>
+    // whose parent carries prose around it is inline text, not a control.
+    small: !matchMedia('(pointer: coarse)').matches ? [] :
+      [...document.querySelectorAll('button, input, select, textarea, [role=button], a[href]')]
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.height <= 0 || r.height >= 44) return false;
+          // A checkbox or radio inside a <label> is tapped by the whole label,
+          // which is the target WCAG measures. Its own 16px box is not the answer.
+          if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
+            const lbl = el.closest('label');
+            if (lbl && lbl.getBoundingClientRect().height >= 44) return false;
+          }
+          if (el.tagName === 'A') {
+            const own = (el.textContent || '').trim();
+            const parent = (el.parentElement ? el.parentElement.textContent : '' || '').trim();
+            if (parent.length > own.length + 8) return false;
+          }
+          return true;
+        })
+        .map((el) => (el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 18) || el.tagName) + '@' + Math.round(el.getBoundingClientRect().height) + 'px')
+        .slice(0, 6),
   });
 })()`
 
@@ -70,7 +95,7 @@ for (const route of ROUTES) {
   logs = []
   const url = `${baseUrl}/projects/${projectId}${route ? '/' + route : ''}`
   await send('Page.navigate', { url })
-  await new Promise((r) => setTimeout(r, 2600))
+  await new Promise((r) => setTimeout(r, 4000))
   let probe = {}
   try {
     const out = await send('Runtime.evaluate', { expression: PROBE, returnByValue: true })
@@ -86,6 +111,7 @@ for (const r of results) {
   if (overflow) issues.push(`PAGE OVERFLOW ${r.pageScrollW}>${r.innerW}`)
   if (r.overflowing?.length) issues.push(`inner overflow: ${r.overflowing.join(', ')}`)
   if (!r.rendered) issues.push('EMPTY RENDER')
+  if (r.small?.length) issues.push(`under 44px: ${r.small.join(', ')}`)
   if (r.logs?.length) issues.push(...r.logs)
   if (r.error) issues.push(`probe error: ${r.error}`)
   if (issues.length) bad++

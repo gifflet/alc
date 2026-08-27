@@ -44,7 +44,7 @@ function RunSelector({ configs }: { configs: RunConfig[] }) {
         aria-label="Run selected configuration"
         onClick={run}
         disabled={!selected}
-        className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
+        className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
       >
         <Play className="h-3 w-3" />
         Run
@@ -67,7 +67,7 @@ function ConfigRow({ config, onEdit, onDelete }: {
         type="button"
         aria-label={`Run ${config.name}`}
         onClick={() => void start(config.command, config.args).catch(() => {})}
-        className="flex h-4 w-4 items-center justify-center text-faint transition-colors duration-120 hover:text-live"
+        className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint transition-colors duration-120 hover:text-live"
       >
         <Play className="h-3.5 w-3.5" />
       </button>
@@ -119,7 +119,7 @@ export function RunConfigs() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
           >
             <Plus className="h-3 w-3" />
             New configuration
