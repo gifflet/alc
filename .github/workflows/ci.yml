@@ -64,5 +64,17 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run lint
+      # The installers are served from this site and piped straight into a
+      # stranger's shell. A syntax error ships as a broken install command on the
+      # landing page, so parse both before anything else can.
+      - name: Installer scripts parse
+        run: |
+          sh -n scripts-dist/install.sh
+          pwsh -NoProfile -Command '
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path scripts-dist/install.ps1), [ref]$null, [ref]$errors)
+            if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+            Write-Host "install.ps1 parses"'
       - name: Build
         run: npm run build
