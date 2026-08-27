@@ -7,5 +7,11 @@ export default {
   turbopack: { root: fileURLToPath(new URL('.', import.meta.url)) },
   // Content is read from content/ at build time; nothing is per-request, so
   // every route prerenders.
-  outputFileTracingIncludes: { '/docs/**': ['./content/**/*'] },
+  // The install routes read their script from scripts-dist/ at build time, so
+  // tracing has to carry those files into the deployment.
+  outputFileTracingIncludes: {
+    '/docs/**': ['./content/**/*'],
+    '/install.sh': ['./scripts-dist/install.sh'],
+    '/install.ps1': ['./scripts-dist/install.ps1'],
+  },
 }
