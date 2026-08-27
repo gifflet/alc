@@ -25,16 +25,21 @@ describe('StartWork', () => {
     expect(screen.getByRole('button', { name: /Start/ })).toBeDisabled()
   })
 
-  it('sends the goal to the conductor and nothing else', async () => {
+  it('runs an isolated chore, so there is a branch to review', async () => {
     start.mockResolvedValue('e1')
     render(<StartWork />)
     fireEvent.change(field(), { target: { value: 'fix the missing config crash' } })
     fireEvent.click(screen.getByRole('button', { name: /Start/ }))
 
-    // Engine and tier are on file in the manifest; asking again would be asking
-    // a question whose answer the project already gave.
+    // isolate is the load-bearing part: conduct's serial path has none, so it
+    // edited the working tree and left nothing to review, keep or discard.
+    // Engine and tier stay unasked — the manifest has them.
     await waitFor(() =>
-      expect(start).toHaveBeenCalledWith('conduct', { goal: 'fix the missing config crash' }),
+      expect(start).toHaveBeenCalledWith('run', {
+        blueprint: 'chore',
+        task: 'fix the missing config crash',
+        isolate: true,
+      }),
     )
   })
 
@@ -87,8 +92,10 @@ describe('what it tells you before you press it', () => {
     // Promising verification while staying silent about the files is the more
     // dangerous half-truth: someone types into this box the way they type into
     // a search bar, and it edits their repository.
-    expect(screen.getByText(/Edits happen in your working tree/)).toBeInTheDocument()
-    expect(screen.getByText(/commit or stash anything you do not want touched/)).toBeInTheDocument()
+    // Isolated now, so the sentence changed from a warning to a fact — and the
+    // fact is what makes "keep it or throw it away" a real choice.
+    expect(screen.getByText(/Work happens on a separate branch/)).toBeInTheDocument()
+    expect(screen.getByText(/until you decide to keep the result/)).toBeInTheDocument()
   })
 })
 

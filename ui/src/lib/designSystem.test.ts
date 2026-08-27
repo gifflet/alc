@@ -82,3 +82,21 @@ describe('design system', () => {
     expect(offenders).toEqual([])
   })
 })
+
+describe('motion', () => {
+  const readCss = () => readFileSync(join(SRC, 'index.css'), 'utf8')
+
+  it('honours prefers-reduced-motion', () => {
+    const css = readCss()
+    // alc-pulse runs infinitely on every live indicator; alc-fade-in fires on
+    // every tree row. Without this block a busy control room is in constant
+    // motion for someone who asked the system to stop exactly that.
+    expect(css).toContain('prefers-reduced-motion: reduce')
+  })
+
+  it('disables the infinite pulse under that preference, not just shortens it', () => {
+    const css = readCss()
+    const block = css.slice(css.indexOf('prefers-reduced-motion: reduce'))
+    expect(block).toMatch(/\.alc-pulse[\s\S]{0,120}animation:\s*none/)
+  })
+})

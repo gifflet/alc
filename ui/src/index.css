@@ -230,3 +230,32 @@
 .alc-fade-in {
   animation: alc-fade-in 120ms ease-out both;
 }
+
+/*
+ * Reduced motion.
+ *
+ * `alc-pulse` runs infinitely on every live indicator and `alc-fade-in` fires
+ * on every tree row, so a busy control room is in constant motion — which is
+ * precisely what someone who set this preference asked the system to stop.
+ * There was no guard at all until now.
+ *
+ * Animations are disabled outright rather than shortened: a pulse that means
+ * "this is running" is carried by the dot's colour too, so removing the motion
+ * loses nothing. Transitions collapse instead of disappearing, because a
+ * zero-duration transition still fires transitionend for anything listening.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .alc-pulse,
+  .alc-fade-in {
+    animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
