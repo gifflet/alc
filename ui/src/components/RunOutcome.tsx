@@ -8,6 +8,7 @@
 // they passed, and the change is yours to review. The Scorecard stays directly
 // below — this does not replace it, it explains what it means the first time.
 import { AlertTriangle, CheckCircle2, Eye, Loader2, XCircle, Zap } from 'lucide-react'
+import { ActionButton } from './ActionButton'
 
 export function RunOutcome({
   finished,
@@ -108,14 +109,15 @@ export function RunOutcome({
           only when there is a branch to read — a run against the working tree has
           no diff of its own to open. */}
       {branch && onSeeChanges && (
-        <button
-          type="button"
+        <ActionButton
           onClick={() => onSeeChanges(branch)}
-          className="mt-2 flex min-h-[var(--ui-control-h)] items-center gap-1.5 self-start rounded-panel border border-border px-2.5 text-[length:var(--ui-text-body)] text-primary hover:bg-hover"
+          tone="ghost"
+          size="md"
+          className="mt-2 self-start"
         >
           <Eye className="h-3.5 w-3.5" />
           See what changed
-        </button>
+        </ActionButton>
       )}
     </div>
   )

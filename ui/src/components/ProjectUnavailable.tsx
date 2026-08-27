@@ -7,6 +7,7 @@
 // describe a state it cannot observe — so the shell is not rendered at all, and
 // the screen states the cause.
 import { FolderX, PlugZap } from 'lucide-react'
+import { ActionButton } from './ActionButton'
 
 export type UnavailableReason = 'unregistered' | 'missing'
 
@@ -57,13 +58,13 @@ export function ProjectUnavailable({
           )}
         </p>
 
-        <button
-          type="button"
+        <ActionButton
           onClick={onOpenProjects}
-          className="min-h-[var(--ui-control-h)] rounded-panel border border-border bg-raised px-3 text-[length:var(--ui-text-body)] text-primary hover:bg-hover"
+          tone="ghost"
+          size="md"
         >
           Open projects
-        </button>
+        </ActionButton>
       </div>
     </div>
   )

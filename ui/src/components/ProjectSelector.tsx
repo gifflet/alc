@@ -12,6 +12,7 @@ import { ConfirmDialog } from './Dialog'
 import { EmptyState } from './EmptyState'
 import { useWs } from '../ws/WsProvider'
 import { StatusDot } from './StatusDot'
+import { ActionButton } from './ActionButton'
 
 export function ProjectSelector({
   activeId,
@@ -201,15 +202,16 @@ export function ProjectSelector({
               />
               {/* The field stays for anyone who knows the path; browsing is for
                   everyone else, which is most of the time. */}
-              <button
-                type="button"
+              <ActionButton
                 onClick={() => setBrowsing((b) => !b)}
                 aria-expanded={browsing}
-                className="flex shrink-0 items-center gap-1.5 rounded-panel border border-border min-h-[var(--ui-control-h)] px-2.5 text-[length:var(--ui-text-body)] text-primary transition-colors duration-120 hover:bg-hover"
+                tone="ghost"
+                size="md"
+                className="shrink-0"
               >
                 <FolderSearch className="h-3.5 w-3.5" />
                 {browsing ? 'Hide' : 'Browse'}
-              </button>
+              </ActionButton>
             </div>
             {browsing && (
               <DirectoryBrowser
@@ -227,14 +229,15 @@ export function ProjectSelector({
                 placeholder="name (optional)"
                 className="flex-1 rounded-panel border border-border bg-base min-h-[var(--ui-control-h)] px-2 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
               />
-              <button
+              <ActionButton
                 type="submit"
                 disabled={!path.trim() || add.isPending}
-                className="flex items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 min-h-[var(--ui-control-h)] px-3 text-[length:var(--ui-text-body)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                tone="accent"
+                size="md"
               >
                 <FolderPlus className="h-3.5 w-3.5" />
                 Register
-              </button>
+              </ActionButton>
             </div>
             {adoptExec && (
               <p className="text-[length:var(--ui-text-label)] text-muted">

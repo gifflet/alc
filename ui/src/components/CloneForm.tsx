@@ -13,6 +13,7 @@ import { Download, FolderSearch, Loader2 } from 'lucide-react'
 import { ApiError, api } from '../api/client'
 import { useWs } from '../ws/WsProvider'
 import { DirectoryBrowser } from './DirectoryBrowser'
+import { ActionButton } from './ActionButton'
 
 export function CloneForm({ onCloned }: { onCloned: (path: string) => void }) {
   const [url, setUrl] = useState('')
@@ -82,16 +83,17 @@ export function CloneForm({ onCloned }: { onCloned: (path: string) => void }) {
           disabled={busy}
           className="min-w-0 flex-1 rounded-panel border border-border bg-base min-h-[var(--ui-control-h)] px-2 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent disabled:opacity-50"
         />
-        <button
-          type="button"
+        <ActionButton
           onClick={() => setBrowsing((b) => !b)}
           disabled={busy}
           aria-expanded={browsing}
-          className="flex shrink-0 items-center gap-1.5 rounded-panel border border-border min-h-[var(--ui-control-h)] px-2.5 text-[length:var(--ui-text-body)] text-primary hover:bg-hover disabled:opacity-50"
+          tone="ghost"
+          size="md"
+          className="shrink-0"
         >
           <FolderSearch className="h-3.5 w-3.5" />
           {browsing ? 'Hide' : 'Browse'}
-        </button>
+        </ActionButton>
       </div>
 
       {browsing && (
@@ -112,14 +114,16 @@ export function CloneForm({ onCloned }: { onCloned: (path: string) => void }) {
           disabled={busy}
           className="min-w-0 flex-1 rounded-panel border border-border bg-base min-h-[var(--ui-control-h)] px-2 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent disabled:opacity-50"
         />
-        <button
+        <ActionButton
           type="submit"
           disabled={!url.trim() || !parent.trim() || busy}
-          className="flex shrink-0 items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 min-h-[var(--ui-control-h)] px-3 text-[length:var(--ui-text-body)] text-accent hover:bg-accent/20 disabled:opacity-40"
+          tone="accent"
+          size="md"
+          className="shrink-0"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           {execId ? 'Cloning…' : 'Clone'}
-        </button>
+        </ActionButton>
       </div>
 
       {(startError || failed) && (

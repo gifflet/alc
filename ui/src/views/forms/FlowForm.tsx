@@ -9,6 +9,7 @@ import type { Document } from 'yaml'
 import { Info, Plus, Trash2 } from 'lucide-react'
 import { Checkbox, Field, TextInput } from '../../components/fields'
 import { safeDeleteIn } from '../../lib/yamlDoc'
+import { ActionButton } from '../../components/ActionButton'
 
 type RefKind = 'blueprint' | 'specialist'
 
@@ -132,14 +133,14 @@ export function FlowForm({ value, onChange }: { value: string; onChange: (raw: s
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Stages</h3>
-          <button
-            type="button"
+          <ActionButton
             onClick={addStage}
-            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+            tone="ghost"
+            size="sm"
           >
             <Plus className="h-3 w-3" />
             Add stage
-          </button>
+          </ActionButton>
         </div>
         {stages.length === 0 ? (
           <p className="text-[length:var(--ui-text-body)] text-faint">No stages.</p>

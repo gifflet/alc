@@ -30,6 +30,7 @@ import { EmptyState } from '../components/EmptyState'
 import { Loading } from '../components/primitives'
 import { RunDialog } from './RunDialog'
 import type { RunCommand } from './RunDialog'
+import { ActionButton } from '../components/ActionButton'
 
 // Collections the IDE can launch straight from the editor toolbar.
 const RUN_COMMANDS: Partial<Record<CollectionName, RunCommand>> = {
@@ -188,24 +189,24 @@ function EditorShell({
                 </span>
               )}
               {dirty && <span className="text-[length:var(--ui-text-label)] text-warn">unsaved</span>}
-              <button
-                type="button"
+              <ActionButton
                 onClick={revert}
                 disabled={!dirty}
-                className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted transition-colors duration-120 hover:bg-hover hover:text-primary disabled:opacity-40"
+                tone="ghost"
+                size="sm"
               >
                 <RotateCcw className="h-3 w-3" />
                 Revert
-              </button>
-              <button
-                type="button"
+              </ActionButton>
+              <ActionButton
                 onClick={() => void doSave()}
                 disabled={!dirty || save?.isPending}
-                className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                tone="accent"
+                size="sm"
               >
                 <Save className="h-3 w-3" />
                 Save
-              </button>
+              </ActionButton>
             </>
           )}
         </div>
@@ -332,14 +333,14 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
 
   const runCommand = RUN_COMMANDS[collection]
   const runButton = runCommand ? (
-    <button
-      type="button"
+    <ActionButton
       onClick={() => setRunning(true)}
-      className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 text-[length:var(--ui-text-label)] text-live transition-colors duration-120 hover:bg-live/20"
+      tone="live"
+      size="sm"
     >
       <Play className="h-3 w-3" />
       Run
-    </button>
+    </ActionButton>
   ) : undefined
 
   return (
