@@ -267,3 +267,21 @@ describe('quarantinedFailures', () => {
     expect(quarantinedFailures(withCheck('build', false, false))).toEqual([])
   })
 })
+
+describe('spike marking', () => {
+  it('marks the timeline when the mandate declared itself a spike', () => {
+    const t = buildTimeline([
+      { ts: '1', event: 'mandate_started', blueprint: 'probe', spike: true },
+      { ts: '2', event: 'mandate_finished', success: true },
+    ] as RunEvent[])
+    expect(t.spike).toBe(true)
+  })
+
+  it('leaves a real demand unmarked', () => {
+    const t = buildTimeline([
+      { ts: '1', event: 'mandate_started', blueprint: 'chore' },
+      { ts: '2', event: 'mandate_finished', success: true },
+    ] as RunEvent[])
+    expect(t.spike).toBeUndefined()
+  })
+})

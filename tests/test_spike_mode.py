@@ -576,3 +576,33 @@ class TestFlowRunnerBlocksSpikeCommitCombo:
 
         with pytest.raises(PolicyViolationError, match="mode: spike"):
             runner.run(flow=flow, task="try something risky", workdir=tmp_path)
+
+
+def test_spike_is_marked_on_the_mandate_started_event(tmp_path: Path) -> None:
+    """A reader of the run log must be able to tell a spike from a real demand.
+
+    The spike's checks gate is deliberately relaxed. Without this flag on the
+    event, a spike's verdict reads exactly like a verified change's — selling a
+    guarantee the run never made.
+    """
+    import json
+
+    from alc.events import bind_run_log
+
+    log = tmp_path / "run.jsonl"
+    with bind_run_log(log):
+        execute_mandate(
+            manifest=_MINIMAL_MANIFEST,
+            blueprint=_spike_bp(),
+            directive="# test\ndo it",
+            engine_override="mock",
+            workdir=tmp_path,
+        )
+
+    started = [
+        json.loads(line)
+        for line in log.read_text().splitlines()
+        if json.loads(line)["event"] == "mandate_started"
+    ]
+    assert started, "the spike emitted no mandate_started"
+    assert started[0]["spike"] is True
