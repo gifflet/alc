@@ -5,6 +5,7 @@
 // themes are emitted as CSS variables and the stylesheet picks one, which keeps
 // the light/dark switch free of a second render.
 import { compileMDX } from 'next-mdx-remote/rsc'
+import { Install } from '@/components/landing/Install'
 import rehypePrettyCode from 'rehype-pretty-code'
 import rehypeSlug from 'rehype-slug'
 import rehypeAutolinkHeadings from 'rehype-autolink-headings'
@@ -20,6 +21,9 @@ const prettyCode: PrettyCodeOptions = {
 export async function renderMdx(source: string) {
   const { content } = await compileMDX({
     source,
+    // The only components MDX may reach for. Kept to a short, deliberate list:
+    // a docs page that can render anything is a docs page nobody can review.
+    components: { Install },
     options: {
       mdxOptions: {
         remarkPlugins: [remarkGfm],
