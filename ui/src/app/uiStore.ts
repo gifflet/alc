@@ -54,6 +54,10 @@ export interface UiState {
   density: Density | null
   /** Operator's explicit theme choice; null = follow the OS. */
   theme: Theme | null
+  /** Bumped by every openTab. `activeTabId` alone cannot say "the operator
+   *  navigated": re-opening the tab already in front leaves it unchanged, and a
+   *  mobile sheet that only watches the id stays up covering what was picked. */
+  navSeq: number
 }
 
 const LEFT_MIN = 160
@@ -117,7 +121,7 @@ function createStore() {
 
   function initial(): UiState {
     const panels = loadPanels()
-    return { tabs: [], activeTabId: null, dirty: {}, ...panels }
+    return { tabs: [], activeTabId: null, dirty: {}, navSeq: 0, ...panels }
   }
 
   function persistPanels(s: UiState): void {
@@ -159,7 +163,7 @@ function createStore() {
       const tabs = exists
         ? state.tabs
         : [...state.tabs, { id, title: tab.title, target: tab.target, closable: tab.closable ?? true }]
-      set({ ...state, tabs, activeTabId: id })
+      set({ ...state, tabs, activeTabId: id, navSeq: state.navSeq + 1 })
     },
     closeTab(id: string): void {
       const idx = state.tabs.findIndex((t) => t.id === id)

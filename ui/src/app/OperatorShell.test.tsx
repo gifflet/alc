@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { OperatorShell, destinationFor } from './OperatorShell'
 import { uiStore } from './uiStore'
@@ -119,5 +119,38 @@ describe('OperatorShell — Spike on a phone', () => {
     await userEvent.click(await screen.findByText('Spike'))
 
     expect(await screen.findByRole('dialog')).toHaveTextContent('Spike')
+  })
+})
+
+describe('OperatorShell — a sheet is not a dead end', () => {
+  it('dismisses the project sheet once a file inside it is opened', async () => {
+    // The sheet covers the whole screen. Leaving it up after a pick hides the
+    // very thing the pick was for, and the tap reads as a no-op.
+    renderShell()
+    await userEvent.click(screen.getByLabelText('Project tree'))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'runs' }, title: 'Runs' })
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('dismisses it even when the pick is the tab already in front', async () => {
+    // activeTabId does not change here, which is exactly why the shell watches
+    // navSeq instead.
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'runs' }, title: 'Runs' })
+    })
+    renderShell()
+    await userEvent.click(screen.getByLabelText('Project tree'))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'runs' }, title: 'Runs' })
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })

@@ -57,6 +57,15 @@ export function OperatorShell({
   const active = ui.tabs.find((t) => t.id === ui.activeTabId)
   const canGoBack = ui.tabs.length > 1 || moreOpen
 
+  // Picking something in a sheet is navigation, and a sheet that survives it
+  // covers the very thing it was used to reach — the tap reads as a no-op. Any
+  // openTab while a sheet is up dismisses it. navSeq rather than activeTabId
+  // because re-opening the tab already in front is still a choice the operator
+  // made, and leaves the id unchanged.
+  useEffect(() => {
+    setSheet(null)
+  }, [ui.navSeq])
+
   // Android's system back must feel native: close a sheet, then pop the stack,
   // and only then leave the app. Registered here only, so desktop history is
   // untouched.
