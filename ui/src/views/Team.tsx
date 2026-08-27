@@ -13,6 +13,7 @@ import { useHireArchetype, useRetireMember, useTeam } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { formatCost } from '../lib/format'
 import { formatNetLines } from '../lib/scorecard'
+import { ActionButton } from '../components/ActionButton'
 import { ConfirmDialog } from '../components/Dialog'
 import { Loading, Pill } from '../components/primitives'
 import { StatusDot } from '../components/StatusDot'
@@ -48,15 +49,16 @@ function MemberCard({
             {member.files.length} file{member.files.length === 1 ? '' : 's'}
           </span>
         </div>
-        <button
-          type="button"
+        <ActionButton
           aria-label={`Retire ${member.archetype}`}
           onClick={() => onRetire(member.archetype)}
-          className="flex shrink-0 items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-error"
+          tone="ghost"
+          size="sm"
+          className="shrink-0"
         >
           <UserMinus className="h-3 w-3" />
           Retire
-        </button>
+        </ActionButton>
       </div>
       <ul className="mt-1.5 flex flex-col gap-0.5">
         {member.files.map((f) => (
@@ -216,16 +218,16 @@ export function Team() {
           <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Hire</h2>
           <div className="flex flex-wrap gap-2">
             {available.map((a) => (
-              <button
+              <ActionButton
                 key={a}
-                type="button"
+                tone="accent"
                 onClick={() => doHire(a)}
                 disabled={hire.isPending && hiring === a}
-                className="flex min-h-[var(--ui-control-h)] items-center gap-1.5 rounded-panel border border-accent/60 bg-accent/10 px-2.5.5 text-[length:var(--ui-text-body)] capitalize text-accent transition-colors duration-120 hover:bg-accent/20 disabled:opacity-40"
+                className="capitalize"
               >
                 <UserPlus className="h-3.5 w-3.5" />
                 Hire {a}
-              </button>
+              </ActionButton>
             ))}
           </div>
           {hire.isError && <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{apiMessage(hire.error)}</p>}
