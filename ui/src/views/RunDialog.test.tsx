@@ -28,7 +28,10 @@ describe('RunDialog', () => {
     renderWithProviders(<RunDialog command="run" name="chore" onClose={() => {}} />)
 
     fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'fix the bug' } })
-    await userEvent.click(screen.getByLabelText('Run in an isolated git worktree'))
+    await userEvent.click(screen.getByRole('button', { name: /Options/ }))
+    await userEvent.click(
+      screen.getByLabelText('Work on a separate branch, leaving my files untouched'),
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Run' }))
 
     const post = mock.calls.find((c) => c.method === 'POST' && c.url.includes('/exec'))
@@ -44,6 +47,7 @@ describe('RunDialog', () => {
     renderWithProviders(<RunDialog command="flow" name="ship" onClose={() => {}} />)
 
     fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'ship it' } })
+    await userEvent.click(screen.getByRole('button', { name: /Options/ }))
     await screen.findByRole('option', { name: 'mock (default)' })
     fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'mock' } })
     fireEvent.change(screen.getByLabelText('Tier'), { target: { value: 'deep' } })

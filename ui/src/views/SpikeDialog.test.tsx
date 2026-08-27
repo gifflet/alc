@@ -34,6 +34,7 @@ describe('SpikeDialog', () => {
     renderWithProviders(<SpikeDialog onClose={() => {}} />)
 
     fireEvent.change(await screen.findByLabelText('Task'), { target: { value: 'poke at the API' } })
+    await userEvent.click(screen.getByRole('button', { name: /Options/ }))
     await screen.findByRole('option', { name: 'mock (default)' })
     fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'mock' } })
     await userEvent.click(screen.getByRole('button', { name: 'Run' }))
