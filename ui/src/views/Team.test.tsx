@@ -15,6 +15,21 @@ const emptyHealth = {
   idle_core: [],
 }
 
+/** sweeper is the honest fixture for retire: its pack really does ship a loop,
+ *  so archiving one is a thing that can happen. The old tests retired `builder`
+ *  and asserted a moved sweep.yaml — builder ships no loops at all, so that was
+ *  a scenario the backend could never produce. */
+const memberWithALoop: TeamRoster = {
+  members: [
+    {
+      archetype: 'sweeper',
+      files: ['.alc/blueprints/map.md', '.alc/loops/sweep.yaml'],
+      loops: [{ name: 'sweep', status: 'pending', cycle: 0, stopped_reason: null }],
+    },
+  ],
+  mix_health: emptyHealth,
+}
+
 const oneHiredMember: TeamRoster = {
   members: [
     {
@@ -103,12 +118,12 @@ describe('Team hire', () => {
 describe('Team retire', () => {
   it('retires a member only after confirmation', async () => {
     const mock = installFetch({
-      '/team': oneHiredMember,
       '/team/retire': { moved: ['.alc/loops/retired/sweep.yaml'] },
+      '/team': memberWithALoop,
     })
     renderWithProviders(<Team />)
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Retire builder' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire sweeper' }))
 
     // The confirmation copy makes clear this archives loops, not deletes them.
     expect(await screen.findByText(/archives/i)).toBeInTheDocument()
@@ -121,17 +136,17 @@ describe('Team retire', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retire' }))
 
     const post = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/team/retire'))
-    expect(post?.body).toEqual({ archetype: 'builder' })
+    expect(post?.body).toEqual({ archetype: 'sweeper' })
   })
 
   it('cancelling the confirm dialog never fires the mutation', async () => {
     const mock = installFetch({
-      '/team': oneHiredMember,
       '/team/retire': { moved: [] },
+      '/team': memberWithALoop,
     })
     renderWithProviders(<Team />)
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Retire builder' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire sweeper' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(
@@ -222,5 +237,53 @@ describe('Team Mix Health', () => {
     // Not hired: told to hire it.
     expect(screen.getByText(/not hired/)).toBeInTheDocument()
     expect(screen.getByText(/alc team hire grower/)).toBeInTheDocument()
+  })
+})
+
+describe('Team retire — saying what happened', () => {
+  it('does not offer retire to a member that has no loops', async () => {
+    // builder ships zero loops, so retire could only ever return moved: [] —
+    // a 200 that changes nothing, which read as a broken app.
+    installFetch({ '/team': oneHiredMember })
+    renderWithProviders(<Team />)
+
+    const button = await screen.findByRole('button', { name: 'Retire builder' })
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', expect.stringMatching(/no loops on disk/i))
+  })
+
+  it('reports what was archived, and that the member stays', async () => {
+    installFetch({
+      '/team/retire': { moved: ['.alc/loops/retired/sweep.yaml'] },
+      '/team': memberWithALoop,
+    })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire sweeper' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Retire' }))
+
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(/Archived 1 loop/)
+    expect(status).toHaveTextContent(/stays on the roster/)
+  })
+
+  it('says so when there was nothing to archive', async () => {
+    // The CLI prints "'x' has no loop(s) on disk to retire." The UI used to
+    // print nothing at all and close the dialog.
+    installFetch({ '/team/retire': { moved: [] }, '/team': memberWithALoop })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire sweeper' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Retire' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/nothing to archive/i)
+  })
+
+  it('warns in the confirm that the member is not removed', async () => {
+    installFetch({ '/team': memberWithALoop })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retire sweeper' }))
+    expect(await screen.findByText(/STAYS on the roster/)).toBeInTheDocument()
   })
 })
