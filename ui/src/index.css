@@ -244,6 +244,22 @@
  * loses nothing. Transitions collapse instead of disappearing, because a
  * zero-duration transition still fires transitionend for anything listening.
  */
+/* Hover-reveal is a mouse affordance. A touch screen has no hover, so a control
+   hidden behind it never appears at all — invisible and untappable. Keyboard
+   focus has the same problem, hence focus-within. */
+.alc-reveal {
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.group:hover .alc-reveal,
+.group:focus-within .alc-reveal,
+.alc-reveal:focus-visible {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .alc-reveal { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .alc-pulse,
   .alc-fade-in {

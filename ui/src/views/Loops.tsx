@@ -74,7 +74,7 @@ function LoopRow({ name }: { name: string }) {
           type="button"
           aria-label={`Run cycle ${name}`}
           onClick={() => void runCycle()}
-          className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-live group-hover:opacity-100 disabled:cursor-not-allowed disabled:text-faint disabled:hover:text-faint"
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-live disabled:cursor-not-allowed disabled:text-faint disabled:hover:text-faint"
         >
           <Play className="h-3.5 w-3.5" />
         </button>
@@ -82,7 +82,7 @@ function LoopRow({ name }: { name: string }) {
           type="button"
           aria-label={`Run loop ${name}`}
           onClick={() => setRunning(true)}
-          className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-live group-hover:opacity-100 disabled:cursor-not-allowed disabled:text-faint disabled:hover:text-faint"
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-live disabled:cursor-not-allowed disabled:text-faint disabled:hover:text-faint"
         >
           <Repeat className="h-3.5 w-3.5" />
         </button>

@@ -75,7 +75,7 @@ function ConfigRow({ config, onEdit, onDelete }: {
         type="button"
         aria-label={`Edit ${config.name}`}
         onClick={() => onEdit(config)}
-        className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-primary group-hover:opacity-100"
+        className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-primary"
       >
         <Pencil className="h-3.5 w-3.5" />
       </button>
@@ -83,7 +83,7 @@ function ConfigRow({ config, onEdit, onDelete }: {
         type="button"
         aria-label={`Delete ${config.name}`}
         onClick={() => onDelete(config.name)}
-        className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-error group-hover:opacity-100"
+        className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-error"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>

@@ -75,7 +75,7 @@ function TaskBody({ task }: { task: QueueTask }) {
   )
 }
 
-function DrainDialog({ onClose }: { onClose: () => void }) {
+function DrainDialog({ pending, onClose }: { pending: number; onClose: () => void }) {
   const start = useStartExec()
   const [concurrency, setConcurrency] = useState<number | ''>(1)
   const [saving, setSaving] = useState(false)
@@ -109,7 +109,10 @@ function DrainDialog({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-[length:var(--ui-text-body)] text-muted">Process every pending task once (alc tick), then exit.</p>
+        <p className="text-[length:var(--ui-text-body)] text-muted">
+          Runs {pending === 1 ? 'the 1 pending task' : `all ${pending} pending tasks`} once (alc tick), then
+          exits. One engine turn each.
+        </p>
         <Field label="Concurrency">
           <NumberInput value={concurrency} onChange={setConcurrency} placeholder="1" />
         </Field>
@@ -559,7 +562,7 @@ function PendingRows({
                         e.stopPropagation()
                         onDelete(p.stem)
                       }}
-                      className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-error group-hover:opacity-100"
+                      className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-error"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -629,7 +632,7 @@ export function Queue() {
             <button
               type="button"
               onClick={() => retry.mutate({ all: true })}
-              className="flex items-center gap-1 rounded-panel border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+              className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
             >
               <RotateCcw className="h-3 w-3" />
               Retry all failures
@@ -639,7 +642,7 @@ export function Queue() {
             <button
               type="button"
               onClick={() => setDraining(true)}
-              className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-1 text-[length:var(--ui-text-label)] text-live hover:bg-live/20"
+              className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 text-[length:var(--ui-text-label)] text-live hover:bg-live/20"
             >
               <Play className="h-3 w-3" />
               Drain queue
@@ -710,7 +713,7 @@ export function Queue() {
         />
       )}
 
-      {draining && <DrainDialog onClose={() => setDraining(false)} />}
+      {draining && <DrainDialog pending={pending.length} onClose={() => setDraining(false)} />}
 
       {deleting && (
         <ConfirmDialog

@@ -45,7 +45,7 @@ export function TabBar() {
                     e.stopPropagation()
                     requestClose(tab.id)
                   }}
-                  className="absolute inset-0 flex items-center justify-center rounded text-faint opacity-0 transition-opacity duration-120 hover:bg-hover hover:text-primary group-hover:opacity-100"
+                  className="absolute inset-0 flex items-center justify-center rounded text-faint alc-reveal hover:bg-hover hover:text-primary"
                 >
                   <X className="h-3 w-3" />
                 </button>
