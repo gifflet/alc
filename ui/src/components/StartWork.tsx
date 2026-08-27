@@ -68,10 +68,19 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
     setBusy(true)
     setError(null)
     try {
-      // Nothing else is passed: engine and tier come from the manifest, which
-      // is where the project already declared them. Asking again would be
-      // asking a question whose answer is on file.
-      await start('conduct', { goal: trimmed })
+      // `run chore --isolate`, not `conduct`, for three reasons that only became
+      // clear once the consequences were traced:
+      //
+      //   - conduct's serial path has no isolation at all (dispatch_now calls
+      //     FlowRunner directly), so it edited the operator's working tree and
+      //     left no branch to review, keep or throw away.
+      //   - conduct spends a planning turn before any work, making a beginner's
+      //     first action the most expensive shape of run ALC offers.
+      //   - the README's ladder is Attended → Detached → Conducted, "you don't
+      //     start at the top". Shipping Conducted as move one inverted it.
+      //
+      // Engine and tier are still unasked: the manifest has them.
+      await start('run', { blueprint: 'chore', task: trimmed, isolate: true })
       setGoal('')
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not start.')
@@ -121,12 +130,11 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
           {guarantee.text}
         </p>
         <p className="flex items-start gap-1.5">
-          <FolderGit2 className="mt-[1px] h-3 w-3 shrink-0 text-warn" />
-          {/* Saying only "it is verified" and staying silent about the files is
-              the more dangerous half-truth: someone types into this box the way
-              they type into a search bar, and it edits their repository. */}
-          Edits happen in your working tree, on your current branch — commit or
-          stash anything you do not want touched.
+          <FolderGit2 className="mt-[1px] h-3 w-3 shrink-0 text-faint" />
+          {/* Now true rather than a warning: the work lands on its own branch,
+              which is also what makes reviewing and discarding it possible. */}
+          Work happens on a separate branch. Your files stay as they are until
+          you decide to keep the result.
         </p>
       </div>
 
