@@ -92,3 +92,21 @@ describe('RunOutcome — a quarantined failure', () => {
     expect(screen.getByText(/^Done — this project's checks passed\.$/)).toBeInTheDocument()
   })
 })
+
+describe('RunOutcome — a spike', () => {
+  it('does not sell a spike as a verified change', () => {
+    render(<RunOutcome finished success aborted={false} spike />)
+    expect(screen.getByText('Spike finished.')).toBeInTheDocument()
+    expect(screen.queryByText(/checks passed/)).not.toBeInTheDocument()
+  })
+
+  it('says the gate was relaxed on purpose, not that it was skipped by accident', () => {
+    render(<RunOutcome finished success aborted={false} spike />)
+    expect(screen.getByText(/deliberately relaxed and nothing is landed/)).toBeInTheDocument()
+  })
+
+  it('leaves a real demand verdict alone', () => {
+    render(<RunOutcome finished success aborted={false} />)
+    expect(screen.getByText(/checks passed/)).toBeInTheDocument()
+  })
+})

@@ -115,6 +115,7 @@ export function RunDetail({ stem }: { stem: string }) {
               success={timeline.success}
               aborted={timeline.aborted}
               commitSha={timeline.commitSha}
+              spike={timeline.spike}
               quarantined={quarantinedFailures(timeline)}
               branch={timeline.branch}
               onSeeChanges={(branch) =>

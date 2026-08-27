@@ -56,6 +56,9 @@ export interface Timeline {
    * isolated and actually changed something. Null otherwise — the run either ran
    * against the working tree or made no change worth committing. */
   branch?: string | null
+  /** True when the run was a spike — the one fenced relaxation of the checks
+   *  gate. Its verdict is not the guarantee a real demand's verdict is. */
+  spike?: boolean
   /** Check-defining files (`"path (reason)"`) the run's net diff touched — the
    * always-on tamper-evidence (check_config_edited events). Empty when clean. */
   checkConfigEdits: string[]
@@ -144,6 +147,7 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         }
         timeline.engine = str(event, 'engine') ?? timeline.engine
         timeline.model = str(event, 'model') ?? timeline.model
+        if (event.spike === true) timeline.spike = true
         // Inside a stage the group already exists; otherwise open an implicit one.
         if (current === null || current.kind !== 'stage') {
           openImplicitMandate(blueprint, blueprint)

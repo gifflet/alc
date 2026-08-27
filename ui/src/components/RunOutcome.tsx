@@ -7,7 +7,7 @@
 // This states the outcome in the terms the promise was made in: the checks ran,
 // they passed, and the change is yours to review. The Scorecard stays directly
 // below — this does not replace it, it explains what it means the first time.
-import { AlertTriangle, CheckCircle2, Eye, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Eye, Loader2, XCircle, Zap } from 'lucide-react'
 
 export function RunOutcome({
   finished,
@@ -17,6 +17,7 @@ export function RunOutcome({
   branch,
   onSeeChanges,
   quarantined = [],
+  spike = false,
 }: {
   finished: boolean
   /** null while the run has not reached a verdict yet. */
@@ -29,6 +30,9 @@ export function RunOutcome({
   /** Checks that failed and were quarantined — recorded, but not blocking. The
    *  verdict must name them: "your checks passed" is false while one is red. */
   quarantined?: string[]
+  /** A spike never lands and its checks gate is fenced off. Reporting it in the
+   *  same words as a real demand would sell a guarantee it never made. */
+  spike?: boolean
 }) {
   if (!finished) {
     return (
@@ -61,6 +65,19 @@ export function RunOutcome({
         <p className="text-[length:var(--ui-text-body)] text-muted">
           <span className="text-primary">The checks did not pass.</span> The change was not
           committed and was not merged. The attempts below show what was tried and what failed.
+        </p>
+      </div>
+    )
+  }
+
+  if (spike) {
+    return (
+      <div className="flex items-start gap-2.5 rounded-panel border border-warn/40 bg-warn/5 px-3 py-2.5">
+        <Zap className="mt-[2px] h-4 w-4 shrink-0 text-warn" />
+        <p className="text-[length:var(--ui-text-body)] text-muted">
+          <span className="text-primary">Spike finished.</span> A spike is throwaway
+          exploration: the checks gate is deliberately relaxed and nothing is landed.
+          Read what it found — do not read this as a verified change.
         </p>
       </div>
     )

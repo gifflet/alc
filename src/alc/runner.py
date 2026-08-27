@@ -288,6 +288,10 @@ def execute_mandate(
         task=task,
         engine=engine_name,
         model=model,
+        # A spike is the ONE fenced relaxation of the checks gate. A reader who
+        # cannot tell it apart from a real demand reads its verdict as a
+        # guarantee it never made.
+        spike=blueprint.mode == "spike",
     )
 
     # Resolve effective workdir once so the same value is used for snapshots and the request.
