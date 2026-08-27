@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { aggregateScorecard, buildTimeline, describeEvent } from './runEvents'
+import {
+  aggregateScorecard,
+  buildTimeline,
+  describeEvent,
+  quarantinedFailures,
+} from './runEvents'
 import type { RunEvent } from '../api/types'
 
 // A real single-mandate run (captured from the demo backend).
@@ -28,7 +33,7 @@ describe('buildTimeline — single mandate', () => {
     const g = t.groups[0]
     expect(g.attempts).toHaveLength(1)
     expect(g.attempts[0].actOk).toBe(true)
-    expect(g.attempts[0].checks).toEqual([{ name: 'smoke', passed: true }])
+    expect(g.attempts[0].checks).toEqual([{ name: 'smoke', passed: true, quarantined: false }])
     expect(g.success).toBe(true)
   })
 
@@ -237,5 +242,28 @@ describe('isolation_finished', () => {
       { ts: '2', event: 'isolation_finished', committed: false, branch: null },
     ])
     expect(t.branch).toBeNull()
+  })
+})
+
+describe('quarantinedFailures', () => {
+  const withCheck = (name: string, passed: boolean, quarantined: boolean) =>
+    buildTimeline([
+      { ts: '1', event: 'mandate_started', blueprint: 'chore' },
+      { ts: '2', event: 'check_finished', attempt: 0, name, passed, quarantined },
+      { ts: '3', event: 'mandate_finished', success: true },
+    ] as RunEvent[])
+
+  it('names a failure that was ignored, so the verdict can qualify itself', () => {
+    expect(quarantinedFailures(withCheck('flaky', false, true))).toEqual(['flaky'])
+  })
+
+  it('says nothing about a check that simply passed', () => {
+    expect(quarantinedFailures(withCheck('smoke', true, false))).toEqual([])
+  })
+
+  it('does not claim quarantine for a real, blocking failure', () => {
+    // A blocking failure already fails the run; calling it quarantined would
+    // excuse it.
+    expect(quarantinedFailures(withCheck('build', false, false))).toEqual([])
   })
 })

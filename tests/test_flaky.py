@@ -197,6 +197,38 @@ class TestAssuranceLoopQuarantine:
         assert outcome.passed is False
         assert outcome.quarantined is True
 
+    def test_quarantined_reaches_the_check_finished_event(self, tmp_path: Path) -> None:
+        """The run log must carry it too, not just the report.
+
+        The UI reads events, not RunReport. Without `quarantined` on the event it
+        shows a failed check inside a successful run with nothing joining the two
+        — a green verdict over a red check, which is the one thing the UI must
+        never do.
+        """
+        import json
+
+        from alc.events import bind_run_log
+
+        log = tmp_path / "run.jsonl"
+        loop = AssuranceLoop(
+            engine=MockEngine(),
+            verifier=_always_fail_verifier("flaky-suite"),
+            max_repairs=3,
+            quarantined=["flaky-suite"],
+        )
+        with bind_run_log(log):
+            loop.run(_request(tmp_path), checks=[Check(name="flaky-suite", command=["true"])])
+
+        finished = [
+            json.loads(line)
+            for line in log.read_text().splitlines()
+            if json.loads(line)["event"] == "check_finished"
+        ]
+        flaky = [e for e in finished if e["name"] == "flaky-suite"]
+        assert flaky, "the quarantined check emitted no check_finished"
+        assert all(e["quarantined"] is True for e in flaky)
+        assert all(e["passed"] is False for e in flaky)
+
     def test_quarantined_failure_never_spends_a_repair_turn(self, tmp_path: Path) -> None:
         loop = AssuranceLoop(
             engine=MockEngine(),

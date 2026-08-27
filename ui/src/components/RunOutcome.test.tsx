@@ -74,3 +74,21 @@ describe('RunOutcome — reading the diff', () => {
     expect(screen.queryByRole('button', { name: /See what changed/ })).not.toBeInTheDocument()
   })
 })
+
+describe('RunOutcome — a quarantined failure', () => {
+  it('does not claim every check passed while one is red', () => {
+    render(<RunOutcome finished success aborted={false} quarantined={['flaky-e2e']} />)
+    expect(screen.getByText(/blocking checks passed/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Done — this project's checks passed\.$/)).not.toBeInTheDocument()
+  })
+
+  it('names the check, so the operator can go look at it', () => {
+    render(<RunOutcome finished success aborted={false} quarantined={['flaky-e2e']} />)
+    expect(screen.getByText(/flaky-e2e failed but is quarantined/)).toBeInTheDocument()
+  })
+
+  it('keeps the plain wording when nothing was quarantined', () => {
+    render(<RunOutcome finished success aborted={false} />)
+    expect(screen.getByText(/^Done — this project's checks passed\.$/)).toBeInTheDocument()
+  })
+})
