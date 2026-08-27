@@ -84,6 +84,33 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => expect(api.browseDirectory).toHaveBeenCalledWith(undefined, true))
   })
 
+  it('offers to set ALC up when the directory is not a project yet', async () => {
+    const onAdopt = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <DirectoryBrowser onPick={vi.fn()} onAdopt={onAdopt} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('Set up ALC here')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Set up ALC here'))
+    expect(onAdopt).toHaveBeenCalledWith('/home/dev')
+  })
+
+  it('does not offer setup for a directory that is already a project', async () => {
+    vi.spyOn(api, 'browseDirectory').mockResolvedValue(listing({ is_alc_project: true }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <DirectoryBrowser onPick={vi.fn()} onAdopt={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/Ready to register/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByText('Set up ALC here')).not.toBeInTheDocument()
+  })
+
   it('shows the reason when a directory cannot be read', async () => {
     vi.spyOn(api, 'browseDirectory').mockRejectedValue(new Error('permission denied reading /root'))
     setup()

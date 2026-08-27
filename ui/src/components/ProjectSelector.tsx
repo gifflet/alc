@@ -1,5 +1,5 @@
 // ProjectSelector.tsx — Register / open / deregister projects (overlay panel).
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FolderPlus, FolderSearch, Trash2, X } from 'lucide-react'
 import { ApiError, api } from '../api/client'
@@ -9,6 +9,7 @@ import { CloneForm } from './CloneForm'
 import { NewProjectForm } from './NewProjectForm'
 import { DirectoryBrowser } from './DirectoryBrowser'
 import { EmptyState } from './EmptyState'
+import { useWs } from '../ws/WsProvider'
 import { StatusDot } from './StatusDot'
 
 export function ProjectSelector({
@@ -21,13 +22,41 @@ export function ProjectSelector({
   onSelect: (id: string) => void
 }) {
   const queryClient = useQueryClient()
+  const { client } = useWs()
   const { data: projects, isLoading } = useProjects()
   const [path, setPath] = useState('')
   const [browsing, setBrowsing] = useState(false)
   const [mode, setMode] = useState<'register' | 'clone' | 'new'>('register')
+  const [adoptExec, setAdoptExec] = useState<string | null>(null)
+  const [adoptPath, setAdoptPath] = useState<string | null>(null)
+  const [adoptError, setAdoptError] = useState<string | null>(null)
   const [name, setName] = useState('')
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.projects() })
+
+  const adopt = useMutation({
+    mutationFn: (target: string) => api.adoptDirectory(target),
+    onSuccess: (started) => {
+      setAdoptExec(started.exec_id)
+      setAdoptPath(started.destination)
+      setAdoptError(null)
+    },
+    onError: (err) =>
+      setAdoptError(err instanceof ApiError ? err.message : String(err)),
+  })
+
+  // `alc init` is a subprocess: the field can only be filled once it exits
+  // clean, or the operator registers a directory that has no manifest yet.
+  useEffect(() => {
+    if (!adoptExec || !client) return
+    return client.on((msg) => {
+      if (msg.type === 'exec_finished' && msg.exec_id === adoptExec) {
+        setAdoptExec(null)
+        if (msg.exit_code === 0 && adoptPath) setPath(adoptPath)
+        else setAdoptError(`alc init exited with code ${msg.exit_code}`)
+      }
+    })
+  }, [adoptExec, client, adoptPath])
 
   const add = useMutation({
     mutationFn: () => api.addProject(path.trim(), name.trim() || undefined),
@@ -178,6 +207,7 @@ export function ProjectSelector({
                   setPath(picked)
                   setBrowsing(false)
                 }}
+                onAdopt={(target) => adopt.mutate(target)}
               />
             )}
             <div className="flex gap-2">
@@ -196,6 +226,14 @@ export function ProjectSelector({
                 Register
               </button>
             </div>
+            {adoptExec && (
+              <p className="text-[length:var(--ui-text-label)] text-muted">
+                Setting ALC up in {adoptPath}…
+              </p>
+            )}
+            {adoptError && (
+              <p className="text-[length:var(--ui-text-label)] text-error">{adoptError}</p>
+            )}
             {addError && <p className="text-[length:var(--ui-text-label)] text-error">{addError}</p>}
           </div>
         </form>

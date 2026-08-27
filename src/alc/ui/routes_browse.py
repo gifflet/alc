@@ -102,3 +102,33 @@ def new_project(body: NewProjectRequest, request: Request) -> dict:
         argv=["alc", "init"],
     )
     return {"exec_id": ex.id, "destination": str(destination)}
+
+
+class AdoptRequest(BaseModel):
+    """Body for setting ALC up inside a directory that already holds code."""
+
+    path: str
+
+
+@router.post("/adopt", status_code=202)
+def adopt_directory(body: AdoptRequest, request: Request) -> dict:
+    """Scaffold an Operator Layer inside an existing project.
+
+    The registry refuses a directory with no .alc/manifest.yaml — correctly, since
+    it is not an ALC project yet. But that left the commonest case with no way
+    forward from the UI: a repository full of real code, which is exactly what
+    someone wants to point ALC at first. This runs `alc init` there, after which
+    registering succeeds.
+    """
+    directory = browse.resolve(body.path)
+    if (directory / ".alc" / "manifest.yaml").is_file():
+        raise ApiError(f"'{directory}' is already an ALC project", status=400)
+
+    runs = request.app.state.run_manager
+    ex = runs.start(
+        project_id=None,
+        cwd=str(directory),
+        command=f"alc init in {directory.name}",
+        argv=["alc", "init"],
+    )
+    return {"exec_id": ex.id, "destination": str(directory)}

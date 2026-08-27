@@ -144,6 +144,13 @@ export const api = {
       body: JSON.stringify({ parent, name, git }),
     }),
 
+  /** Scaffold an Operator Layer inside a directory that already holds code. */
+  adoptDirectory: (path: string) =>
+    request<CloneStarted>('/api/fs/adopt', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+
   // Config viewers
   getManifest: (id: string) => request<RawParsed>(`${proj(id)}/manifest`),
   listCollection: (id: string, collection: CollectionName) =>
