@@ -61,3 +61,14 @@ describe('StartWork', () => {
     expect(field()).toHaveValue('keep me')
   })
 })
+
+describe('what it tells you before you press it', () => {
+  it('says where the change lands, not only that it is verified', () => {
+    render(<StartWork />)
+    // Promising verification while staying silent about the files is the more
+    // dangerous half-truth: someone types into this box the way they type into
+    // a search bar, and it edits their repository.
+    expect(screen.getByText(/Edits happen in your working tree/)).toBeInTheDocument()
+    expect(screen.getByText(/commit or stash anything you do not want touched/)).toBeInTheDocument()
+  })
+})

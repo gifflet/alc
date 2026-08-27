@@ -44,6 +44,10 @@ export function RunDialog({
   const [task, setTask] = useState('')
   const [engine, setEngine] = useState('')
   const [tier, setTier] = useState('')
+  // Mirrors `alc run`, where --isolate is opt-in. Enqueue defaults it ON
+  // because unattended work must not touch the operator's tree — same words,
+  // opposite defaults, and both are defensible. Changing this would make the UI
+  // disagree with the CLI, so it stays until that is decided deliberately.
   const [isolate, setIsolate] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -59,6 +59,11 @@ export function Inbox() {
   const land = useLandBranches(id)
   const discard = useDiscardBranches(id)
   const [discarding, setDiscarding] = useState<string | null>(null)
+  // Discard asked before throwing the machine's work away; Land did not ask
+  // before writing it into the repository's history. The protection was on the
+  // wrong side — losing an agent's branch is cheap, and unwinding a merge is
+  // not.
+  const [landing, setLanding] = useState<string | null>(null)
 
   if (isLoading) return <Loading />
   const items = data?.items ?? []
@@ -97,7 +102,7 @@ export function Inbox() {
             icon={GitMerge}
             label="Land"
             disabled={land.isPending}
-            onClick={() => land.mutate({ branches: [item.branch!] })}
+            onClick={() => setLanding(item.branch!)}
           />
           <Action
             icon={Trash2}
@@ -145,6 +150,19 @@ export function Inbox() {
           </li>
         ))}
       </ul>
+
+      {landing && (
+        <ConfirmDialog
+          title="Land branch"
+          message={`Land ${landing} into your current branch? This merges the agent's commits into your history — review the diff first if you have not.`}
+          confirmLabel="Land"
+          onConfirm={() => {
+            land.mutate({ branches: [landing] })
+            setLanding(null)
+          }}
+          onCancel={() => setLanding(null)}
+        />
+      )}
 
       {discarding && (
         <ConfirmDialog

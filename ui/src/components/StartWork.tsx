@@ -13,7 +13,7 @@
 // is verified before it is reported done. That is the whole promise, in the
 // words of the outcome rather than the mechanism.
 import { useState } from 'react'
-import { ArrowRight, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowRight, FolderGit2, Loader2, ShieldCheck } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { useStartExec } from '../app/useStartExec'
 
@@ -72,14 +72,24 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
         </button>
       </div>
 
-      <p className="mt-2.5 flex items-start gap-1.5 text-[length:var(--ui-text-label)] text-faint">
-        <ShieldCheck className="mt-[1px] h-3 w-3 shrink-0 text-live" />
-        {/* The promise in the words of the outcome. "Assurance Loop" is the
-            mechanism; this is what it buys you. */}
-        ALC plans the work, runs it, and runs this project's checks before
-        calling anything done. A change that fails them is never reported as
-        finished.
-      </p>
+      <div className="mt-2.5 flex flex-col gap-1.5 text-[length:var(--ui-text-label)] text-faint">
+        <p className="flex items-start gap-1.5">
+          <ShieldCheck className="mt-[1px] h-3 w-3 shrink-0 text-live" />
+          {/* The promise in the words of the outcome. "Assurance Loop" is the
+              mechanism; this is what it buys you. */}
+          ALC plans the work, runs it, and runs this project's checks before
+          calling anything done. A change that fails them is never reported as
+          finished.
+        </p>
+        <p className="flex items-start gap-1.5">
+          <FolderGit2 className="mt-[1px] h-3 w-3 shrink-0 text-warn" />
+          {/* Saying only "it is verified" and staying silent about the files is
+              the more dangerous half-truth: someone types into this box the way
+              they type into a search bar, and it edits their repository. */}
+          Edits happen in your working tree, on your current branch — commit or
+          stash anything you do not want touched.
+        </p>
+      </div>
 
       {error && <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{error}</p>}
     </div>
