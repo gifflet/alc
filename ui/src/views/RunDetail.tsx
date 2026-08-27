@@ -15,6 +15,7 @@ import { buildTimeline, describeEvent } from '../lib/runEvents'
 import type { RunEvent } from '../api/types'
 import { TimelineView } from '../components/Timeline'
 import { Metric, Pill } from '../components/primitives'
+import { RunOutcome } from '../components/RunOutcome'
 import { StatusDot } from '../components/StatusDot'
 import { EmptyState } from '../components/EmptyState'
 
@@ -104,6 +105,17 @@ export function RunDetail({ stem }: { stem: string }) {
               </ul>
             </div>
           )}
+
+          {/* The verdict before the numbers. Someone who reads Scorecards loses
+              nothing; someone who does not gets the answer they came for. */}
+          <div className="mt-4">
+            <RunOutcome
+              finished={timeline.finished}
+              success={timeline.success}
+              aborted={timeline.aborted}
+              commitSha={timeline.commitSha}
+            />
+          </div>
 
           <TimelineView timeline={timeline} />
 
