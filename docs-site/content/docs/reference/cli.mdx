@@ -336,6 +336,7 @@ Serve the local web IDE. Requires the optional `ui` extra.
 | Flag | Default | Effect |
 |---|---|---|
 | `--host H` | `127.0.0.1` | Host to bind |
+| `--lan` | off | Bind every interface and print the address to type on another device. Mutually exclusive with `--host` |
 | `--port P` | `8642` | Port to bind |
 | `--ui-dist PATH` | none | Explicit directory of a built frontend to serve. Falls back to `ALC_UI_DIST`, then the bundled build, then API-only |
 | `--no-ui` | off | Serve only the API and WebSocket |
