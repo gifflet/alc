@@ -91,3 +91,23 @@ jobs:
           gh release create "v${{ steps.version.outputs.version }}" dist/* \
             --title "v${{ steps.version.outputs.version }}" \
             --generate-notes
+
+      # The docs site renders /changelog from the GitHub Releases API, and Vercel
+      # builds on push — which happens minutes BEFORE the release above exists.
+      # Without this the site is built against a release that is not there yet,
+      # and the new version only appears on the next ISR revalidation, up to an
+      # hour later. Rebuild now that there is something to read.
+      #
+      # No secret configured -> skipped, not failed: a fork has no hook and this
+      # is not a reason to fail a release that already published.
+      - name: Rebuild the docs site now the release exists
+        if: steps.version.outputs.released == 'false'
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "VERCEL_DEPLOY_HOOK_URL not set — skipping the docs rebuild."
+            echo "The changelog will pick this release up on its next revalidation (up to 1h)."
+            exit 0
+          fi
+          curl -sS -X POST "$HOOK" -o /dev/null -w 'deploy hook: HTTP %{http_code}\n'
