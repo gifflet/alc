@@ -10,6 +10,7 @@ import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
 import { Dialog, DialogButton } from '../components/Dialog'
 import { Checkbox, Field, Select, TextArea } from '../components/fields'
+import { MoreOptions } from '../components/MoreOptions'
 
 export type RunCommand = 'run' | 'flow' | 'specialist'
 
@@ -91,24 +92,35 @@ export function RunDialog({
           <TextArea value={task} onChange={setTask} rows={5} placeholder="Describe the task…" />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Engine">
-            <Select value={engine} onChange={setEngine} options={engineOptions} />
-          </Field>
-          {advanced && (
-            <Field label="Tier">
-              <Select
-                value={tier}
-                onChange={setTier}
-                options={[{ value: '', label: 'default' }, ...tiers.map((t) => ({ value: t, label: t }))]}
-              />
+        {/* Each of these has a correct default in the manifest. Asking all
+            three at the weight of the task turns one question into four,
+            three of which need vocabulary the person may not have. */}
+        <MoreOptions hint="engine, compute tier, isolation">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Engine" hint="Which coding agent does the work">
+              <Select value={engine} onChange={setEngine} options={engineOptions} />
             </Field>
-          )}
-        </div>
+            {advanced && (
+              <Field label="Tier" hint="How much model to spend on it">
+                <Select
+                  value={tier}
+                  onChange={setTier}
+                  options={[{ value: '', label: 'default' }, ...tiers.map((t) => ({ value: t, label: t }))]}
+                />
+              </Field>
+            )}
+          </div>
 
-        {advanced && (
-          <Checkbox checked={isolate} onChange={setIsolate} label="Run in an isolated git worktree" />
-        )}
+          {advanced && (
+            // Named as what it does to your files, which is the part that
+            // matters before you press the button.
+            <Checkbox
+              checked={isolate}
+              onChange={setIsolate}
+              label="Work on a separate branch, leaving my files untouched"
+            />
+          )}
+        </MoreOptions>
 
         {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>

@@ -7,11 +7,17 @@ const INPUT =
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">{label}</span>
-      {children}
+    <div className="flex flex-col gap-1">
+      {/* The hint sits outside the <label> on purpose. Inside it, it becomes
+          part of the control's accessible name — a screen reader would announce
+          "Engine Which coding agent does the work" as the field's name instead
+          of describing it. */}
+      <label className="flex flex-col gap-1">
+        <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">{label}</span>
+        {children}
+      </label>
       {hint && <span className="text-[length:var(--ui-text-label)] text-faint">{hint}</span>}
-    </label>
+    </div>
   )
 }
 

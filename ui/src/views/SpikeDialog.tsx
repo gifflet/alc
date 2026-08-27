@@ -9,6 +9,7 @@ import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
 import { Dialog, DialogButton } from '../components/Dialog'
 import { Field, Select, TextArea } from '../components/fields'
+import { MoreOptions } from '../components/MoreOptions'
 
 export function SpikeDialog({ onClose }: { onClose: () => void }) {
   const id = useProjectId()
@@ -64,9 +65,11 @@ export function SpikeDialog({ onClose }: { onClose: () => void }) {
           <TextArea value={task} onChange={setTask} rows={5} placeholder="Describe the spike…" />
         </Field>
 
-        <Field label="Engine">
-          <Select value={engine} onChange={setEngine} options={engineOptions} />
-        </Field>
+        <MoreOptions hint="engine">
+          <Field label="Engine" hint="Which coding agent does the work">
+            <Select value={engine} onChange={setEngine} options={engineOptions} />
+          </Field>
+        </MoreOptions>
 
         {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
