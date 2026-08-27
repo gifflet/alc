@@ -137,7 +137,7 @@ export function Compare() {
         <button
           type="button"
           onClick={() => setExploring(true)}
-          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+          className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
         >
           <Sparkles className="h-3 w-3" />
           Explore

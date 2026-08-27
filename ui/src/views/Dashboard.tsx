@@ -102,7 +102,7 @@ function LinkButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="text-[length:var(--ui-text-label)] text-accent transition-colors duration-120 hover:underline"
+      className="inline-flex min-h-[var(--ui-control-h)] items-center px-1 text-[length:var(--ui-text-label)] text-accent transition-colors duration-120 hover:underline"
     >
       open
     </button>
@@ -124,7 +124,7 @@ function RunsCard() {
               <button
                 type="button"
                 onClick={() => uiStore.openTab({ target: { type: 'run', stem: r.stem }, title: r.stem })}
-                className="flex h-[26px] w-full items-center gap-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
+                className="flex min-h-[var(--ui-row-h)] w-full items-center gap-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
               >
                 <StatusDot tone={r.finished ? 'idle' : 'running'} pulse={!r.finished} />
                 <span className="w-10 font-mono text-[length:var(--ui-text-label)] text-faint">{r.kind}</span>
@@ -235,7 +235,7 @@ function AuditCard() {
           aria-label="Audit window"
           value={since}
           onChange={(e) => setSince(e.target.value as AuditWindowOption)}
-          className="rounded-panel border border-border bg-base px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
+          className="min-h-[var(--ui-control-h)] rounded-panel border border-border bg-base px-1.5 text-[length:var(--ui-text-label)] text-primary outline-none focus:border-accent"
         >
           {AUDIT_WINDOWS.map((w) => (
             <option key={w} value={w}>

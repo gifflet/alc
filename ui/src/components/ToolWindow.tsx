@@ -51,7 +51,7 @@ function SectionShell({
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <div>
-      <div className="group/section flex h-[var(--ui-row-h)] w-full items-center gap-1 px-2 text-[length:var(--ui-text-body)] text-muted transition-colors duration-120 hover:bg-hover">
+      <div className="group group/section flex h-[var(--ui-row-h)] w-full items-center gap-1 px-2 text-[length:var(--ui-text-body)] text-muted transition-colors duration-120 hover:bg-hover">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -65,7 +65,7 @@ function SectionShell({
           type="button"
           aria-label={`New ${label}`}
           onClick={onCreate}
-          className="flex h-4 w-4 items-center justify-center text-faint opacity-0 transition-opacity duration-120 hover:text-primary group-hover/section:opacity-100"
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-primary"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -223,7 +223,7 @@ function CollectionSection({
                     type="button"
                     aria-label={`Run ${leaf.name}`}
                     onClick={() => setRunning(leaf.name)}
-                    className="flex h-4 w-4 items-center justify-center text-faint hover:text-live"
+                    className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-live"
                   >
                     <Play className="h-3.5 w-3.5" />
                   </button>
@@ -234,7 +234,7 @@ function CollectionSection({
                       type="button"
                       aria-label={`Run cycle ${leaf.name}`}
                       onClick={() => void start('cycle', { name: leaf.name }).catch(() => {})}
-                      className="flex h-4 w-4 items-center justify-center text-faint hover:text-live"
+                      className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-live"
                     >
                       <Play className="h-3.5 w-3.5" />
                     </button>
@@ -242,7 +242,7 @@ function CollectionSection({
                       type="button"
                       aria-label={`Run loop ${leaf.name}`}
                       onClick={() => setRunning(leaf.name)}
-                      className="flex h-4 w-4 items-center justify-center text-faint hover:text-live"
+                      className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-live"
                     >
                       <Repeat className="h-3.5 w-3.5" />
                     </button>
@@ -252,7 +252,7 @@ function CollectionSection({
                   type="button"
                   aria-label={`Delete ${leaf.name}`}
                   onClick={() => setDeleting(leaf.name)}
-                  className="flex h-4 w-4 items-center justify-center text-faint hover:text-error"
+                  className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-error"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -331,7 +331,7 @@ function PromptsSection() {
           aria-label={`Eject ${p.name}`}
           title="Eject default to override"
           onClick={() => eject.mutate(p.name, { onSuccess: () => openTab(p.name) })}
-          className="flex h-4 w-4 items-center justify-center text-faint hover:text-accent"
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-accent"
         >
           <FileUp className="h-3.5 w-3.5" />
         </button>
@@ -342,7 +342,7 @@ function PromptsSection() {
         type="button"
         aria-label={`Delete ${p.name}`}
         onClick={() => setDeleting(p.name)}
-        className="flex h-4 w-4 items-center justify-center text-faint hover:text-error"
+        className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-error"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>

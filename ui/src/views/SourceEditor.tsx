@@ -335,7 +335,7 @@ function CollectionEditor({ collection, name }: { collection: CollectionName; na
     <button
       type="button"
       onClick={() => setRunning(true)}
-      className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 py-0.5 text-[length:var(--ui-text-label)] text-live transition-colors duration-120 hover:bg-live/20"
+      className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-2 text-[length:var(--ui-text-label)] text-live transition-colors duration-120 hover:bg-live/20"
     >
       <Play className="h-3 w-3" />
       Run

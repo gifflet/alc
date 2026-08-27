@@ -208,7 +208,7 @@ function BranchesSection() {
             aria-label={`Land ${b.name}`}
             onClick={() => doLand(b.name)}
             disabled={land.isPending}
-            className="flex items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-live/50 bg-live/10 px-1.5 text-[length:var(--ui-text-label)] text-live hover:bg-live/20 disabled:opacity-40"
           >
             <GitMerge className="h-3 w-3" />
             Land
@@ -217,7 +217,7 @@ function BranchesSection() {
             type="button"
             aria-label={`Discard ${b.name}`}
             onClick={() => setDiscarding(b.name)}
-            className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-error"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-1.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-error"
           >
             <Trash2 className="h-3 w-3" />
             Discard
@@ -354,7 +354,7 @@ function SignalsSection() {
         <button
           type="button"
           onClick={() => setIngesting(true)}
-          className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+          className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-1.5 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
         >
           <Plus className="h-3 w-3" />
           Ingest signal
@@ -464,7 +464,7 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                           e.stopPropagation()
                           onRetry(d.stem)
                         }}
-                        className="flex items-center gap-1 rounded-panel border border-border px-1.5 py-0.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
+                        className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-border px-1.5 text-[length:var(--ui-text-label)] text-muted hover:bg-hover hover:text-primary"
                       >
                         <RotateCcw className="h-3 w-3" />
                         retry
@@ -651,7 +651,7 @@ export function Queue() {
           <button
             type="button"
             onClick={() => setEnqueuing(true)}
-            className="flex items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+            className="flex min-h-[var(--ui-control-h)] items-center gap-1 rounded-panel border border-accent/60 bg-accent/10 px-2 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
           >
             <Plus className="h-3 w-3" />
             Enqueue task

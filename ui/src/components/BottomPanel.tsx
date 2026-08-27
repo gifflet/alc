@@ -114,7 +114,7 @@ export function BottomPanel() {
           type="button"
           aria-label="Collapse panel"
           onClick={() => uiStore.toggleBottom()}
-          className="ml-auto flex h-6 w-6 items-center justify-center text-faint transition-colors duration-120 hover:text-primary"
+          className="ml-auto flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint transition-colors duration-120 hover:text-primary"
         >
           <ChevronDown className="h-4 w-4" />
         </button>

@@ -103,7 +103,7 @@ export function ProjectSelector({
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center text-faint hover:text-primary"
+            className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-primary"
           >
             <X className="h-4 w-4" />
           </button>
