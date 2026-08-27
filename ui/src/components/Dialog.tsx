@@ -48,7 +48,7 @@ export function Dialog({
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center text-faint hover:text-primary"
+            className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-primary"
           >
             <X className="h-4 w-4" />
           </button>
@@ -87,7 +87,7 @@ export function DialogButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-panel border px-3 py-1.5 text-[length:var(--ui-text-body)] transition-colors duration-120 disabled:opacity-40 ${styles}`}
+      className={`inline-flex min-h-[var(--ui-control-h)] items-center rounded-panel border px-3 text-[length:var(--ui-text-body)] transition-colors duration-120 disabled:opacity-40 ${styles}`}
     >
       {children}
     </button>

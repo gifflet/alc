@@ -8,6 +8,7 @@ import { useProjectId } from '../app/ProjectContext'
 import { useStartExec } from '../app/useStartExec'
 import { Dialog, DialogButton } from '../components/Dialog'
 import { Checkbox, Field, NumberInput, Select, TextArea } from '../components/fields'
+import { RunCost, runCount } from '../components/RunCost'
 
 // Toggle membership of `value` in a string list — the same pattern
 // EnqueueDialog uses for its "Depends on" checkbox group.
@@ -59,6 +60,11 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const total = runCount(
+    variants === '' ? 1 : variants,
+    selectedEngines.length,
+    selectedTiers.length,
+  )
   const canSubmit = Boolean(blueprint && task.trim() && (variants === '' || variants >= 1))
 
   return (
@@ -133,6 +139,7 @@ export function ExploreDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        <RunCost count={total} />
         {error && <p className="text-[length:var(--ui-text-label)] text-error">{error}</p>}
       </div>
     </Dialog>
