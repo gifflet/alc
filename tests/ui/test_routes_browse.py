@@ -141,3 +141,35 @@ def test_new_project_refuses_a_name_that_escapes_the_parent(client, tmp_path):
     assert response.status_code == 400
     # Nothing should have been created outside the parent.
     assert not (tmp_path.parent / "escape").exists()
+
+
+def test_adopt_scaffolds_alc_into_an_existing_repository(client, tmp_path):
+    """The commonest first move is pointing ALC at a repository that already has
+    code. The registry refuses it until .alc/ exists, so the UI needs a way to
+    create it without sending the user to a terminal."""
+    project = tmp_path / "real-work"
+    project.mkdir()
+    (project / "main.py").write_text("print('code')\n")
+
+    response = client.post("/api/fs/adopt", json={"path": str(project)})
+
+    assert response.status_code == 202
+    assert response.json()["destination"] == str(project.resolve())
+
+
+def test_adopt_refuses_a_directory_that_is_already_a_project(client, tmp_path):
+    project = tmp_path / "already"
+    (project / ".alc").mkdir(parents=True)
+    (project / ".alc" / "manifest.yaml").write_text("version: 1\n")
+
+    response = client.post("/api/fs/adopt", json={"path": str(project)})
+
+    assert response.status_code == 400
+    assert "already an ALC project" in response.json()["detail"]
+
+
+def test_adopt_refuses_a_path_that_is_not_a_directory(client, tmp_path):
+    target = tmp_path / "file.txt"
+    target.write_text("x")
+
+    assert client.post("/api/fs/adopt", json={"path": str(target)}).status_code == 400

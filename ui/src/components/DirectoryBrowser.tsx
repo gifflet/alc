@@ -15,10 +15,15 @@ import type { DirectoryListing } from '../api/types'
 
 export function DirectoryBrowser({
   onPick,
+  onAdopt,
   className = '',
 }: {
   /** Called with the absolute path of the directory the operator settles on. */
   onPick: (path: string) => void
+  /** Offered when the chosen directory holds code but is not an ALC project
+   *  yet. Without this the operator picks it, tries to register, and is told
+   *  "not an ALC project" with nowhere to go from there. */
+  onAdopt?: (path: string) => void
   className?: string
 }) {
   // undefined means "wherever the server calls home" — the browser opens
@@ -136,18 +141,29 @@ export function DirectoryBrowser({
         <div className="flex items-center justify-between gap-2 border-t border-border bg-raised px-2 py-1.5">
           <span className="truncate text-[length:var(--ui-text-label)] text-faint">
             {data.is_alc_project
-              ? 'This directory is an ALC project.'
+              ? 'Ready to register — this is an ALC project.'
               : data.is_git_repo
-                ? 'A git repository, not yet an ALC project.'
+                ? 'A git repository. Set ALC up here to start using it.'
                 : 'Pick this directory, or open one below.'}
           </span>
-          <button
-            type="button"
-            onClick={() => onPick(data.path)}
-            className="shrink-0 rounded-xs border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-primary hover:bg-hover"
-          >
-            Use this directory
-          </button>
+          <div className="flex shrink-0 gap-1.5">
+            {onAdopt && !data.is_alc_project && (
+              <button
+                type="button"
+                onClick={() => onAdopt(data.path)}
+                className="rounded-xs border border-accent/60 bg-accent/10 px-2 py-1 text-[length:var(--ui-text-label)] text-accent hover:bg-accent/20"
+              >
+                Set up ALC here
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onPick(data.path)}
+              className="rounded-xs border border-border px-2 py-1 text-[length:var(--ui-text-label)] text-primary hover:bg-hover"
+            >
+              Use this directory
+            </button>
+          </div>
         </div>
       )}
     </div>
