@@ -49,12 +49,22 @@ function MemberCard({
             {member.files.length} file{member.files.length === 1 ? '' : 's'}
           </span>
         </div>
+        {/* Retire archives a member's LOOPS and nothing else. Three of the five
+            packs ship no loop at all, so for them the button could never do
+            anything — it returned 200 with an empty result and the operator was
+            left to conclude the app was broken. Say why instead. */}
         <ActionButton
           aria-label={`Retire ${member.archetype}`}
           onClick={() => onRetire(member.archetype)}
           tone="ghost"
           size="sm"
           className="shrink-0"
+          disabled={member.loops.length === 0}
+          title={
+            member.loops.length === 0
+              ? `${member.archetype} has no loops on disk — retiring archives loops, and there are none`
+              : undefined
+          }
         >
           <UserMinus className="h-3 w-3" />
           Retire
@@ -172,6 +182,7 @@ export function Team() {
   const retire = useRetireMember(id)
   const [hiring, setHiring] = useState<string | null>(null)
   const [retiring, setRetiring] = useState<string | null>(null)
+  const [retired, setRetired] = useState<string | null>(null)
 
   if (isLoading) return <Loading />
 
@@ -187,7 +198,22 @@ export function Team() {
 
   const confirmRetire = () => {
     if (!retiring) return
-    retire.mutate(retiring, { onSuccess: () => setRetiring(null) })
+    const who = retiring
+    retire.mutate(who, {
+      onSuccess: (result) => {
+        setRetiring(null)
+        // The CLI says "Retired 'x': <paths>" or "'x' has no loop(s) on disk to
+        // retire." The UI said nothing at all — the dialog closed, the roster
+        // was unchanged, and a 200 looked like a broken app. Say the same thing.
+        const n = result.moved.length
+        setRetired(
+          n === 0
+            ? `${who} had no loops on disk — nothing to archive.`
+            : `Archived ${n === 1 ? "1 loop" : `${n} loops`} from ${who} into loops/retired/. ` +
+              `${who} stays on the roster: its blueprints, flows and specialists are untouched.`,
+        )
+      },
+    })
   }
 
   return (
@@ -210,6 +236,11 @@ export function Team() {
         )}
         {apiMessage(retire.error) && (
           <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{apiMessage(retire.error)}</p>
+        )}
+        {retired && !retire.error && (
+          <p className="mt-2 text-[length:var(--ui-text-label)] text-muted" role="status">
+            {retired}
+          </p>
         )}
       </section>
 
@@ -242,7 +273,7 @@ export function Team() {
       {retiring && (
         <ConfirmDialog
           title={`Retire ${retiring}?`}
-          message={`This archives ${retiring}'s loop(s) into loops/retired/ — it does not delete anything, and ${retiring} can be re-hired later.`}
+          message={`This archives ${retiring}'s loop(s) into loops/retired/. Nothing is deleted, and ${retiring} STAYS on the roster — its blueprints, flows and specialists are left alone.`}
           confirmLabel="Retire"
           onConfirm={confirmRetire}
           onCancel={() => setRetiring(null)}
