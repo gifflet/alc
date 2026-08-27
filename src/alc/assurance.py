@@ -231,6 +231,7 @@ class AssuranceLoop:
                     timed_out=refresh_failure.timed_out,
                     duration_s=refresh_failure.duration_s,
                     exit_code=refresh_failure.exit_code,
+                    quarantined=refresh_failure.name in self._quarantined,
                 )
             else:
                 # Emit check_started/check_finished in REAL TIME (per check) so a slow or
@@ -251,6 +252,10 @@ class AssuranceLoop:
                         timed_out=cr.timed_out,
                         duration_s=cr.duration_s,
                         exit_code=cr.exit_code,
+                        # Without this the log shows a check that failed and a run
+                        # that succeeded, with nothing joining the two — the UI
+                        # cannot tell an ignored failure from a false green.
+                        quarantined=cr.name in self._quarantined,
                     ),
                 )
             # Synthetic guards run AFTER the Verifier and have no subprocess of
@@ -271,6 +276,7 @@ class AssuranceLoop:
                     timed_out=synthetic.timed_out,
                     duration_s=synthetic.duration_s,
                     exit_code=synthetic.exit_code,
+                    quarantined=synthetic.name in self._quarantined,
                 )
             failed = [cr for cr in check_results if not cr.passed]
             # A quarantined check still RUNS and its failure is fully recorded

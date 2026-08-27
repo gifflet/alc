@@ -11,7 +11,7 @@ import { keys } from '../api/keys'
 import { useRunArtifacts } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useWs } from '../ws/WsProvider'
-import { buildTimeline, describeEvent } from '../lib/runEvents'
+import { buildTimeline, describeEvent, quarantinedFailures } from '../lib/runEvents'
 import type { RunEvent } from '../api/types'
 import { TimelineView } from '../components/Timeline'
 import { Metric, Pill } from '../components/primitives'
@@ -115,6 +115,7 @@ export function RunDetail({ stem }: { stem: string }) {
               success={timeline.success}
               aborted={timeline.aborted}
               commitSha={timeline.commitSha}
+              quarantined={quarantinedFailures(timeline)}
               branch={timeline.branch}
               onSeeChanges={(branch) =>
                 uiStore.openTab({ target: { type: 'review', branch }, title: branch })

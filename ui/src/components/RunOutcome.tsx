@@ -16,6 +16,7 @@ export function RunOutcome({
   commitSha,
   branch,
   onSeeChanges,
+  quarantined = [],
 }: {
   finished: boolean
   /** null while the run has not reached a verdict yet. */
@@ -25,6 +26,9 @@ export function RunOutcome({
   /** The branch the change landed on, when the run was isolated and committed. */
   branch?: string | null
   onSeeChanges?: (branch: string) => void
+  /** Checks that failed and were quarantined — recorded, but not blocking. The
+   *  verdict must name them: "your checks passed" is false while one is red. */
+  quarantined?: string[]
 }) {
   if (!finished) {
     return (
@@ -67,7 +71,14 @@ export function RunOutcome({
       <div className="flex items-start gap-2.5 rounded-panel border border-live/40 bg-live/5 px-3 py-2.5">
         <CheckCircle2 className="mt-[2px] h-4 w-4 shrink-0 text-live" />
         <p className="text-[length:var(--ui-text-body)] text-muted">
-          <span className="text-primary">Done — this project's checks passed.</span>{' '}
+          <span className="text-primary">
+            {quarantined.length > 0
+              ? "Done — this project's blocking checks passed."
+              : "Done — this project's checks passed."}
+          </span>{' '}
+          {quarantined.length > 0
+            ? `${quarantined.join(', ')} failed but ${quarantined.length === 1 ? 'is' : 'are'} quarantined, so ${quarantined.length === 1 ? 'it' : 'they'} did not block this. `
+            : ''}
           {commitSha ? 'The change is committed. ' : ''}
           {/* The one thing ALC deliberately does not do. Saying it here is the
               difference between a tool that is trusted and one that is trusted

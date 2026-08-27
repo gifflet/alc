@@ -12,6 +12,10 @@ import type { RunEvent, Scorecard } from '../api/types'
 export interface TimelineCheck {
   name: string
   passed: boolean
+  /** A quarantined check runs and its failure is recorded, but it does not block
+   *  success. Without this the timeline shows a failed check inside a successful
+   *  run and leaves the reader to guess why. */
+  quarantined: boolean
 }
 
 export interface TimelineAttempt {
@@ -186,6 +190,7 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         getAttempt(group, num(event, 'attempt')).checks.push({
           name: str(event, 'name') ?? '',
           passed: event.passed === true,
+            quarantined: event.quarantined === true,
         })
         break
       }
@@ -321,4 +326,18 @@ export function describeEvent(event: RunEvent): string {
     default:
       return event.event
   }
+}
+
+/** Names of checks that FAILED but were quarantined, from the run's last attempt.
+ *
+ * A run can report success with a failed check in its log — that is the whole
+ * point of quarantine. Saying "your checks passed" without naming them is the
+ * one thing the UI must not do, so the verdict reads this and qualifies itself.
+ * Only the last attempt counts: an earlier attempt's failure was repaired.
+ */
+export function quarantinedFailures(timeline: Timeline): string[] {
+  const attempts = timeline.groups.flatMap((g) => g.attempts)
+  const last = attempts[attempts.length - 1]
+  if (!last) return []
+  return last.checks.filter((c) => !c.passed && c.quarantined).map((c) => c.name)
 }
