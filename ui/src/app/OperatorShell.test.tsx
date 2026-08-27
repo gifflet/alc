@@ -108,3 +108,16 @@ describe('OperatorShell', () => {
     expect(screen.queryByLabelText('Back')).toBeNull()
   })
 })
+
+describe('OperatorShell — Spike on a phone', () => {
+  it('offers Spike from More, the one place a phone can reach an action', async () => {
+    // Spike has no bottom tab and no view to open, so without this row the phone
+    // simply cannot start one. The desktop rail always could.
+    renderShell()
+
+    await userEvent.click(screen.getByRole('button', { name: /More/ }))
+    await userEvent.click(await screen.findByText('Spike'))
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Spike')
+  })
+})

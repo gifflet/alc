@@ -3,7 +3,7 @@
 // The phone keeps five resident destinations; the rest stay reachable here
 // rather than being cut. Config is included because reading a Blueprint is a
 // legitimate phone task — editing it is not (SourceEditor is read-only there).
-import { ChevronRight, SunMoon } from 'lucide-react'
+import { ChevronRight, SunMoon, Zap } from 'lucide-react'
 import {
   FileCog,
   GitCompare,
@@ -49,7 +49,7 @@ const VIEW_TITLE: Record<string, string> = {
   'run-configs': 'Run Configurations',
 }
 
-export function More() {
+export function More({ onOpenSpike }: { onOpenSpike?: () => void }) {
   const theme = useTheme()
   return (
     <div className="h-full overflow-auto">
@@ -72,6 +72,27 @@ export function More() {
             </button>
           </li>
         ))}
+        {/* Spike is an action, not a destination, so it has no bottom tab and
+            no view to open. Without this row the phone simply cannot start one —
+            a capability the desktop rail has always had. */}
+        {onOpenSpike && (
+          <li>
+            <button
+              type="button"
+              onClick={onOpenSpike}
+              className="flex min-h-[var(--ui-rail-btn)] w-full items-center gap-3 border-b border-border/15 px-[var(--ui-pad-x)] py-2 text-left hover:bg-hover"
+            >
+              <Zap className="h-5 w-5 shrink-0 text-faint" strokeWidth={1.75} />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[length:var(--ui-text-body)] text-primary">Spike</span>
+                <span className="truncate text-[length:var(--ui-text-label)] text-faint">
+                  Throwaway exploration — never lands
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+            </button>
+          </li>
+        )}
         <li>
           <button
             type="button"

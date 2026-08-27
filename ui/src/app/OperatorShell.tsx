@@ -15,6 +15,7 @@ import { Boxes, ChevronLeft, FolderTree, SquareTerminal } from 'lucide-react'
 import { BottomPanel } from '../components/BottomPanel'
 import { BottomTabBar } from '../components/BottomTabBar'
 import { Sheet } from '../components/Sheet'
+import { SpikeDialog } from '../views/SpikeDialog'
 import { StatusDot } from '../components/StatusDot'
 import { ToolWindow } from '../components/ToolWindow'
 import { useInbox } from '../api/hooks'
@@ -51,6 +52,7 @@ export function OperatorShell({
   const { status } = useWs()
   const [sheet, setSheet] = useState<SheetName>(null)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [spikeOpen, setSpikeOpen] = useState(false)
 
   const active = ui.tabs.find((t) => t.id === ui.activeTabId)
   const canGoBack = ui.tabs.length > 1 || moreOpen
@@ -148,7 +150,7 @@ export function OperatorShell({
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden bg-base">
-        {moreOpen ? <More /> : <TabContent />}
+        {moreOpen ? <More onOpenSpike={() => setSpikeOpen(true)} /> : <TabContent />}
       </main>
 
       <BottomTabBar
@@ -169,6 +171,8 @@ export function OperatorShell({
           </div>
         </Sheet>
       )}
+
+      {spikeOpen && <SpikeDialog onClose={() => setSpikeOpen(false)} />}
     </div>
   )
 }
