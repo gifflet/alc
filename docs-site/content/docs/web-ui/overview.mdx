@@ -8,6 +8,7 @@ order: 1
 ```bash
 uv tool install "alc-runtime[ui]"
 alc ui                            # http://127.0.0.1:8642
+alc ui --lan                      # also reachable from other devices on your network
 ```
 
 Everything updates in real time over a WebSocket. No refresh, ever.
@@ -17,6 +18,8 @@ Everything updates in real time over a WebSocket. No refresh, ever.
 On a desktop it is an IDE: an activity rail, a project tree, tabs, a bottom Console and Problems panel, a status bar, a command palette on `Cmd+K` and a shortcuts dialog on `?`.
 
 On a phone it collapses to five bottom-tab destinations — Home, Inbox, Fleet, Queue, More — with everything else behind More. Config files are **read-only** on the narrow layout, deliberately: reading a Blueprint is a legitimate phone task; editing one is not.
+
+Either layout can run on a machine other than the one serving it. `alc ui --lan` binds every interface and prints the address to type on the other device — a second laptop, a desktop, a tablet, a phone — so you never have to go looking for your own IP. Put a `--token` on it unless the network is one you trust; see [Running and access](/docs/web-ui/access).
 
 ## The views
 

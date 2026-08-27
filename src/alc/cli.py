@@ -3335,8 +3335,26 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _lan_address() -> str | None:
+    """The address another device on this network would type, or None.
+
+    Opens a UDP socket toward a public address and reads back the local end.
+    No packet is sent — UDP connect only picks a route — so this works offline
+    against a LAN and needs no dependency. Returns None when there is no route
+    at all, which is honest: better no address than a wrong one.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        try:
+            sock.connect(("192.0.2.1", 1))  # TEST-NET-1: reserved, never routed
+            return str(sock.getsockname()[0])
+        except OSError:
+            return None
+
+
 def cmd_ui(args: argparse.Namespace) -> int:
-    """Run `alc ui [--host H] [--port P] [--ui-dist PATH] [--no-ui]`: serve the web IDE.
+    """Run `alc ui [--host H | --lan] [--port P] [--ui-dist PATH] [--no-ui]`: serve the web IDE.
 
     The web backend lives behind the optional ``ui`` extra (fastapi/uvicorn/
     watchfiles). When it is not installed, print a clear install hint and exit 1
@@ -3383,17 +3401,18 @@ def cmd_ui(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
-    # getattr, not args.token: cmd_ui is also called programmatically with a
-    # hand-built Namespace that predates this flag — a new option must never
+    # getattr throughout, not args.X: cmd_ui is also called programmatically with
+    # a hand-built Namespace that predates these flags — a new option must never
     # break an existing caller.
+    host = "0.0.0.0" if getattr(args, "lan", False) else args.host  # noqa: S104
     token = getattr(args, "token", None) or os.environ.get("ALC_UI_TOKEN") or None
     # Reaching a non-loopback interface without a token exposes every registered
     # project — and the exec endpoints that RUN things — to the local network.
     # Warn loudly; never silently refuse, since the operator may be behind a
     # trusted tunnel and knows better than we do.
-    if not token and args.host not in ("127.0.0.1", "localhost", "::1"):
+    if not token and host not in ("127.0.0.1", "localhost", "::1"):
         print(
-            f"[WARNING] Binding {args.host} without --token: anyone who can reach "
+            f"[WARNING] Binding {host} without --token: anyone who can reach "
             "this port can read every registered project and dispatch runs. "
             "Pass --token T (or set ALC_UI_TOKEN), or bind 127.0.0.1 and use a tunnel.",
             file=sys.stderr,
@@ -3401,10 +3420,27 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
     app = create_app(default_registry_path(), ui_dist=frontend, token=token)
     auth_note = " · token required" if token else ""
-    print(f"Serving alc ui on http://{args.host}:{args.port} ({location}{auth_note})")
-    if token:
-        print(f"Hand the token to a browser once: http://{args.host}:{args.port}/?t={token}")
-    uvicorn.run(app, host=args.host, port=args.port)
+    # flush: stdout is block-buffered when piped, and these lines are the whole
+    # point of the command — they must not sit in a buffer behind uvicorn's own
+    # output, or vanish entirely if the process is stopped.
+    print(f"Serving alc ui ({location}{auth_note})", flush=True)
+    # 0.0.0.0 is a bind address, not somewhere anyone can browse to. Print what
+    # the operator actually types — here, and on whatever else is on the network:
+    # a second laptop, a desktop, a tablet, a phone.
+    shown = "127.0.0.1" if host == "0.0.0.0" else host  # noqa: S104
+    query = f"/?t={token}" if token else ""
+    print(f"  Local:   http://{shown}:{args.port}{query}", flush=True)
+    if host == "0.0.0.0":  # noqa: S104
+        lan = _lan_address()
+        print(
+            f"  Network: http://{lan}:{args.port}{query}"
+            if lan
+            else "  Network: no route to this machine from the network",
+            flush=True,
+        )
+    elif token:
+        print(f"Hand the token to a browser once: http://{host}:{args.port}{query}", flush=True)
+    uvicorn.run(app, host=host, port=args.port)
     return 0
 
 
@@ -4567,8 +4603,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "--ui-dist points at it). Requires the optional 'ui' extra."
         ),
     )
-    ui_parser.add_argument(
+    ui_bind = ui_parser.add_mutually_exclusive_group()
+    ui_bind.add_argument(
         "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)."
+    )
+    ui_bind.add_argument(
+        "--lan",
+        action="store_true",
+        default=False,
+        help=(
+            "Bind every interface so another device on your network can reach "
+            "the UI, and print the address to type there. Pair it with --token "
+            "unless the network is one you trust."
+        ),
     )
     ui_parser.add_argument(
         "--port", type=int, default=8642, help="Port to bind (default: 8642)."

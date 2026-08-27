@@ -1,10 +1,11 @@
 ---
 title: Running and access
-description: Register projects, bind a host and port, and use a bearer token when the UI is reachable from anywhere but localhost.
+description: Register projects, reach the UI from another device on your network, and use a bearer token whenever it is reachable from anywhere but localhost.
 order: 2
 ---
 ```bash
 alc ui                                  # http://127.0.0.1:8642
+alc ui --lan                            # reachable from other devices on your network
 alc ui --port 9000
 alc ui --no-ui                          # API and WebSocket only
 alc ui --ui-dist ./ui/dist              # serve a specific frontend build
@@ -13,12 +14,35 @@ alc ui --ui-dist ./ui/dist              # serve a specific frontend build
 | Flag | Default |
 |---|---|
 | `--host H` | `127.0.0.1` |
+| `--lan` | off — binds every interface and prints the address to type elsewhere |
 | `--port P` | `8642` |
 | `--ui-dist PATH` | falls back to `ALC_UI_DIST`, then the bundled build, then API-only |
 | `--no-ui` | off |
 | `--token T` | none (env: `ALC_UI_TOKEN`) |
 
+`--host` and `--lan` are mutually exclusive: asking for both is a contradiction, and argparse rejects it rather than silently picking one.
+
 The server needs the optional `ui` extra. Without it, `alc ui` prints an install hint and exits 1.
+
+## Reaching it from another device
+
+By default the server answers only on loopback, which means only the machine running it can open the UI. `--lan` binds every interface and, more usefully, prints the address to type on anything else on the same network — a second laptop, a desktop, a tablet, a phone:
+
+```bash
+alc ui --lan
+```
+
+```text
+Serving alc ui (frontend: …)
+  Local:   http://127.0.0.1:8642
+  Network: http://192.168.1.42:8642
+```
+
+The **Network** line is the one to type on the other device. `0.0.0.0` is a bind address, not a destination — it is deliberately never printed as a URL.
+
+When the machine has no route to a network, the line says so instead of offering an address that goes nowhere.
+
+`--lan` puts the UI on your network, so read [Authentication](#authentication) before using it on a network you do not control. The warning it prints is not decoration.
 
 ## The project registry
 
@@ -41,19 +65,19 @@ By default there is none. `alc ui` binds loopback and answers unauthenticated re
 The moment it is reachable from anywhere else, set a token:
 
 ```bash
-alc ui --host 0.0.0.0 --token "$(openssl rand -hex 32)"
+alc ui --lan --token "$(openssl rand -hex 32)"
 ```
 
 Or via the environment, which `--token` overrides:
 
 ```bash
 export ALC_UI_TOKEN=…
-alc ui --host 0.0.0.0
+alc ui --lan
 ```
 
 With a token set, every `/api` request needs an `Authorization: Bearer <token>` header, and the WebSocket handshake needs the token in its first frame.
 
-Binding a non-loopback host **without** a token prints a warning to stderr. It is never refused — but read the warning: anyone who can reach that port can read every registered project and dispatch runs.
+Binding a non-loopback host — which `--lan` does by definition — **without** a token prints a warning to stderr. It is never refused — but read the warning: anyone who can reach that port can read every registered project and dispatch runs.
 
 ### Handing the token to a browser
 

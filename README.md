@@ -122,7 +122,7 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc artifacts [<stem>] [--json]` | List a run's captured e2e evidence (screenshots, curled responses, the health-poll log) — proof a `needs_service` run's `capture:` command actually verified the app live; defaults to the most recent run with artifacts |
 | `alc schedule install\|list\|remove <tick\|cycle NAME> --every 15m` | Generate and manage the crontab entry (or print the line to paste when no `crontab` is available) that fires `alc tick`/`alc cycle` on a cadence — idempotent install, marker-scoped remove |
 | `alc setup [--engine]` | Install/update the user-level editor skill (Claude Code or Gemini) |
-| `alc ui [--port 8642]` | Serve the web IDE (dashboard, queue, live runs, loops, config) — needs the optional `ui` extra |
+| `alc ui [--lan] [--port 8642]` | Serve the web IDE (dashboard, queue, live runs, loops, config) — needs the optional `ui` extra |
 
 Add `--engine claude-code|gemini|mock` to choose the executor, and `--isolate` to contain edits to a git-worktree branch.
 
@@ -139,6 +139,7 @@ all updated in real time over WebSocket (no refresh, ever).
 ```bash
 uv tool install "alc-runtime[ui]"   # or: uv sync --extra ui
 alc ui                              # http://127.0.0.1:8642 — frontend served by default
+alc ui --lan                        # binds every interface, prints the address for other devices
 ```
 
 The frontend lives in [`ui/`](ui/) (React + Vite + TypeScript). Development workflow:
@@ -149,7 +150,10 @@ npm run dev        # Vite dev server proxying /api and /ws to 127.0.0.1:8642
 npm run build:alc  # publish the production build into src/alc/ui/static/ (gitignored; shipped in the wheel)
 ```
 
-`--ui-dist PATH` serves an alternative build; `--no-ui` serves only the API/WebSocket.
+`--lan` prints a **Network:** line with the address to type on any other device on your network
+(another laptop, a desktop, a tablet, a phone) — pair it with
+`--token T` on any network you do not control. `--ui-dist PATH` serves an alternative build;
+`--no-ui` serves only the API/WebSocket.
 
 ## 🧱 How it fits together
 
