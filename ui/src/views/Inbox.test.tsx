@@ -85,6 +85,11 @@ describe('Inbox', () => {
     })
     renderWithProviders(<Inbox />)
     await userEvent.click(await screen.findByRole('button', { name: /Land/ }))
+    // Land now confirms before merging: losing an agent's branch is cheap,
+    // unwinding a merge into your own history is not. Scope to the dialog, since
+    // the row's button carries the same word.
+    const confirm = await screen.findByRole('dialog')
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Land' }))
 
     const call = mock.calls.find((c) => c.url.includes('/branches/land'))
     expect(call?.body).toEqual({ branches: ['alc/run-a1b2c3d4'] })

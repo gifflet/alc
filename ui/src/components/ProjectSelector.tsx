@@ -45,18 +45,6 @@ export function ProjectSelector({
       setAdoptError(err instanceof ApiError ? err.message : String(err)),
   })
 
-  // `alc init` is a subprocess: the field can only be filled once it exits
-  // clean, or the operator registers a directory that has no manifest yet.
-  useEffect(() => {
-    if (!adoptExec || !client) return
-    return client.on((msg) => {
-      if (msg.type === 'exec_finished' && msg.exec_id === adoptExec) {
-        setAdoptExec(null)
-        if (msg.exit_code === 0 && adoptPath) setPath(adoptPath)
-        else setAdoptError(`alc init exited with code ${msg.exit_code}`)
-      }
-    })
-  }, [adoptExec, client, adoptPath])
 
   const add = useMutation({
     mutationFn: () => api.addProject(path.trim(), name.trim() || undefined),
@@ -67,6 +55,26 @@ export function ProjectSelector({
       onSelect(project.id)
     },
   })
+
+  // `alc init` is a subprocess: the field can only be filled once it exits
+  // clean, or the operator registers a directory that has no manifest yet.
+  useEffect(() => {
+    if (!adoptExec || !client) return
+    return client.on((msg) => {
+      if (msg.type === 'exec_finished' && msg.exec_id === adoptExec) {
+        setAdoptExec(null)
+        if (msg.exit_code === 0 && adoptPath) {
+          setPath(adoptPath)
+          // Asking to set ALC up here IS asking for the project. Filling the
+          // field and stopping makes the operator hunt for a second button to
+          // finish something they already asked for.
+          add.mutate()
+        } else {
+          setAdoptError(`alc init exited with code ${msg.exit_code}`)
+        }
+      }
+    })
+  }, [adoptExec, client, adoptPath, add])
 
   const remove = useMutation({
     mutationFn: (id: string) => api.removeProject(id),
