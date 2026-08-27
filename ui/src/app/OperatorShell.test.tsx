@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { OperatorShell, destinationFor } from './OperatorShell'
+import { OperatorShell, canGoBackFrom, destinationFor } from './OperatorShell'
 import { uiStore } from './uiStore'
 import { clearMatchMedia, installFetch, mockMatchMedia, renderWithProviders } from '../test/utils'
 import { WsProvider } from '../ws/WsProvider'
@@ -152,5 +152,104 @@ describe('OperatorShell — a sheet is not a dead end', () => {
     })
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+describe('canGoBackFrom', () => {
+  it('offers no back between the four resident destinations', () => {
+    // The reported bug: Inbox -> Home -> Inbox left two invisible tabs and a
+    // back arrow that never went away.
+    for (const view of ['dashboard', 'inbox', 'fleet', 'queue']) {
+      expect(canGoBackFrom(`view:${view}`, false)).toBe(false)
+    }
+  })
+
+  it('offers back from a view reached through More', () => {
+    expect(canGoBackFrom('view:runs', false)).toBe(true)
+    expect(canGoBackFrom('view:team', false)).toBe(true)
+  })
+
+  it('offers back from something you drilled into', () => {
+    expect(canGoBackFrom('run:20260827T0000-run-chore', false)).toBe(true)
+    expect(canGoBackFrom('file:.alc/manifest.yaml', false)).toBe(true)
+  })
+
+  it('offers back while More is open, whatever is behind it', () => {
+    expect(canGoBackFrom('view:inbox', true)).toBe(true)
+    expect(canGoBackFrom(null, true)).toBe(true)
+  })
+
+  it('offers no back with nothing open at all', () => {
+    expect(canGoBackFrom(null, false)).toBe(false)
+  })
+})
+
+describe('the back arrow in the shell', () => {
+  it('disappears again after Inbox, Home, Inbox', async () => {
+    renderShell()
+    const bar = screen.getByRole('navigation', { name: 'Destinations' })
+
+    await userEvent.click(within(bar).getByRole('button', { name: /Inbox/ }))
+    await userEvent.click(within(bar).getByRole('button', { name: /Home/ }))
+    await userEvent.click(within(bar).getByRole('button', { name: /Inbox/ }))
+
+    expect(screen.queryByLabelText('Back')).not.toBeInTheDocument()
+    // The slot is not left empty: it holds the project switcher instead.
+    expect(screen.getByLabelText('Switch project')).toBeInTheDocument()
+  })
+
+  it('appears when a run is opened, and going back returns to the destination', async () => {
+    renderShell()
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'inbox' }, title: 'Inbox', closable: false })
+    })
+    act(() => {
+      uiStore.openTab({ target: { type: 'run', stem: 'r1' }, title: 'r1' })
+    })
+
+    const back = await screen.findByLabelText('Back')
+    await userEvent.click(back)
+
+    await waitFor(() => expect(screen.queryByLabelText('Back')).not.toBeInTheDocument())
+  })
+})
+
+describe('More is a menu, not a place', () => {
+  it('dismisses itself when something in it is picked', async () => {
+    // It used to open the view BEHIND the panel: the title still said More, so
+    // the tap read as a no-op and the only way out looked like undo.
+    renderShell()
+    await userEvent.click(
+      within(screen.getByRole('navigation', { name: 'Destinations' })).getByRole('button', {
+        name: /More/,
+      }),
+    )
+    expect(await screen.findByText('Runs')).toBeInTheDocument()
+
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'metrics' }, title: 'Metrics', closable: false })
+    })
+
+    // The More list is gone and the picked view is what is on screen.
+    await waitFor(() =>
+      expect(screen.queryByText('Autonomous loops and their ledgers')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('leaves one Back between an excursion and the destination it started from', async () => {
+    // Queue -> More -> Metrics -> Back should land on Queue in a single tap.
+    // Returning to the More list instead would cost two, and too much stacking
+    // is the complaint this whole change answers.
+    renderShell()
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'queue' }, title: 'Queue', closable: false })
+    })
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'metrics' }, title: 'Metrics', closable: false })
+    })
+
+    await userEvent.click(await screen.findByLabelText('Back'))
+
+    await waitFor(() => expect(screen.queryByLabelText('Back')).not.toBeInTheDocument())
   })
 })

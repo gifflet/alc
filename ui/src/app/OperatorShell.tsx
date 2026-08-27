@@ -31,12 +31,33 @@ import { More } from '../views/More'
 type SheetName = 'tree' | 'console' | null
 
 /** The bottom-tab destination the active tab belongs to, or null. */
+/** The four views that own a bottom tab. They are peers, not a stack: moving
+ *  between them is switching channel, not travelling somewhere you came from. */
+const RESIDENT = ['dashboard', 'inbox', 'fleet', 'queue']
+
 export function destinationFor(activeTabId: string | null, moreOpen: boolean): string | null {
   if (moreOpen) return 'more'
   if (!activeTabId) return null
   const match = /^view:(.+)$/.exec(activeTabId)
   if (!match) return null
-  return ['dashboard', 'inbox', 'fleet', 'queue'].includes(match[1]) ? match[1] : 'more'
+  return RESIDENT.includes(match[1]) ? match[1] : 'more'
+}
+
+/** Whether there is somewhere to go back TO.
+ *
+ *  Not `tabs.length > 1`. The phone has no tab bar, so every destination visited
+ *  leaves an invisible tab behind: Inbox, Home, Inbox left two of them and a
+ *  back arrow that never went away — and pressing it closed the destination the
+ *  operator was looking at, which is not going back by any reading.
+ *
+ *  Back exists when you went INTO something: a run, a file, a review, or one of
+ *  the views that live behind More. Between the four residents there is no back,
+ *  because there was no forward. */
+export function canGoBackFrom(activeTabId: string | null, moreOpen: boolean): boolean {
+  if (moreOpen) return true
+  if (!activeTabId) return false
+  const match = /^view:(.+)$/.exec(activeTabId)
+  return match ? !RESIDENT.includes(match[1]) : true
 }
 
 export function OperatorShell({
@@ -55,7 +76,7 @@ export function OperatorShell({
   const [spikeOpen, setSpikeOpen] = useState(false)
 
   const active = ui.tabs.find((t) => t.id === ui.activeTabId)
-  const canGoBack = ui.tabs.length > 1 || moreOpen
+  const canGoBack = canGoBackFrom(ui.activeTabId, moreOpen)
 
   // Picking something in a sheet is navigation, and a sheet that survives it
   // covers the very thing it was used to reach — the tap reads as a no-op. Any
@@ -64,6 +85,11 @@ export function OperatorShell({
   // made, and leaves the id unchanged.
   useEffect(() => {
     setSheet(null)
+    // More has the same shape as a sheet and the same failure: it covers the
+    // screen, and picking Metrics in it opened Metrics BEHIND it. The title
+    // still said More, so the tap read as a no-op and the only way out was a
+    // back arrow that looked like it would undo the choice.
+    setMoreOpen(false)
   }, [ui.navSeq])
 
   // Android's system back must feel native: close a sheet, then pop the stack,
@@ -91,7 +117,14 @@ export function OperatorShell({
       setMoreOpen(false)
       return
     }
-    if (active && ui.tabs.length > 1) uiStore.closeTab(active.id)
+    if (!active) return
+    if (ui.tabs.length > 1) {
+      uiStore.closeTab(active.id)
+      return
+    }
+    // Deep-linked straight into a run with nothing underneath. Closing would
+    // leave an empty shell, so land on Home — the destination, not a void.
+    openView('dashboard')
   }
 
   const selectDestination = (view: PrimaryView | 'more') => {
