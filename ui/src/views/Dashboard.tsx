@@ -24,6 +24,7 @@ import { formatCost } from '../lib/format'
 import { formatNetLines, scorecardHistory } from '../lib/scorecard'
 import type { ScorecardPoint } from '../lib/scorecard'
 import { Card, Metric, Pill } from '../components/primitives'
+import { StartWork } from '../components/StartWork'
 import { EmptyState } from '../components/EmptyState'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusDot } from '../components/StatusDot'
@@ -300,6 +301,12 @@ export function Dashboard() {
   }
   return (
     <div className="grid h-full grid-cols-1 content-start gap-3 overflow-auto p-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* First thing on the page, spanning the grid. Every panel below reports
+          on work that already happened; this is the only one that starts any,
+          and on a fresh project the rest are empty. */}
+      <div className="md:col-span-2 xl:col-span-3">
+        <StartWork />
+      </div>
       <ScorecardCard />
       <EnginesCard />
       <RunsCard />
