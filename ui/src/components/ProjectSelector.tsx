@@ -8,6 +8,7 @@ import { keys } from '../api/keys'
 import { CloneForm } from './CloneForm'
 import { NewProjectForm } from './NewProjectForm'
 import { DirectoryBrowser } from './DirectoryBrowser'
+import { ConfirmDialog } from './Dialog'
 import { EmptyState } from './EmptyState'
 import { useWs } from '../ws/WsProvider'
 import { StatusDot } from './StatusDot'
@@ -26,6 +27,7 @@ export function ProjectSelector({
   const { data: projects, isLoading } = useProjects()
   const [path, setPath] = useState('')
   const [browsing, setBrowsing] = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
   const [mode, setMode] = useState<'register' | 'clone' | 'new'>('register')
   const [adoptExec, setAdoptExec] = useState<string | null>(null)
   const [adoptPath, setAdoptPath] = useState<string | null>(null)
@@ -131,7 +133,7 @@ export function ProjectSelector({
                 <button
                   type="button"
                   aria-label={`Remove ${p.name}`}
-                  onClick={() => remove.mutate(p.id)}
+                  onClick={() => setRemoving(p.id)}
                   className="flex h-[var(--ui-control-h)] w-[var(--ui-control-h)] shrink-0 items-center justify-center text-faint hover:text-error"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -247,6 +249,24 @@ export function ProjectSelector({
         </form>
         )}
       </div>
+
+      {removing && (
+        <ConfirmDialog
+          title="Remove project"
+          // The sentence ProjectUnavailable already uses, because it is the
+          // question the operator actually has: does this delete my code?
+          message={`Remove ${
+            projects?.find((p) => p.id === removing)?.name ?? removing
+          } from this control room? The files on disk are untouched — only ALC forgets about it.`}
+          confirmLabel="Remove"
+          tone="error"
+          onConfirm={() => {
+            remove.mutate(removing)
+            setRemoving(null)
+          }}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
     </div>
   )
 }
