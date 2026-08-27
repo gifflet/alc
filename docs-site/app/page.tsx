@@ -15,6 +15,7 @@ import { inline } from '@/lib/inline'
 import { asset } from '@/lib/site'
 import { Card, Eyebrow, Lede, Section, SectionTitle, Terminal, WideRow } from '@/components/landing/primitives'
 import { Demo } from '@/components/landing/Demo'
+import { Install } from '@/components/landing/Install'
 import type { Cta } from '@/lib/landing'
 
 /** Primary is white-on-dark rather than the accent blue. The blue is a status
@@ -60,7 +61,14 @@ export default function Home() {
             {inline(c.hero.subheadline)}
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          {/* The install command IS the primary call to action for a CLI. It sits
+              above the links, which drop to secondary — reading the docs is what
+              you do after the tool is on your machine, not instead. */}
+          <div className="mt-9 px-1">
+            <Install />
+          </div>
+
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             {c.hero.primary && <CtaLink cta={c.hero.primary} variant="primary" />}
             {c.hero.secondary && <CtaLink cta={c.hero.secondary} variant="secondary" />}
           </div>

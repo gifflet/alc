@@ -40,12 +40,39 @@ The point: best practices stop being discipline you have to remember, and become
 >
 > If you set up with `uv sync`, prefix the commands below with `uv run` (e.g. `uv run alc lint`).
 
-**Install**
+**Install** — one command, and the same one updates you later.
+
+macOS and Linux:
+
+```bash
+curl -fsSL https://alc-runtime.vercel.app/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://alc-runtime.vercel.app/install.ps1 | iex
+```
+
+It installs [uv](https://docs.astral.sh/uv/) if you do not have it, installs
+`alc-runtime[ui]`, and puts the command on your PATH — the step people otherwise
+hit. Read it first if you would rather:
+[install.sh](https://alc-runtime.vercel.app/install.sh) ·
+[install.ps1](https://alc-runtime.vercel.app/install.ps1).
+
+<details>
+<summary>Prefer to do it by hand?</summary>
 
 ```bash
 uv tool install alc-runtime          # installs the `alc` command
 uv tool install "alc-runtime[ui]"    # …with the web UI (dashboard, live runs)
 ```
+
+`uv tool install` puts the binary in `~/.local/bin`. If `alc --version` says
+"command not found", that directory is not on your PATH — which is exactly what
+the script above handles for you.
+
+</details>
 
 > The PyPI package is **`alc-runtime`**; it puts the **`alc`** command on your PATH.
 >

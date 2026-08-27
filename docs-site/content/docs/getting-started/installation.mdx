@@ -7,10 +7,11 @@ ALC needs Python 3.12 or newer. The PyPI package is **`alc-runtime`**; it puts t
 
 ## Install
 
-```bash
-uv tool install alc-runtime          # installs the `alc` command
-uv tool install "alc-runtime[ui]"    # …with the web UI (dashboard, live runs)
-```
+One command. It picks up your OS below; switch tabs if it guessed wrong.
+
+<Install />
+
+The same command updates you later — it is idempotent, so running it again moves you to the latest release.
 
 Verify:
 
@@ -18,7 +19,26 @@ Verify:
 alc --version                        # alc X.Y.Z
 ```
 
-If the command is not found, `uv tool install` put it in `~/.local/bin` — make sure that directory is on your PATH.
+### What the script does
+
+Three steps, in order:
+
+1. Installs [uv](https://docs.astral.sh/uv/) if you do not already have it. ALC ships on PyPI, and uv is what puts a Python CLI on your PATH without a virtualenv for you to manage.
+2. Installs or upgrades `alc-runtime[ui]` — the package plus the optional web UI. Set `ALC_NO_UI=1` to skip the UI extra.
+3. Puts uv's tool directory on your PATH, by appending to your login shell's rc file on macOS and Linux, or to your user PATH on Windows. It checks first, so running it twice does not add the line twice.
+
+It refuses to guess: if it cannot write your rc file, it prints the line for you to add rather than failing silently.
+
+### Installing by hand
+
+The script is a convenience, not a requirement. If you already have uv, or you would rather see every step:
+
+```bash
+uv tool install alc-runtime          # installs the `alc` command
+uv tool install "alc-runtime[ui]"    # …with the web UI (dashboard, live runs)
+```
+
+`uv tool install` puts the binary in `~/.local/bin`. If `alc --version` reports "command not found", that directory is not on your PATH — which is the step the script above exists to handle.
 
 ## Pick an engine
 
