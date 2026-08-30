@@ -134,7 +134,7 @@ projects, not that one. Every other command is cwd-scoped; `alc ui` alone is not
 Proposal: when the cwd is an alc project, register it if new and open it. The
 global registry stays — this only decides where the tool lands.
 
-### C2 — Surface pending decisions on the Dashboard
+### C2 — Surface pending decisions on the Dashboard — **DONE**
 *Finding 15.*
 
 Two branches awaited a decision. Six cards on screen, none about them; the only

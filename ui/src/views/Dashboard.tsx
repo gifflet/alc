@@ -7,10 +7,11 @@
 // Recent runs, kept as the one shortcut worth having (it is what lets Runs leave
 // the mobile bar). Every card is a live query invalidated over WS.
 import { useState } from 'react'
-import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, PieChart } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, Inbox as InboxIcon, PieChart } from 'lucide-react'
 import {
   useAudit,
   useEngines,
+  useInbox,
   useQueue,
   useRuns,
   useSchedule,
@@ -28,7 +29,7 @@ import { StartWork } from '../components/StartWork'
 import { EmptyState } from '../components/EmptyState'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusDot } from '../components/StatusDot'
-import type { MixHealth } from '../api/types'
+import type { InboxItem, MixHealth } from '../api/types'
 
 /** Per-report span bars, coloured by success — a compact trend under the totals. */
 function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
@@ -216,6 +217,71 @@ function MixHealthCard() {
   )
 }
 
+const NEEDS_YOU_LABEL: Record<InboxItem['kind'], string> = {
+  failure: 'failure',
+  branch: 'to land',
+  loop: 'loop stopped',
+}
+
+/** Work that is waiting on a decision, at the top of the page.
+ *
+ * Every other card on this screen reports on work that already happened; this
+ * is the only one about work that is stopped until a human moves it. It used to
+ * be reachable only as a number on a rail icon, while "Mix Health: no stage
+ * declared" got a full card — so the page gave its most prominent space to the
+ * thing that needed nobody. Renders NOTHING when the inbox is empty: a card
+ * saying "no decisions pending" is noise on a screen whose job is signal.
+ *
+ * Deliberately no Land/Discard here. Those actions carry confirmation dialogs
+ * that state what landing an unverified branch means, and a second copy of that
+ * logic is a second place for it to drift out of agreement with the Inbox.
+ */
+function NeedsYouCard() {
+  const id = useProjectId()
+  const { data } = useInbox(id)
+  const items = data?.items ?? []
+  if (items.length === 0) return null
+  return (
+    <Card
+      title={`Needs you (${items.length})`}
+      icon={InboxIcon}
+      action={
+        <button
+          type="button"
+          onClick={() => openView('inbox')}
+          className="min-h-[var(--ui-control-h)] rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted transition-colors duration-120 hover:bg-hover"
+        >
+          Open Inbox
+        </button>
+      }
+    >
+      <ul className="flex flex-col gap-2">
+        {items.map((item) => (
+          <li key={item.id} className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <StatusDot tone={item.kind === 'failure' || item.verified === false ? 'error' : 'accent'} />
+              <span className="min-w-0 flex-1 truncate text-[length:var(--ui-text-body)] text-primary">
+                {item.title}
+              </span>
+              {/* Same wording as the Inbox row, including the unverified
+                  override: two screens describing one branch two ways is how an
+                  operator ends up trusting the wrong one. */}
+              <span
+                className={`shrink-0 text-[length:var(--ui-text-label)] uppercase tracking-wide ${
+                  item.verified === false ? 'text-error' : 'text-faint'
+                }`}
+              >
+                {item.verified === false ? 'unverified' : NEEDS_YOU_LABEL[item.kind]}
+              </span>
+            </div>
+            <p className="truncate pl-4 text-[length:var(--ui-text-label)] text-muted">{item.reason}</p>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  )
+}
+
 const AUDIT_WINDOWS = ['7d', '24h', '30m'] as const
 type AuditWindowOption = (typeof AUDIT_WINDOWS)[number]
 
@@ -304,6 +370,12 @@ export function Dashboard() {
       {/* First thing on the page, spanning the grid. Every panel below reports
           on work that already happened; this is the only one that starts any,
           and on a fresh project the rest are empty. */}
+      {/* Above StartWork on purpose: a branch waiting on a decision outranks
+          starting more work, and the card removes itself when nothing is
+          waiting, so the calm case is unchanged. */}
+      <div className="md:col-span-2 xl:col-span-3 empty:hidden">
+        <NeedsYouCard />
+      </div>
       <div className="md:col-span-2 xl:col-span-3">
         <StartWork />
       </div>

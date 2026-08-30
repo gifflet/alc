@@ -368,3 +368,75 @@ describe('Scorecard history chart', () => {
     expect(chart.className).not.toContain('items-end')
   })
 })
+
+describe('Dashboard — work that needs a human', () => {
+  const withInbox = (items: unknown[]) =>
+    installFetch({
+      ...dashboardStubs,
+      '/inbox': { items, count: items.length },
+    })
+
+  it('leads with pending decisions instead of burying them in a rail badge', async () => {
+    withInbox([
+      {
+        kind: 'branch',
+        id: 'b1',
+        title: 'alc/run-a1b2c3d4',
+        reason: 'run work ready to land',
+        branch: 'alc/run-a1b2c3d4',
+        verified: true,
+      },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Needs you (1)')).toBeInTheDocument()
+    expect(screen.getByText('alc/run-a1b2c3d4')).toBeInTheDocument()
+    expect(screen.getByText('run work ready to land')).toBeInTheDocument()
+  })
+
+  it('stays silent when nothing is waiting', async () => {
+    withInbox([])
+    renderWithProviders(<Dashboard />)
+    // Wait for the page to settle on a card that always renders.
+    expect(await screen.findByText('Engines')).toBeInTheDocument()
+    expect(screen.queryByText(/Needs you/)).not.toBeInTheDocument()
+  })
+
+  it('calls an unverified branch unverified, exactly as the Inbox does', async () => {
+    withInbox([
+      {
+        kind: 'branch',
+        id: 'b2',
+        title: 'alc/run-deadbeef',
+        reason: 'run work — checks did not pass, review before landing',
+        branch: 'alc/run-deadbeef',
+        verified: false,
+      },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Needs you (1)')).toBeInTheDocument()
+    expect(screen.getByText('unverified')).toBeInTheDocument()
+    expect(screen.queryByText('to land')).not.toBeInTheDocument()
+  })
+
+  it('counts every waiting item, whatever its kind', async () => {
+    withInbox([
+      { kind: 'failure', id: 'f1', title: 'chore x', reason: 'failed twice', stem: 's1' },
+      { kind: 'branch', id: 'b1', title: 'alc/run-1', reason: 'ready', branch: 'alc/run-1', verified: true },
+      { kind: 'loop', id: 'l1', title: 'nightly', reason: 'halted by a backstop', loop: 'nightly' },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Needs you (3)')).toBeInTheDocument()
+  })
+
+  it('opens the Inbox rather than duplicating Land and Discard', async () => {
+    withInbox([
+      { kind: 'branch', id: 'b1', title: 'alc/run-1', reason: 'ready', branch: 'alc/run-1', verified: true },
+    ])
+    renderWithProviders(<Dashboard />)
+    const card = (await screen.findByText('Needs you (1)')).closest('section')!
+    expect(within(card).queryByText('Land')).not.toBeInTheDocument()
+    expect(within(card).queryByText('Discard')).not.toBeInTheDocument()
+    await userEvent.click(within(card).getByRole('button', { name: 'Open Inbox' }))
+    expect(uiStore.getState().tabs.some((t) => t.title === 'Inbox')).toBe(true)
+  })
+})
