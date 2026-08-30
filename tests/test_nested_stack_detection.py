@@ -75,10 +75,15 @@ def test_the_rendered_set_is_commented_out(tmp_path: Path) -> None:
     assert all(line.strip().startswith("#") for line in block.splitlines() if line.strip())
 
 
-def test_the_rendered_set_names_the_gap_and_the_way_out(tmp_path: Path) -> None:
+def test_the_rendered_set_names_the_gap_and_BOTH_steps_out(tmp_path: Path) -> None:
+    # Uncommenting alone changes nothing: `resolve_checks` is check_set PLUS the
+    # Blueprint's own checks, and a Blueprint with no `check_set:` never reaches
+    # the set. Saying only "uncomment" would leave the operator believing they
+    # had turned on coverage they still do not have.
     block = render_nested_check_set("ui", "Node", [("test", ["npm", "test"])])
     assert "NOT covered by the checks above" in block
-    assert "Uncomment once `ui` has its dependencies installed" in block
+    assert "install ui/'s dependencies" in block
+    assert "add `check_set: ui` to the Blueprints" in block
 
 
 def test_it_uses_shell_because_check_has_no_working_directory(tmp_path: Path) -> None:

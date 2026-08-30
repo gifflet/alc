@@ -824,3 +824,73 @@ def lint_loops(manifest: Manifest, loop_defs: list[LoopDefinition]) -> list[Viol
         )
 
     return violations
+
+
+def coverage_report(manifest, blueprints, project_root) -> list[str]:
+    """What the declared checks actually REACH, as lines to print. [] when clean.
+
+    `lint` answers whether the Operator Layer is well-formed. It never asked
+    whether the checks reach the project, so "No violations found. Operator Layer
+    is conformant." was printed over a layer running pytest alone in a repo whose
+    frontend held 603 tests. Conformant is about shape; a reader takes it as
+    sound.
+
+    Two things it can state precisely, without guessing which tool exercises what:
+
+    - **Orphan check sets.** A Blueprint runs a set only when it declares
+      `check_set: <name>` (`intake.resolve_checks` is that set PLUS its own
+      checks). `alc init` writes `python` and `security` and wires neither, so a
+      manifest can look like it scans for secrets while nothing ever runs.
+    - **Uncovered nested stacks.** A stack one directory down whose name no
+      resolved check mentions. Deliberately a substring test on the directory:
+      the alternative is guessing that "npm" means "the ui/ stack", and a wrong
+      guess here reports coverage that does not exist.
+
+    Not violations. Policy is about what is malformed; this is about what is
+    merely absent, and failing every project that has not wired a set would make
+    `alc lint` useless as a gate.
+    """
+    from alc.intake import resolve_checks
+    from alc.scaffold import detect_nested_stacks
+
+    lines: list[str] = []
+
+    def _spelling(c) -> str:
+        return " ".join(c.command or []) + (c.shell or "")
+
+    # Every command any Blueprint would actually run, by spelling.
+    running_cmds = {
+        _spelling(c) for b in blueprints for c in resolve_checks(manifest, b)
+    }
+    running = " ".join(running_cmds)
+
+    referenced = {b.check_set for b in blueprints if b.check_set}
+    # An unreferenced set is only a gap when it contributes something nothing
+    # else runs. `alc init` writes `python`, whose one check the scaffolded
+    # Blueprints already declare inline — a reusable pool, not a hole. Flagging
+    # it would cry wolf on every project alc has ever created, and an alarm that
+    # always fires is one nobody reads.
+    orphans = sorted(
+        name
+        for name, checks in manifest.check_sets.items()
+        if name not in referenced
+        and any(_spelling(c) not in running_cmds for c in checks)
+    )
+    if orphans:
+        lines.append(
+            f"  check_sets declared but wired to no Blueprint: {', '.join(orphans)}"
+        )
+        lines.append(
+            "    Their checks run nowhere. Add `check_set: <name>` to a Blueprint."
+        )
+    uncovered = [
+        f"{label} in {sub}/"
+        for sub, label, _set_name, _checks in detect_nested_stacks(project_root)
+        if sub not in running
+    ]
+    if uncovered:
+        lines.append(f"  stacks no check reaches: {', '.join(uncovered)}")
+        lines.append(
+            "    Nothing verifies that code. See the commented check_sets in the manifest."
+        )
+    return lines

@@ -368,6 +368,10 @@ export interface Violation {
 
 export interface LintResult {
   violations: Violation[]
+  /** What the checks do NOT reach: sets no Blueprint wires, stacks no check
+   *  mentions. Not violations — the layer can be well-formed and still verify
+   *  only part of the project, which is what "policy gate is clean" hid. */
+  coverage_gaps: string[]
 }
 
 export interface EngineInfo {

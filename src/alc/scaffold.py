@@ -724,7 +724,11 @@ def render_nested_check_set(subdir: str, label: str, checks: list[tuple[str, lis
     """
     lines = [
         f"  # {label} detected in {subdir}/ — NOT covered by the checks above.",
-        f"  # Uncomment once `{subdir}` has its dependencies installed.",
+        "  #",
+        "  # TWO steps to turn it on, not one: uncommenting only declares the set.",
+        f"  #   1. install {subdir}/'s dependencies, then uncomment below",
+        f"  #   2. add `check_set: {subdir}` to the Blueprints that should run it",
+        "  #      (a Blueprint runs its check_set PLUS its own `checks:`)",
         f"  # {subdir}:",
     ]
     for check_name, command in checks:

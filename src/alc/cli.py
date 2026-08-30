@@ -710,6 +710,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
     from alc.policy import (
+        coverage_report,
         has_errors,
         lint,
         lint_loops,
@@ -727,9 +728,17 @@ def cmd_lint(args: argparse.Namespace) -> int:
     violations += lint_stage(manifest, blueprints)
     violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
+    # Shape and reach are different questions. lint has only ever answered the
+    # first, while printing a sentence readers take as an answer to both.
+    coverage = coverage_report(manifest, blueprints, operator_layer.parent)
+
     if getattr(args, "json", False):
         from alc.output import emit_json
 
+        # The array shape is a public contract — `alc lint --json | jq '.[].rule'`
+        # is a reasonable thing to have written. Coverage is a human-readable
+        # note; wrapping the array to carry it would break that for a feature
+        # nobody asked to consume by machine.
         emit_json([
             {"rule": v.rule, "severity": v.severity, "message": v.message}
             for v in violations
@@ -737,12 +746,22 @@ def cmd_lint(args: argparse.Namespace) -> int:
         return 1 if has_errors(violations) else 0
 
     if not violations:
-        print("No violations found. Operator Layer is conformant.")
+        if coverage:
+            print("No violations found — the Operator Layer is well-formed.")
+            print("But it does not reach all of this project:")
+            for line in coverage:
+                print(line)
+        else:
+            print("No violations found. Operator Layer is conformant.")
         return 0
 
     for v in violations:
         tag = "[ERROR]" if v.severity == "error" else "[WARN] "
         print(f"{tag} [{v.rule}] {v.message}")
+    if coverage:
+        print("Coverage:")
+        for line in coverage:
+            print(line)
 
     if has_errors(violations):
         return 1

@@ -40,7 +40,7 @@ from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
 from alc.packs import PACKS, hired_archetypes, pack_files, split_pack_files
 from alc.policy import lint as _lint
-from alc.policy import lint_loops, validate_provisions, validate_prompts
+from alc.policy import coverage_report, lint_loops, validate_provisions, validate_prompts
 from alc.prompts import (
     _DEFAULT_PROMPTS,
     list_prompts,
@@ -151,7 +151,13 @@ def write_manifest(root: Path, raw: str) -> dict:
 
 
 def lint_project(root: Path) -> dict:
-    """Return {violations} for the project, matching `alc lint --json`."""
+    """Return {violations, coverage_gaps} for the project.
+
+    `violations` matches `alc lint --json`. `coverage_gaps` is what that command
+    prints beneath it: the checks may be well-formed and still not reach the
+    project. The UI carries both because the CLI does, and a fix that lands on
+    one surface leaves the other telling the older, rosier story.
+    """
     ol = operator_layer(root)
     manifest = load_manifest(ol)
     blueprints = load_all_blueprints(manifest, ol)
@@ -164,7 +170,10 @@ def lint_project(root: Path) -> dict:
         "violations": [
             {"rule": v.rule, "severity": v.severity, "message": v.message}
             for v in violations
-        ]
+        ],
+        "coverage_gaps": [
+            line.strip() for line in coverage_report(manifest, blueprints, root)
+        ],
     }
 
 
