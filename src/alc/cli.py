@@ -335,7 +335,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     contract as `alc team hire`. Without it, only a discovery hint is printed —
     no pack is installed unless explicitly asked (opt-in byte-identical `init`).
     """
-    from alc.scaffold import detect_default_engine, detect_stack, scaffold
+    from alc.scaffold import (
+        detect_default_engine,
+        detect_nested_stacks,
+        detect_stack,
+        scaffold,
+    )
 
     project_root = Path.cwd()
     try:
@@ -423,6 +428,19 @@ def cmd_init(args: argparse.Namespace) -> int:
             ".alc/manifest.yaml check_sets, then run `alc checks audit` — or run "
             "`alc onboard` to harvest this project's own checks (Makefile targets, "
             "package.json scripts, …) into check_sets."
+        )
+
+    # A stack one level down is invisible to the root scan, so its code would be
+    # "verified" by checks that never load it — the tool's central promise made
+    # true only in the letter. The manifest now carries them commented out; this
+    # is where the operator finds out they exist.
+    nested = detect_nested_stacks(project_root)
+    if nested:
+        named = ", ".join(f"{label} in {sub}/" for sub, label, _set, _checks in nested)
+        print(
+            f"Also found {named} — NOT covered by the checks above. "
+            "Scaffolded commented-out in .alc/manifest.yaml check_sets; uncomment "
+            "once those directories have their dependencies installed."
         )
 
     if args.stage:

@@ -31,6 +31,27 @@ engines:
 # left commented out means its binary was not found on PATH at init time —
 # install it and uncomment the check rather than shipping a check that fails
 # on a clean checkout.
+
+  # Node detected in docs-site/ — NOT covered by the checks above.
+  # Uncomment once `docs-site` has its dependencies installed.
+  # docs-site:
+  #   - name: test
+  #     shell: "cd docs-site && npm test"
+  #   - name: lint
+  #     shell: "cd docs-site && npm run lint"
+  #   - name: typecheck
+  #     shell: "cd docs-site && npm run typecheck"
+
+  # Node detected in ui/ — NOT covered by the checks above.
+  # Uncomment once `ui` has its dependencies installed.
+  # ui:
+  #   - name: test
+  #     shell: "cd ui && npm test"
+  #   - name: lint
+  #     shell: "cd ui && npm run lint"
+  #   - name: typecheck
+  #     shell: "cd ui && npm run typecheck"
+
 worktree_provision:
   # uv's environment. Cloned rather than linked: `uv run` may sync it,
   # and a linked dir is shared across worktrees. Missing -> skipped.

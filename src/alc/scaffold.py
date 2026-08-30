@@ -507,6 +507,52 @@ def _marker_present(project_root: Path, marker: str) -> bool:
     return (project_root / marker).exists()
 
 
+# Directories never worth descending into when hunting for a nested stack: build
+# output, vendored deps, and anything hidden. Without this the walk would find a
+# package.json inside node_modules and scaffold a check for someone else's code.
+_SKIP_DIRS = frozenset(
+    {"node_modules", "vendor", "dist", "build", "target", "out", "coverage", "__pycache__"}
+)
+
+# A monorepo can hold dozens of packages. Scaffolding a check per package would
+# bury the manifest and make every run pay for all of them, so the walk stops
+# after this many and `alc init` says how many it left out.
+_MAX_NESTED_STACKS = 6
+
+
+def detect_nested_stacks(
+    project_root: Path,
+) -> list[tuple[str, str, str, list[tuple[str, list[str]]]]]:
+    """Detect stacks in the IMMEDIATE subdirectories, which the root scan misses.
+
+    `_marker_present` tests the project root only. A repo that keeps its frontend
+    in `ui/` — the common monorepo shape — therefore got checks covering the root
+    stack alone, while the tool went on to promise it runs "this project's own
+    checks". This finds what that scan cannot see.
+
+    Depth 1 on purpose: it covers ui/, web/, frontend/, api/, packages that sit
+    one level down, without walking a tree whose size nobody bounded.
+
+    Returns (subdir, label, set_name, checks) per stack found, capped at
+    `_MAX_NESTED_STACKS`.
+    """
+    found: list[tuple[str, str, str, list[tuple[str, list[str]]]]] = []
+    try:
+        children = sorted(d for d in project_root.iterdir() if d.is_dir())
+    except OSError:
+        return []
+    for child in children:
+        if child.name.startswith(".") or child.name in _SKIP_DIRS:
+            continue
+        for markers, label, set_name, checks in _STACK_DEFS:
+            if any(_marker_present(child, m) for m in markers):
+                found.append((child.name, label, set_name, checks))
+                break  # one stack per directory, marker precedence order
+        if len(found) >= _MAX_NESTED_STACKS:
+            break
+    return found
+
+
 def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, list[str]]]]]:
     """Detect every technology stack present, each with its full check battery.
 
@@ -654,7 +700,38 @@ def _render_check_sets_block(
             blocks.append(render_check_set(name, resolved, unavailable=unavailable))
         else:
             blocks.append(render_check_set(name, checks))
+    # A stack one level down is invisible to the root scan, so its code would be
+    # "verified" by checks that never load it. Write it in, commented, so the gap
+    # is on the page instead of only in the outcome.
+    for subdir, label, _set_name, checks in detect_nested_stacks(project_root):
+        blocks.append(render_nested_check_set(subdir, label, checks))
     return "\n\n".join(blocks)
+
+
+def render_nested_check_set(subdir: str, label: str, checks: list[tuple[str, list[str]]]) -> str:
+    """Render one subdirectory stack as a COMMENTED check set.
+
+    Commented, not live, and by the same rule this file already applies to a
+    check whose binary is off PATH: a live check that fails on a clean checkout
+    breaks every run. `cd ui && npm test` needs an install in that directory, so
+    on a fresh clone it would fail for a reason no run caused.
+
+    Written as `shell:` because Check has no working directory — a one-liner is
+    the mechanism already there, not a new one.
+
+    The point is not to run these. It is that a blind spot the operator cannot
+    see becomes one written into their manifest, named, with the reason.
+    """
+    lines = [
+        f"  # {label} detected in {subdir}/ — NOT covered by the checks above.",
+        f"  # Uncomment once `{subdir}` has its dependencies installed.",
+        f"  # {subdir}:",
+    ]
+    for check_name, command in checks:
+        joined = " ".join(command)
+        lines.append(f"  #   - name: {check_name}")
+        lines.append(f'  #     shell: "cd {subdir} && {joined}"')
+    return "\n".join(lines)
 
 
 # Per-stack gitignored dependency to auto-provision into every isolated worktree,
