@@ -3506,6 +3506,31 @@ def cmd_ui(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # Every other command acts on the project you are standing in. `alc ui` alone
+    # read the global registry and ignored the cwd, so `cd my-project && alc ui`
+    # opened a list of whatever had been registered before — and to reach the
+    # project you were in you had to type its absolute path into a dialog.
+    #
+    # The registry stays global; this only decides where the tool lands. Adding
+    # is idempotent and validates, so a directory that is not an ALC project
+    # leaves everything exactly as it was.
+    landing = ""
+    here = _find_operator_layer().parent
+    if (here / ".alc" / "manifest.yaml").is_file():
+        from alc.ui.registry import ProjectRegistry
+
+        try:
+            registry = ProjectRegistry(default_registry_path())
+            known = {p.id for p in registry.list()}
+            current = registry.add(here)
+            landing = f"/projects/{current.id}"
+            if current.id not in known:
+                # It writes to a file shared by every project; say so rather than
+                # changing persistent state silently.
+                print(f"Registered {current.name} ({here}) in the project list.", flush=True)
+        except Exception:  # noqa: BLE001 — never let this stop the server starting
+            landing = ""
+
     app = create_app(default_registry_path(), ui_dist=frontend, token=token)
     auth_note = " · token required" if token else ""
     # flush: stdout is block-buffered when piped, and these lines are the whole
@@ -3516,7 +3541,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
     # the operator actually types — here, and on whatever else is on the network:
     # a second laptop, a desktop, a tablet, a phone.
     shown = "127.0.0.1" if host == "0.0.0.0" else host  # noqa: S104
-    query = f"/?t={token}" if token else ""
+    query = f"{landing or '/'}?t={token}" if token else landing
     print(f"  Local:   http://{shown}:{args.port}{query}", flush=True)
     if host == "0.0.0.0":  # noqa: S104
         lan = _lan_address()
