@@ -11,9 +11,10 @@
 // back pops, and tabRoute/urlSync keep owning the URL, so a link opened on the
 // phone shows exactly what it shows on the desk.
 import { useEffect, useState } from 'react'
-import { Boxes, ChevronLeft, FolderTree, SquareTerminal } from 'lucide-react'
+import { ChevronLeft, FolderTree, SquareTerminal } from 'lucide-react'
 import { BottomPanel } from '../components/BottomPanel'
 import { BottomTabBar } from '../components/BottomTabBar'
+import { Mark } from '../components/Mark'
 import { Sheet } from '../components/Sheet'
 import { SpikeDialog } from '../views/SpikeDialog'
 import { StatusDot } from '../components/StatusDot'
@@ -160,7 +161,12 @@ export function OperatorShell({
             onClick={onSwitchProject}
             className="flex h-[var(--ui-rail-btn)] w-[var(--ui-rail-btn)] items-center justify-center text-faint"
           >
-            <Boxes className="h-5 w-5" />
+            {/* The mark, not a generic box. The phone header has 24px of slack —
+                no room for a brand slot of its own — but this button was already
+                here wearing an icon that said nothing about the app or about
+                switching project. Same target, same action, and the one surface
+                where the site and the app previously shared no mark at all. */}
+            <Mark size={20} />
           </button>
         )}
 
