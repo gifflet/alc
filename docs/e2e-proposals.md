@@ -13,6 +13,8 @@ These are one problem wearing four hats: **something says work is verified when
 it is not.** Everything else on this list is comfort by comparison.
 
 ### A1 — The Inbox must not offer to Land unverified work
+
+**DONE** — `4a27239`, `8cf4aca`.
 *Findings 14, 19. Blocker.*
 
 A run I interrupted, whose only check failed, committed to a branch and appeared
@@ -31,6 +33,8 @@ going through the diff first. Not a new concept; wiring what is already there.
 Cost: small. Risk: low — it only ever adds a warning.
 
 ### A2 — Detect stacks below the repo root
+
+**DONE** — `57c9656`.
 *Finding 2. Blocker.*
 
 `scaffold._marker_present` tests `project_root / marker` only. This repo has
@@ -47,6 +51,8 @@ Cost: medium. Risk: medium — more checks means slower runs, so the init output
 must make the trade visible rather than silently tripling run time.
 
 ### A3 — `alc lint` should report check COVERAGE, not just layer shape
+
+**DONE** — `9381347`.
 *Findings 5, 22.*
 
 Lint said "No violations found. Operator Layer is conformant." about a layer
@@ -58,6 +64,8 @@ check, which do not. It does not have to fail; it has to be said. This is the
 measurement that makes the Start card's promise honest.
 
 ### A4 — A check that cannot pass in isolation should be caught at init
+
+**DONE** — `6c7ef62`.
 *Finding 6. Blocker.*
 
 `init` wrote `uv run pytest -q`. In an isolated worktree that builds a fresh venv
@@ -197,11 +205,33 @@ not.
 
 ## If only five things were fixed
 
-1. **A1** — the Inbox must not offer to Land work that never passed.
-2. **A4** — init must not scaffold a check that cannot pass in isolation.
-3. **A2** — find stacks below the root, or say plainly that you did not.
+1. ~~**A1** — the Inbox must not offer to Land work that never passed.~~ **done**
+2. ~~**A4** — init must not scaffold a check that cannot pass in isolation.~~ **done**
+3. ~~**A2** — find stacks below the root, or say plainly that you did not.~~ **done**
 4. **B1** — put the JSON behind a flag.
 5. **C1** — `alc ui` opens the project you are in.
 
-The first three are the same promise: *verified* has to mean something. The last
-two are what makes the tool usable while it keeps it.
+The first three were the same promise: *verified* has to mean something. A3 went
+in with them, because measuring coverage is what makes that promise checkable
+rather than asserted. The last two are what makes the tool usable while it keeps
+it.
+
+### What building them changed about the proposals
+
+- **A2 shipped narrower than proposed.** I planned live checks for subdirectory
+  stacks. This file already had a rule — a check that would fail on a clean
+  checkout is written commented — and `cd ui && npm test` needs an install in
+  that directory. So they are scaffolded commented, named, with the reason. The
+  checks still do not run; the blind spot is now written down instead of felt.
+- **A2's instruction was wrong at first.** "Uncomment once dependencies are
+  installed" implied one step. `resolve_checks` is a set PLUS a Blueprint's own
+  checks, so a Blueprint with no `check_set:` never reaches it. Both steps are
+  named now.
+- **A3 nearly cried wolf.** Its first version flagged every unreferenced
+  check_set, which fires on every project alc creates: the `python` set holds the
+  check the Blueprints already declare inline. It now reports a set only when it
+  contributes something nothing else runs.
+- **A4 was misdiagnosed.** I wrote that init never scaffolds
+  `worktree_provision`. It does, and deliberately skipped Python. The real error
+  was the key: the block was keyed on the stack when the runner is what settles
+  it — once a check reads `uv run`, the project has a `.venv` at its root.
