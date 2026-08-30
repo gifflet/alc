@@ -56,7 +56,16 @@ jobs:
       - name: Backend tests
         if: steps.version.outputs.released == 'false'
         run: |
-          uv sync --extra ui
+          # --locked turns a stale lock into a red build instead of the silent
+          # regeneration that let the lock drift across three branches.
+          #
+          # uv's own error already names the fix ("run `uv lock`"), but it is
+          # buried in step logs. ::error surfaces it as a GitHub annotation, on
+          # the PR and at the top of the run, where someone actually looks.
+          if ! uv sync --extra ui --locked; then
+            echo "::error title=uv.lock is out of sync::pyproject.toml changed without the lock. Run 'uv lock' locally and commit uv.lock."
+            exit 1
+          fi
           uv run pytest -q
 
       - name: Frontend tests + build into the package
