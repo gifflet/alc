@@ -118,8 +118,22 @@ def _validate_tier(manifest, tier: str | None) -> str | None:
     return None
 
 
-def _print_run_report(report) -> None:
-    """Print the human-readable summary and full JSON for a RunReport."""
+def _print_run_report(report, as_json: bool = False) -> None:
+    """Print a RunReport: the human summary, or the full JSON under `--json`.
+
+    The JSON used to follow the summary unconditionally — about thirty-five lines
+    of serialised model after the four that say what happened, with the one
+    actionable sentence a run produces ("Isolated changes committed on branch…")
+    printed below all of it. `alc audit` already showed the better shape: five
+    readable lines and no dump.
+
+    --json REPLACES the summary rather than adding to it, matching `alc lint`
+    and `alc land`. The report is also archived to runs/ either way, so nothing
+    that wanted the data has lost it.
+    """
+    if as_json:
+        print(report.model_dump_json(indent=2))
+        return
     status = "SUCCESS" if report.success else "FAILED"
     print(f"Status:   {status}")
     print(f"Engine:   {report.engine}")
@@ -136,12 +150,16 @@ def _print_run_report(report) -> None:
         print("Warnings:")
         for w in report.warnings:
             print(f"  [WARN] {w}")
-    print()
-    print(report.model_dump_json(indent=2))
 
 
-def _print_flow_report(report) -> None:
-    """Print the human-readable summary and full JSON for a FlowReport."""
+def _print_flow_report(report, as_json: bool = False) -> None:
+    """Print a FlowReport: the human summary, or the full JSON under `--json`.
+
+    Same contract as `_print_run_report`.
+    """
+    if as_json:
+        print(report.model_dump_json(indent=2))
+        return
     status = "SUCCESS" if report.success else "FAILED"
     print(f"Flow:     {report.flow}")
     print(f"Status:   {status}")
@@ -159,8 +177,6 @@ def _print_flow_report(report) -> None:
         )
         for w in stage_report.warnings:
             print(f"    [WARN] {w}")
-    print()
-    print(report.model_dump_json(indent=2))
 
 
 def _print_isolation_result(wt) -> None:
@@ -917,7 +933,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             # PolicyViolationError path.
             return 1
 
-        _print_run_report(report)
+        _print_run_report(report, as_json=getattr(args, "json", False))
         _print_isolation_result(wt)
         _emit_isolation_result(run_log, wt)
         if report.success and blueprint.mode != "spike":
@@ -953,7 +969,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    _print_run_report(report)
+    _print_run_report(report, as_json=getattr(args, "json", False))
     if report.success and blueprint.mode != "spike":
         _archive_run_report(
             run_log.with_suffix(".report.json"),
@@ -1948,7 +1964,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
         if report is None:
             return 1
 
-        _print_flow_report(report)
+        _print_flow_report(report, as_json=getattr(args, "json", False))
         _print_isolation_result(wt)
         _emit_isolation_result(run_log, wt)
         if args.bundle:
@@ -1971,7 +1987,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    _print_flow_report(report)
+    _print_flow_report(report, as_json=getattr(args, "json", False))
     if args.bundle:
         bundles_dir = operator_layer.parent / manifest.bundles_dir
         path = write_bundle(bundles_dir, args.flow_name, args.task, report)
@@ -3669,6 +3685,12 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run a Blueprint against a task.")
     run_parser.add_argument("blueprint", help="Blueprint name (e.g. 'chore').")
     run_parser.add_argument("task", help="Free-text task description.")
+    run_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the full report as JSON instead of the human summary.",
+    )
     run_parser.add_argument("--engine", default=None, help="Override the default engine.")
     run_parser.add_argument(
         "--isolate",
@@ -3719,6 +3741,12 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     spike_parser.add_argument("task", help="Free-text task description.")
+    spike_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the full report as JSON instead of the human summary.",
+    )
     spike_parser.add_argument("--engine", default=None, help="Override the default engine.")
 
     # alc tick
@@ -4332,6 +4360,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     flow_parser.add_argument("flow_name", help="Flow name (e.g. 'ship').")
     flow_parser.add_argument("task", help="Free-text task description.")
+    flow_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the full report as JSON instead of the human summary.",
+    )
     flow_parser.add_argument("--engine", default=None, help="Override the default engine.")
     flow_parser.add_argument(
         "--isolate",
