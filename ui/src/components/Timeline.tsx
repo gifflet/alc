@@ -5,6 +5,7 @@
 // per check (green passed, red failed). A still-running attempt pulses amber.
 import { ChevronRight } from 'lucide-react'
 import type { Timeline, TimelineAttempt, TimelineGroup } from '../lib/runEvents'
+import { formatElapsed } from '../lib/runEvents'
 import { StatusDot } from './StatusDot'
 import type { Tone } from './StatusDot'
 
@@ -41,7 +42,7 @@ function AttemptTrack({ attempt }: { attempt: TimelineAttempt }) {
             <StatusDot
               key={`${c.name}-${i}`}
               tone={c.passed ? 'live' : 'error'}
-              title={`${c.name}: ${c.passed ? 'passed' : 'failed'}`}
+              title={`${c.name}: ${c.passed ? 'passed' : 'failed'} (${formatElapsed(c.durationS)})`}
             />
           ))}
         </span>

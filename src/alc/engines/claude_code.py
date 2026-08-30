@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Sequence
 
 from alc.engine import (
     Capabilities,
@@ -16,6 +17,8 @@ from alc.engine import (
     EngineResult,
     ProgressPrinter,
     Usage,
+    path_roots,
+    shorten_path,
 )
 from alc.engines._proc import terminate_process_group
 
@@ -109,6 +112,11 @@ class ClaudeCodeEngine:
         # truncate, and a generous cap) — the same generic noise control every engine uses.
         # The event name persists each note to the run log for the detail's activity feed.
         printer = ProgressPrinter(event="engine_activity")
+        # Every path the engine reports lives under this worktree, so the prefix is
+        # identical on every line — and is exactly what a width limit would keep.
+        # Shorten against it up front, before any truncation, so the filename (the
+        # only part that varies) is what survives on stderr AND in the run log.
+        roots = path_roots(request.workdir)
 
         try:
             proc = subprocess.Popen(
@@ -171,7 +179,7 @@ class ClaudeCodeEngine:
                 if not isinstance(event, dict):
                     continue
                 if event.get("type") == "assistant":
-                    for note in self._progress_notes(event):
+                    for note in self._progress_notes(event, roots):
                         printer.emit(note)
                 elif event.get("type") == "result":
                     output_text = event.get("result", "")
@@ -239,8 +247,13 @@ class ClaudeCodeEngine:
         return EngineResult(ok=True, output_text=output_text, usage=usage, raw=raw)
 
     @staticmethod
-    def _progress_notes(event: dict) -> list[str]:
-        """Extract short progress notes (tool uses) from an assistant stream event."""
+    def _progress_notes(event: dict, roots: Sequence[str] = ()) -> list[str]:
+        """Extract short progress notes (tool uses) from an assistant stream event.
+
+        ``roots`` are worktree prefixes (see ``engine.path_roots``): a hint that is
+        a path inside one is reported relative to it, so the 60-column cut below
+        trims argument noise rather than the filename.
+        """
         notes: list[str] = []
         content = event.get("message", {}).get("content", [])
         if not isinstance(content, list):
@@ -258,7 +271,8 @@ class ClaudeCodeEngine:
                 or ""
             )
             if isinstance(hint, str) and hint.strip():
-                notes.append(f"{name}: {hint.strip().splitlines()[0][:60]}")
+                first_line = shorten_path(hint.strip().splitlines()[0], roots)
+                notes.append(f"{name}: {first_line[:60]}")
             else:
                 notes.append(name)
         return notes

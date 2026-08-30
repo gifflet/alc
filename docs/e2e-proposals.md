@@ -100,7 +100,7 @@ the codebase.
 Proposal: human summary by default, `--json` for the full report. One flag, one
 conditional.
 
-### B2 — Say something while a check runs
+### B2 — Say something while a check runs — **DONE**
 *Finding 9.*
 
 `→ Verify (1 check(s))…` then 100 seconds of nothing. With a real engine, Act is
@@ -110,7 +110,7 @@ my first real run at ten minutes.
 Proposal: name the check as it starts and print its elapsed time on finish —
 `✓ test (100s)`. The events already carry `duration_s`.
 
-### B3 — Truncate engine activity from the left, not the right
+### B3 — Truncate engine activity from the left, not the right — **DONE**
 *Finding 10.*
 
     • Read: /private/var/folders/p6/rt1tk2pn37189vrg5y_7kwtc0000gp/T/alc

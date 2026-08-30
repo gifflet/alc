@@ -3,6 +3,7 @@ import {
   aggregateScorecard,
   buildTimeline,
   describeEvent,
+  formatElapsed,
   quarantinedFailures,
 } from './runEvents'
 import type { RunEvent } from '../api/types'
@@ -13,7 +14,7 @@ const MANDATE_RUN: RunEvent[] = [
   { ts: 't1', event: 'act_started', attempt: 0 },
   { ts: 't2', event: 'act_finished', attempt: 0, ok: true },
   { ts: 't3', event: 'verify_started', attempt: 0, checks: ['smoke'] },
-  { ts: 't4', event: 'check_finished', attempt: 0, name: 'smoke', passed: true, output_tail: '' },
+  { ts: 't4', event: 'check_finished', attempt: 0, name: 'smoke', passed: true, output_tail: '', duration_s: 1.5 },
   { ts: 't5', event: 'mandate_finished', success: true, attempts: 1, scorecard: { span: 1, passes: 1, streak: 1, touch: 0 } },
 ]
 
@@ -33,7 +34,7 @@ describe('buildTimeline — single mandate', () => {
     const g = t.groups[0]
     expect(g.attempts).toHaveLength(1)
     expect(g.attempts[0].actOk).toBe(true)
-    expect(g.attempts[0].checks).toEqual([{ name: 'smoke', passed: true, quarantined: false }])
+    expect(g.attempts[0].checks).toEqual([{ name: 'smoke', passed: true, durationS: 1.5, quarantined: false }])
     expect(g.success).toBe(true)
   })
 
@@ -186,10 +187,22 @@ describe('describeEvent', () => {
     expect(describeEvent({ ts: 't', event: 'check_started', name: 'test' })).toBe('Check test running…')
   })
   it('surfaces a timed-out check distinctly from a plain failure', () => {
-    const timedOut = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: false, timed_out: true })
-    expect(timedOut).toBe('Check test timed out ⏱')
-    const failed = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: false })
-    expect(failed).toBe('Check test failed')
+    const timedOut = describeEvent({
+      ts: 't', event: 'check_finished', name: 'test', passed: false, timed_out: true, duration_s: 120,
+    })
+    expect(timedOut).toBe('Check test timed out ⏱ (2m00s)')
+    const failed = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: false, duration_s: 2.5 })
+    expect(failed).toBe('Check test failed (2.5s)')
+  })
+  it('reports how long a check took, so a slow one is visible after the fact', () => {
+    const slow = describeEvent({ ts: 't', event: 'check_finished', name: 'test', passed: true, duration_s: 100 })
+    expect(slow).toBe('Check test passed (1m40s)')
+  })
+  it('formats an elapsed time the way the CLI does', () => {
+    expect(formatElapsed(0.42)).toBe('0.4s')
+    expect(formatElapsed(12.4)).toBe('12s')
+    expect(formatElapsed(100)).toBe('1m40s')
+    expect(formatElapsed(125)).toBe('2m05s')
   })
   it('labels a check-config edit with the touched files', () => {
     const label = describeEvent({ ts: 't', event: 'check_config_edited', files: ['ruff.toml (check config)'] })
