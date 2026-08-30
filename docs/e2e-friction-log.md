@@ -261,3 +261,21 @@ not: words before the first command, and proprietary terms in that stretch —
 The onboarding path is restrained. Recording this so the assumption is not
 carried into the fixes: whatever else is wrong, jargon-front-loading in
 getting-started is not it.
+
+## 25. [stumble — found while fixing A4] A cloned venv points at the main tree
+WHERE: `worktree_provision: - clone: .venv` (the A4 fix), inside an isolated run
+WHAT: a uv venv installs the project itself as an EDITABLE install, whose path
+is absolute. Cloning it into a worktree carries that path along, so the copied
+venv resolves the package to the MAIN tree:
+
+    ./.venv/bin/python -c "import alc; print(alc.__file__)"
+    /Users/guilherme.sousa/git/alc/src/alc/__init__.py     ← not the worktree
+
+`uv run` re-syncs before executing and rewrites the pointer to the worktree, so
+the scaffolded check (`uv run pytest -q`) is safe. Verified both halves.
+WHY IT MATTERS: the safety comes entirely from the runner, not from the
+provision. A check written as bare `pytest -q`, or `.venv/bin/pytest`, would run
+the main tree's code against the worktree's tests and call the result isolated.
+Nothing warns about that combination.
+This is also what made an isolated run fail while I had uncommitted changes: the
+worktree's committed tests met the main tree's edited source.
