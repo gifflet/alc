@@ -57,6 +57,8 @@ Those habits live in your head. They survive as long as you remember them, and t
 
 Prompting harder doesn't fix this. A practice enforced by a paragraph in a system prompt is a practice the model may skip. A practice enforced by code that refuses to report success is one it cannot.
 
+One condition, and it is the whole of the setup: the checks are yours. A fresh scaffold ships a single placeholder that always passes, so out of the box ALC enforces nothing. Wiring in your real test and lint commands is what makes the guarantee true of your code.
+
 ### Pull quote
 
 Nothing is reported done until it actually is.
@@ -83,7 +85,7 @@ Body: A Blueprint is a template for a class of work — chore, bug, feature — 
 ### Step 2
 
 Title: Gate
-Body: Before anything runs, the Policy Gate lints the Operator Layer and refuses a configuration that can't deliver on what it claims. A Blueprint with no checks is not a guarantee, so it isn't allowed to pretend to be one.
+Body: Before anything runs, the Policy Gate lints the Operator Layer and refuses a configuration that can't deliver on what it claims. A Blueprint with no checks is not a guarantee, so it isn't allowed to pretend to be one. It cannot judge the checks themselves, though — a check that always passes passes the gate, which is why the scaffold's placeholder is the first thing to replace.
 
 ### Step 3
 
@@ -189,6 +191,8 @@ Three commands to a validated Operator Layer
 ### Body
 
 The PyPI package is `alc-runtime`; it puts the `alc` command on your PATH. A freshly scaffolded project defaults to the free Mock engine, so you can prove the whole control plane works before spending anything on it.
+
+`alc onboard` is the step that replaces the scaffold's placeholder check: it reads the test and lint commands your project already declares — `package.json` scripts, Makefile targets, `tox`, `pre-commit` — and adopts them, so the guarantee is made of your checks rather than a stand-in.
 
 ### Code block
 

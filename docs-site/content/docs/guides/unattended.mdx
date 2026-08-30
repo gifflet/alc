@@ -56,6 +56,12 @@ alc tick                      # process everything pending once, then exit
 alc tick --concurrency 4      # up to 4 isolated tasks in parallel
 ```
 
+A drain processes **every** pending task, and each one can take up to four model
+turns (one attempt plus `max_repairs`, which defaults to 3). So a cron entry's
+ceiling per pass is *pending tasks × 4 turns* — bounded by how much you enqueue,
+not by the drain. Set `notify.on_budget_exceeded` before you leave one running
+overnight.
+
 | Flag | Effect |
 |---|---|
 | `--concurrency N` | Process up to N queue tasks in parallel, each in its own worktree |

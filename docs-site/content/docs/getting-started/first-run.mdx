@@ -60,8 +60,8 @@ You get live progress — each file read and edited, the model in use, the runni
 
 Two heads-ups:
 
-- **The model comes from the Blueprint's compute tier.** The scaffolded `feature` Blueprint uses the `deep` tier, which maps to the most expensive model. Pass `--tier standard` to override it for one invocation without editing the Blueprint.
-- **Without `--isolate`, edits land in your working tree.** If you cancel mid-run, partial changes stay — including new, *untracked* files. Check `git status`, not just `git diff --stat`; the latter hides untracked files. The run report lists what the agent changed.
+- **A run can cost up to four model turns.** The Assurance Loop takes one attempt and repairs up to three times — `max_repairs` defaults to 3 — so a run that keeps failing its checks invokes the model four times before it gives up. Multiply that by the Blueprint's compute tier: `chore` above runs at `standard`, while the scaffolded `feature` Blueprint uses `deep`, which maps to the most expensive model. Pass `--tier standard` to override the tier for one invocation without editing the Blueprint.
+- **Cancelling leaves work behind, and where depends on `--isolate`.** Without it, partial edits stay in your working tree — including new, *untracked* files, so check `git status` and not just `git diff --stat`, which hides them. **With** `--isolate`, cancelling still commits whatever the engine had already written onto the run's branch and removes the worktree; the CLI names that branch as it exits. Either way the run report lists what the agent changed.
 
 To keep your working tree clean, add `--isolate` and the whole run happens on a throwaway branch in a git worktree:
 
