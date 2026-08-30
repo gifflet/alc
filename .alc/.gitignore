@@ -1,0 +1,20 @@
+# The tracked operator layer is CONFIG only; everything else under .alc/ is runtime
+# state ALC regenerates (runs/, queue/, metrics/, variants/, and any dir a future
+# feature adds). This is an ALLOWLIST: the config is a BOUNDED, known set, so we
+# track it and ignore everything else by default — a new runtime dir never needs a
+# rule here. (A DENYLIST leaked repeatedly as features added runtime dirs.) Add a
+# NEW config file/dir to the allowlist below.
+/*
+!.gitignore
+!manifest.yaml
+!blueprints/
+!flows/
+!loops/
+!specialists/
+!prompts/
+!primers/
+# loops/ and specialists/ hold runtime files ALONGSIDE their .yaml config — re-ignore
+# those so only the config is tracked.
+loops/*.state.json
+loops/*.ledger.jsonl
+specialists/*.knowledge.md

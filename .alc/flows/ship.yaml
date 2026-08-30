@@ -1,0 +1,7 @@
+name: ship
+description: Plan a change, then implement it — each stage its own mandate.
+stages:
+  - name: plan
+    blueprint: plan
+  - name: build
+    blueprint: feature
