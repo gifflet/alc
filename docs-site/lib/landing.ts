@@ -128,7 +128,10 @@ export function getLandingContent() {
     },
     start: {
       heading: start['Section heading'] ?? '',
-      body: start['Body'] ?? '',
+      // Split like `problem.body` and `how.body`: this field was a single string,
+      // so a second paragraph written here rendered glued to the first inside one
+      // <p>. Silent, and only visible on the page.
+      body: (start['Body'] ?? '').split('\n\n').filter(Boolean),
       code: code(start['Code block']),
       primary: cta(start['Primary CTA']),
       secondary: cta(start['Secondary CTA']),

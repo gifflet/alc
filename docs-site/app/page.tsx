@@ -241,7 +241,9 @@ export default function Home() {
         <div className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-2 lg:items-center">
           <div className="min-w-0">
             <SectionTitle>{c.start.heading}</SectionTitle>
-            <Lede>{inline(c.start.body)}</Lede>
+            {c.start.body.map((paragraph) => (
+              <Lede key={paragraph.slice(0, 24)}>{inline(paragraph)}</Lede>
+            ))}
             <div className="mt-8 flex flex-wrap gap-3">
               {c.start.primary && <CtaLink cta={c.start.primary} variant="primary" />}
               {c.start.secondary && <CtaLink cta={c.start.secondary} variant="secondary" />}
