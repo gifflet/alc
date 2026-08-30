@@ -247,9 +247,17 @@ MEASURED:
 WHAT: a reader is told to install, and only 235 words later that ALC drives a
 coding CLI they must already have. The landing page never says it at all: it
 names Claude Code and Gemini, but never that you need one.
-WHY: someone installs, types `alc init`, and only then meets the requirement. If
-they have neither CLI, init silently picks `mock` — a no-op engine — and their
-first run "succeeds" having changed nothing.
+WHY: someone installs, types `alc init`, and only then meets the requirement.
+
+CORRECTION, made while fixing this: I wrote that init "silently picks mock".
+It does not. With neither CLI on PATH `detect_default_engine()` returns mock and
+cmd_init prints:
+  "Engine: mock — no engine CLI (claude, gemini) found on PATH. Runs are no-ops
+   until you install one and set `default_engine` in .alc/manifest.yaml."
+That is honest and even says runs will do nothing. The gap was only ever in the
+docs and the landing, which is where the fix went. Recording the retraction
+because the original wording would have sent someone to change code that is
+already right.
 
 ## 24. [NOT A FINDING — the hypothesis was wrong]
 I expected the getting-started docs to lead with philosophy. Measured, they do

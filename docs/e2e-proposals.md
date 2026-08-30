@@ -192,10 +192,14 @@ Claude Code and Gemini but never says you need one of them.
 Someone with neither installs, runs `alc init`, and gets `default_engine: mock`
 — a no-op — then a first run that "succeeds" having changed nothing.
 
+**DONE** — see below.
+
 Proposal: one line above the install block on both the landing and the docs:
-what you need on your machine before this is worth installing. And when init
-falls back to mock because it found no engine, say so as a warning rather than
-a neutral fact.
+what you need on your machine before this is worth installing.
+
+The second half of this proposal was withdrawn. I had asked for init to warn
+when it falls back to mock; it already does, in those words, including that runs
+will be no-ops. Only the docs and the landing needed changing.
 
 Note: I expected the docs to front-load vocabulary and measured that they do
 not (log #24). This is the real gap in that area; jargon in getting-started is
