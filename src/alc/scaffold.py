@@ -707,12 +707,14 @@ def _render_worktree_provision_block(
         for _label, set_name, _checks in stacks
         if set_name in _STACK_PROVISIONS
     ]
-    if not entries:
+    uv_venv = _uv_venv_provision(stacks, project_root)
+    if not entries and not uv_venv:
         return ""
     lines = [
-        "# Gitignored runtime deps symlinked into each isolated worktree before a run.",
+        "# Gitignored runtime deps provisioned into each isolated worktree before a run.",
         "# A git worktree checks out only tracked files, so these dirs would be absent",
-        "# and a check like tsc/eslint/vitest would exit 127 — link them in.",
+        "# and a check like tsc/eslint/vitest — or `uv run pytest` — would fail there",
+        "# while passing here.",
         "#",
         "# `refresh` + `when_changed` close the deps-bump false green: when a run edits a",
         "# dependency manifest, ALC runs the install in an ISOLATED deps dir BEFORE the",
@@ -732,7 +734,44 @@ def _render_worktree_provision_block(
         lines.append(f"  - link: {entry['path']}")
         lines.append(f"    refresh: [{', '.join(refresh)}]")
         lines.append(f"    when_changed: [{', '.join(when_changed)}]")
+    lines.extend(uv_venv)
     return "\n".join(lines) + "\n\n"
+
+
+def _uv_venv_provision(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path | None,
+) -> list[str]:
+    """The `.venv` entry for a uv-managed project, or [] when it does not apply.
+
+    Keyed on the RUNNER, not on the stack. Python at large has no single
+    always-gitignored env dir — poetry and pipenv put theirs outside the project
+    by default — which is why this block used to skip Python entirely. But once
+    `resolve_python_checks` has rewritten a check as `uv run pytest`, the project
+    demonstrably uses uv, and uv's env is `.venv` at the root. Without it a fresh
+    worktree builds a new venv from base dependencies alone, so a project whose
+    tests need an extra fails there for a reason that has nothing to do with the
+    change under test.
+
+    `clone`, not `link`: `uv run` may sync the env it is given, and a linked dir
+    is shared across worktrees where a mutation corrupts siblings. A clone is
+    copy-on-write, so it is isolated and still cheap.
+
+    No `refresh`. The Node analogue would be `uv sync`, which drops extras — it
+    would strip the very packages the clone was carrying and reintroduce the
+    failure this exists to prevent.
+    """
+    if project_root is None:
+        return []
+    if not any(set_name == "python" for _label, set_name, _checks in stacks):
+        return []
+    if not (project_root / "uv.lock").exists():
+        return []
+    return [
+        "  # uv's environment. Cloned rather than linked: `uv run` may sync it,",
+        "  # and a linked dir is shared across worktrees. Missing -> skipped.",
+        "  - clone: .venv",
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,9 @@ engines:
 # install it and uncomment the check rather than shipping a check that fails
 # on a clean checkout.
 worktree_provision:
-  - link: .venv
+  # uv's environment. Cloned rather than linked: `uv run` may sync it,
+  # and a linked dir is shared across worktrees. Missing -> skipped.
+  - clone: .venv
 
 check_sets:
   python:
