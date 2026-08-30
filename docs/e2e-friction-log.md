@@ -229,3 +229,35 @@ WHY: every other honesty fix in this product — the quarantine flag, the spike
 verdict, the derived guarantee — was about not overclaiming. This is the same
 class, one level down: the claim is about checks, and nothing measures whether
 the checks reach the project.
+
+---
+# Measured, not guessed: the docs half
+
+The target-user agent never delivered (five attempts across this session), so
+the "read it as a stranger" half is missing. I know the project and cannot
+un-know it. These two things are measurable regardless, so they are facts rather
+than impressions.
+
+## 23. [stumble] The engine prerequisite arrives 235 words after "install this"
+WHERE: `getting-started/installation.mdx`
+MEASURED:
+  install command      — word 35
+  "Pick an engine"     — word 270
+  "does not ship a model" — word 274
+WHAT: a reader is told to install, and only 235 words later that ALC drives a
+coding CLI they must already have. The landing page never says it at all: it
+names Claude Code and Gemini, but never that you need one.
+WHY: someone installs, types `alc init`, and only then meets the requirement. If
+they have neither CLI, init silently picks `mock` — a no-op engine — and their
+first run "succeeds" having changed nothing.
+
+## 24. [NOT A FINDING — the hypothesis was wrong]
+I expected the getting-started docs to lead with philosophy. Measured, they do
+not: words before the first command, and proprietary terms in that stretch —
+  installation.mdx    58 words,   0 terms
+  first-run.mdx       45 words,   1 term  (Operator Layer)
+  checks.mdx          83 words,   2 terms
+  introduction.mdx   388 words,   1 term  (Operator Layer)
+The onboarding path is restrained. Recording this so the assumption is not
+carried into the fixes: whatever else is wrong, jargon-front-loading in
+getting-started is not it.

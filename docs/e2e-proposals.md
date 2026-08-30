@@ -172,6 +172,29 @@ give Mix Health an empty state that explains what declaring a stage would buy.
 
 ---
 
+## E. The prerequisite comes too late (finding 23)
+
+### E1 — Say what you need BEFORE saying how to install
+*Finding 23.*
+
+`installation.mdx` gives the install command at word 35 and mentions that ALC
+drives a coding CLI you must already have at word 270. The landing page names
+Claude Code and Gemini but never says you need one of them.
+
+Someone with neither installs, runs `alc init`, and gets `default_engine: mock`
+— a no-op — then a first run that "succeeds" having changed nothing.
+
+Proposal: one line above the install block on both the landing and the docs:
+what you need on your machine before this is worth installing. And when init
+falls back to mock because it found no engine, say so as a warning rather than
+a neutral fact.
+
+Note: I expected the docs to front-load vocabulary and measured that they do
+not (log #24). This is the real gap in that area; jargon in getting-started is
+not.
+
+---
+
 ## If only five things were fixed
 
 1. **A1** — the Inbox must not offer to Land work that never passed.
