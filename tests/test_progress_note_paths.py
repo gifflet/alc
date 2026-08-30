@@ -136,3 +136,51 @@ class TestPrinterDedupesOnTheFullLine:
             printer.emit(f"Read: {_WORKTREE}/two.py")
         notes = [json.loads(line)["note"] for line in log.read_text().splitlines()]
         assert notes == [f"Read: {_WORKTREE}/one.py", f"Read: {_WORKTREE}/two.py"]
+
+
+class TestReadsThatLeaveTheWorkdirAreVisible:
+    """Isolation is sold as "your files stay as they are".
+
+    A read reaching past the worktree does not break that promise — but it means
+    the turn was informed by state the run does not control, and nothing in the
+    Scorecard could ever show it. E2E finding 7: a repair turn read the HOST
+    project's manifest from inside its isolated copy.
+    """
+
+    def test_a_path_outside_the_workdir_is_marked(self) -> None:
+        roots = (f"{_WORKTREE}/",)
+        notes = ClaudeCodeEngine._progress_notes(
+            _tool_use("Read", file_path="/Users/me/git/alc/.alc/manifest.yaml"), roots
+        )
+        assert notes == ["Read: /Users/me/git/alc/.alc/manifest.yaml  ⇱ outside the workdir"]
+
+    def test_a_path_inside_it_is_not(self) -> None:
+        roots = (f"{_WORKTREE}/",)
+        notes = ClaudeCodeEngine._progress_notes(
+            _tool_use("Read", file_path=f"{_WORKTREE}/src/main.py"), roots
+        )
+        assert notes == ["Read: src/main.py"]
+
+    def test_a_relative_hint_is_never_marked(self) -> None:
+        # A relative path resolves against the workdir by definition.
+        roots = (f"{_WORKTREE}/",)
+        notes = ClaudeCodeEngine._progress_notes(_tool_use("Read", file_path="src/main.py"), roots)
+        assert "outside" not in notes[0]
+
+    def test_a_command_is_never_marked(self) -> None:
+        roots = (f"{_WORKTREE}/",)
+        notes = ClaudeCodeEngine._progress_notes(_tool_use("Bash", command="uv run pytest"), roots)
+        assert "outside" not in notes[0]
+
+    def test_nothing_is_claimed_when_the_workdir_is_unknown(self) -> None:
+        # No roots means no basis for the claim — say nothing rather than guess.
+        notes = ClaudeCodeEngine._progress_notes(_tool_use("Read", file_path="/etc/hosts"), ())
+        assert notes == ["Read: /etc/hosts"]
+
+    def test_the_marker_survives_the_sixty_column_cut(self) -> None:
+        # The cut applies to the path; the marker is appended after it, so a long
+        # outside path cannot silently lose the one word that matters.
+        roots = (f"{_WORKTREE}/",)
+        long_path = "/Users/me/git/alc/" + "deep/" * 20 + "manifest.yaml"
+        notes = ClaudeCodeEngine._progress_notes(_tool_use("Read", file_path=long_path), roots)
+        assert notes[0].endswith("⇱ outside the workdir")

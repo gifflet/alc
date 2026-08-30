@@ -365,6 +365,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     no pack is installed unless explicitly asked (opt-in byte-identical `init`).
     """
     from alc.scaffold import (
+        detect_ci_config,
         detect_default_engine,
         detect_nested_stacks,
         detect_stack,
@@ -459,6 +460,21 @@ def cmd_init(args: argparse.Namespace) -> int:
             "package.json scripts, …) into check_sets."
         )
 
+    # A commented-out check is an instruction to install a tool and uncomment,
+    # and that instruction leads to an UNPINNED tool. This repo's own CI runs
+    # `uvx ruff@0.15.21`, so following the advice would install a ruff that can
+    # disagree with the pipeline that actually gates the project. alc does not
+    # parse CI configs (harvest.py keeps that deliberately out of scope), so this
+    # names the file and stops — an authoritative source the operator can read
+    # beats a guess dressed up as one.
+    ci_config = detect_ci_config(project_root)
+    if ci_config is not None:
+        print(
+            f"This project already runs checks in {ci_config} — prefer the commands "
+            "it uses (they are usually version-pinned) over the ones scaffolded "
+            "above. `alc onboard` adopts the ones ALC can read."
+        )
+
     # A stack one level down is invisible to the root scan, so its code would be
     # "verified" by checks that never load it — the tool's central promise made
     # true only in the letter. The manifest now carries them commented out; this
@@ -475,10 +491,13 @@ def cmd_init(args: argparse.Namespace) -> int:
     if args.stage:
         _install_stage_packs(project_root, args.stage, args.force)
     else:
+        # Deferred on purpose, and phrased as deferred. This used to open with
+        # a capitalised proper noun three sentences into first contact, offered
+        # alongside the real next step — so it competed with `Next:` and lost,
+        # but cost a beat to decide it was not for you yet.
         print(
-            "Archetype Packs (test authoring, dead-code sweeps, dependency "
-            "patrol, …) are available via `alc team hire <archetype>`. "
-            "See: alc team list"
+            "Optional, later: alc team list — prebuilt agent teams for test "
+            "authoring, dead-code sweeps and dependency patrol."
         )
 
     if args.setup:
@@ -938,8 +957,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                 wt.commit_on_exit = False
             wt.__exit__(*exc_info)
 
-        # Re-raise non-PolicyViolation exceptions after cleanup.
+        # Re-raise non-PolicyViolation exceptions after cleanup — but say where
+        # the work went first. `wt.__exit__` above ran on this path too, so an
+        # interrupt COMMITS whatever the engine had already written onto the run
+        # branch and removes the worktree. Staying silent leaves that branch to
+        # be met later by `alc land` with no record of where it came from, and
+        # leaves the UI (which reads isolation_finished) with nothing to name.
         if exc_info[1] is not None and not isinstance(exc_info[1], PolicyViolationError):
+            _print_isolation_result(wt)
+            _emit_isolation_result(run_log, wt)
             raise exc_info[1]
 
         if report is None:
@@ -4839,7 +4865,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Console-script entrypoint."""
+    """Console-script entrypoint.
+
+    Ctrl-C is a normal way to stop a run, not a crash. Left unhandled it printed
+    a twenty-line Python traceback — which, on the isolated path, buried the one
+    line that says the interrupted work was committed to a branch.
+    """
+    try:
+        _dispatch()
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        sys.exit(130)
+
+
+def _dispatch() -> None:
+    """Parse argv and run the requested command."""
     # A broken stderr pipe (cancelled exec / disconnected client) must never crash
     # the work — only the progress output is lost. Guard every stderr write once.
     sys.stderr = _ResilientStderr(sys.stderr)  # type: ignore[assignment]

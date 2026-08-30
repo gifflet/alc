@@ -323,7 +323,10 @@ class TestInitStage:
         assert cmd_init(_init_ns()) == 0
         out = capsys.readouterr().out
 
-        assert "alc team hire" in out
+        # The discovery hint is `alc team list`, not `alc team hire`: it used to
+        # name a proper noun and a command three sentences into first contact,
+        # competing with the actual next step. It now reads as deferred.
+        assert "Optional, later: alc team list" in out
         # The no-stack nudge now points at `alc onboard` as the harvest path.
         assert "alc onboard" in out
         assert not (tmp_path / ".alc" / "blueprints" / "test.md").exists()

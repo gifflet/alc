@@ -25,9 +25,10 @@ describe('RunOutcome', () => {
   })
 
   it('warns that edits may remain when a run was stopped', () => {
+    // No branch: a run against the working tree, where that IS where the edits are.
     render(<RunOutcome {...base} aborted />)
     expect(screen.getByText(/Stopped before finishing/)).toBeInTheDocument()
-    expect(screen.getByText(/still in the working tree/)).toBeInTheDocument()
+    expect(screen.getByText(/still in your working tree/)).toBeInTheDocument()
   })
 
   it('promises the checks while still running, without claiming a result', () => {
@@ -108,5 +109,36 @@ describe('RunOutcome — a spike', () => {
   it('leaves a real demand verdict alone', () => {
     render(<RunOutcome finished success aborted={false} />)
     expect(screen.getByText(/checks passed/)).toBeInTheDocument()
+  })
+})
+
+describe('RunOutcome — a stopped run says where the work went', () => {
+  it('names the branch an interrupted isolated run committed to', () => {
+    render(<RunOutcome finished success={null} aborted branch="alc/run-ce2f8479" />)
+    expect(screen.getByText('alc/run-ce2f8479')).toBeInTheDocument()
+    expect(screen.getByText(/read it before you keep it/)).toBeInTheDocument()
+    // Stopping an isolated run still COMMITS what the engine had written and
+    // removes the worktree, so the user's working tree never held the edits.
+    expect(screen.queryByText(/still in your working tree/)).not.toBeInTheDocument()
+  })
+
+  it('offers to read that branch, since the checks never finished', () => {
+    const seen: string[] = []
+    render(
+      <RunOutcome finished success={null} aborted branch="alc/run-ce2f8479" onSeeChanges={(b) => seen.push(b)} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /See what changed/ }))
+    expect(seen).toEqual(['alc/run-ce2f8479'])
+  })
+
+  it('still points at the working tree when the run was not isolated', () => {
+    render(<RunOutcome finished success={null} aborted />)
+    expect(screen.getByText(/still in your working tree/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /See what changed/ })).not.toBeInTheDocument()
+  })
+
+  it('reports nothing as done either way', () => {
+    render(<RunOutcome finished success={null} aborted branch="alc/run-1" />)
+    expect(screen.getByText(/Nothing was reported as/)).toBeInTheDocument()
   })
 })

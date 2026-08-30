@@ -271,8 +271,16 @@ class ClaudeCodeEngine:
                 or ""
             )
             if isinstance(hint, str) and hint.strip():
-                first_line = shorten_path(hint.strip().splitlines()[0], roots)
-                notes.append(f"{name}: {first_line[:60]}")
+                raw = hint.strip().splitlines()[0]
+                first_line = shorten_path(raw, roots)
+                # An absolute path that did not shorten is a path OUTSIDE this
+                # run's workdir. Isolation is sold as "your files stay as they
+                # are", and a read that reaches past the worktree does not break
+                # that — but it means the turn was informed by state the run does
+                # not control, and nothing in the Scorecard could ever show it.
+                escaped = bool(roots) and raw.startswith("/") and first_line == raw
+                suffix = "  ⇱ outside the workdir" if escaped else ""
+                notes.append(f"{name}: {first_line[:60]}{suffix}")
             else:
                 notes.append(name)
         return notes

@@ -603,6 +603,32 @@ def _build_check_sets(
     return sets
 
 
+# A project that already runs checks in CI has an authoritative answer to "how
+# does this repo lint?" — and it is usually PINNED, where the scaffolded guess is
+# not. alc does not parse CI configs (see harvest.py: deliberately out of scope),
+# so this only detects that one EXISTS and says so. Naming a file the operator
+# can read beats inventing a command that can disagree with their own pipeline.
+_CI_CONFIG_GLOBS: tuple[str, ...] = (
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml",
+    ".gitlab-ci.yml",
+    ".circleci/config.yml",
+    "azure-pipelines.yml",
+)
+
+
+def detect_ci_config(project_root: Path) -> str | None:
+    """Return the path of a CI config in *project_root*, or None.
+
+    Existence only — never parsed, never executed.
+    """
+    for pattern in _CI_CONFIG_GLOBS:
+        for match in sorted(project_root.glob(pattern)):
+            if match.is_file():
+                return str(match.relative_to(project_root))
+    return None
+
+
 def render_check_set(
     name: str,
     checks: list[tuple[str, list[str]]],

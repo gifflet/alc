@@ -168,14 +168,14 @@ give Mix Health an empty state that explains what declaring a stage would buy.
 
 - **D1** *(1)* — the installer says `Next: alc init` after an upgrade.
   **Already fixed by alc itself during this E2E** — `86a3fe6`.
-- **D2** *(20)* — the aborted verdict says edits are "in the working tree"; for
-  an isolated run they are on a branch. My copy, my error.
-- **D3** *(3)* — "Archetype Packs" arrives in the init output before it can mean
+- **D2** *(20)* — **DONE**. Bigger than my note said: an interrupted isolated
+  run COMMITS to its branch and the CLI printed a traceback and never named it.
+- **D3** *(3)* — **DONE**. "Archetype Packs" arrives in the init output before it can mean
   anything, competing with the actual next step.
-- **D4** *(4)* — the lint check is scaffolded commented-out pointing at an
+- **D4** *(4)* — **DONE** (partly: alc names the CI file, it does not parse it). the lint check is scaffolded commented-out pointing at an
   unpinned `ruff`, while this repo's CI pins `uvx ruff@0.15.21`. Reading the
   project's CI would beat guessing.
-- **D5** *(7)* — a repair turn read the HOST project's manifest from inside its
+- **D5** *(7)* — **DONE**. a repair turn read the HOST project's manifest from inside its
   isolated worktree. Not a violation, but invisible to the operator.
 
 ---
