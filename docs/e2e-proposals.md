@@ -152,7 +152,7 @@ task text — the only difference — is what gets removed.
 Proposal: show the task, with the timestamp as secondary. Same data, other way
 round.
 
-### C4 — Explain the numbers, or show fewer
+### C4 — Explain the numbers, or show fewer — **DONE**
 *Findings 17, 18, 11.*
 
 Eight metrics on the Dashboard's most prominent card with no legend; SPAN,

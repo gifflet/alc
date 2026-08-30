@@ -56,6 +56,21 @@ function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
   )
 }
 
+/** One line per metric, matching docs/concepts/scorecard. These are invented
+ * words — span, passes, streak, touch — and the card showed eight of them with
+ * no legend, three of them reading 3, which invites the reading that they are
+ * one thing. */
+const SCORECARD_HINT = {
+  span: 'Checks satisfied across all runs — the proxy for work delivered. Higher is better.',
+  passes: 'Engine turns spent reaching done. Lower is better; a climbing count means the loop is doing your thinking.',
+  streak: 'Runs that landed one-shot, with zero repairs. Higher is better.',
+  touch: 'Times a human had to step in. Lower is better — Touch to 0 is the north star.',
+  reports: 'Archived run reports counted here.',
+  ok: 'Runs whose checks all passed.',
+  failed: 'Runs that ended with a check still failing.',
+  netLines: 'Lines added minus lines deleted across these runs. Negative is good: deletion counts as delivery.',
+} as const
+
 function ScorecardCard() {
   const id = useProjectId()
   const { data } = useScorecard(id)
@@ -69,19 +84,36 @@ function ScorecardCard() {
       {s && s.reports > 0 ? (
         <>
           <div className="grid grid-cols-4 gap-3">
-            <Metric label="span" value={s.span_total} tone="live" />
-            <Metric label="passes" value={s.passes_total} />
-            <Metric label="streak" value={s.streak_total} />
-            <Metric label="touch" value={s.touch_total} tone={s.touch_total > 0 ? 'error' : undefined} />
-            <Metric label="reports" value={s.reports} />
-            <Metric label="ok" value={s.successes} tone="live" />
-            <Metric label="failed" value={s.failures} tone={s.failures > 0 ? 'error' : undefined} />
+            <Metric label="span" value={s.span_total} tone="live" hint={SCORECARD_HINT.span} />
+            <Metric label="passes" value={s.passes_total} hint={SCORECARD_HINT.passes} />
+            <Metric label="streak" value={s.streak_total} hint={SCORECARD_HINT.streak} />
+            <Metric
+              label="touch"
+              value={s.touch_total}
+              tone={s.touch_total > 0 ? 'error' : undefined}
+              hint={SCORECARD_HINT.touch}
+            />
+            <Metric label="reports" value={s.reports} hint={SCORECARD_HINT.reports} />
+            <Metric label="ok" value={s.successes} tone="live" hint={SCORECARD_HINT.ok} />
+            <Metric
+              label="failed"
+              value={s.failures}
+              tone={s.failures > 0 ? 'error' : undefined}
+              hint={SCORECARD_HINT.failed}
+            />
             <Metric
               label="net lines"
               value={netLines ?? '—'}
               tone={s.net_lines_total != null && s.net_lines_total < 0 ? 'live' : undefined}
+              hint={SCORECARD_HINT.netLines}
             />
           </div>
+          {/* A hover title is invisible on a touch screen, and half this project's
+              use is on a phone. This one line carries the part you cannot work
+              without: which direction is good. */}
+          <p className="mt-2 text-[length:var(--ui-text-label)] text-faint">
+            Span and streak: higher is better. Passes and touch: lower is better — the goal is touch 0.
+          </p>
           {warnings > 0 && (
             <div className="mt-2">
               <Pill tone="warn">
@@ -208,9 +240,25 @@ function MixHealthCard() {
       {!health || health.total_runs === 0 ? (
         <p className="text-[length:var(--ui-text-body)] text-faint">No data yet — no archived runs.</p>
       ) : !health.stage ? (
-        <p className="text-[length:var(--ui-text-body)] text-faint">
-          No stage declared — {health.total_runs} run{health.total_runs === 1 ? '' : 's'} unjudged.
-        </p>
+        /* This card used to spend the primary screen saying a feature you never
+           opted into is not running, in two words nothing on the page defines.
+           If it is going to take the space, it has to say what declaring a stage
+           would buy and how to do it. */
+        <div className="flex flex-col gap-1.5 text-[length:var(--ui-text-body)] text-faint">
+          <p className="text-muted">
+            No stage declared, so these {health.total_runs} run{health.total_runs === 1 ? '' : 's'} are
+            not measured against any target.
+          </p>
+          <p>
+            Set <code className="font-mono text-muted">stage:</code> to{' '}
+            <code className="font-mono text-muted">pre-pmf</code>,{' '}
+            <code className="font-mono text-muted">growth</code> or{' '}
+            <code className="font-mono text-muted">strong-pmf</code> in{' '}
+            <code className="font-mono text-muted">.alc/manifest.yaml</code> and this card reports how
+            much of your recent work matched the kind that stage expects. Advisory — it never changes
+            how a run executes.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-[length:var(--ui-text-body)] text-muted">

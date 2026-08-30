@@ -118,6 +118,25 @@ def _validate_tier(manifest, tier: str | None) -> str | None:
     return None
 
 
+# The Scorecard's four words are invented, and a first run is exactly when that
+# matters: `touch=0` on a run that changed nothing reads as neutral, and nothing
+# on screen says whether high or low is good. One line, under the numbers,
+# carrying the part you cannot act without — the direction.
+# Direction only, not definitions: what the reader cannot act without is which
+# way is good, and the four meanings live in the docs and the UI's own tooltips.
+# Kept under 80 columns so it never wraps into the ragged mess it is fixing.
+_SCORECARD_LEGEND = "           good: span ↑  passes ↓  streak ↑  touch ↓ (touch 0 is the goal)"
+
+
+def _print_scorecard(scorecard) -> None:
+    """Print the Scorecard line plus its one-line legend."""
+    print(
+        f"Scorecard: span={scorecard.span} passes={scorecard.passes} "
+        f"streak={scorecard.streak} touch={scorecard.touch}"
+    )
+    print(_SCORECARD_LEGEND)
+
+
 def _print_run_report(report, as_json: bool = False) -> None:
     """Print a RunReport: the human summary, or the full JSON under `--json`.
 
@@ -138,10 +157,7 @@ def _print_run_report(report, as_json: bool = False) -> None:
     print(f"Status:   {status}")
     print(f"Engine:   {report.engine}")
     print(f"Attempts: {report.scorecard.passes}")
-    print(
-        f"Scorecard: span={report.scorecard.span} passes={report.scorecard.passes} "
-        f"streak={report.scorecard.streak} touch={report.scorecard.touch}"
-    )
+    _print_scorecard(report.scorecard)
     if report.changed_files:
         print("Changed files:")
         for path in report.changed_files:
@@ -164,10 +180,7 @@ def _print_flow_report(report, as_json: bool = False) -> None:
     print(f"Flow:     {report.flow}")
     print(f"Status:   {status}")
     print(f"Engine:   {report.engine}")
-    print(
-        f"Scorecard: span={report.scorecard.span} passes={report.scorecard.passes} "
-        f"streak={report.scorecard.streak} touch={report.scorecard.touch}"
-    )
+    _print_scorecard(report.scorecard)
     print()
     for stage_report in report.stages:
         stage_status = "SUCCESS" if stage_report.success else "FAILED"

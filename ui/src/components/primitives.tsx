@@ -50,7 +50,20 @@ export function Card({
 }
 
 /** A labelled numeric metric (scorecard / queue counts). */
-export function Metric({ label, value, tone }: { label: string; value: ReactNode; tone?: Tone }) {
+export function Metric({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string
+  value: ReactNode
+  tone?: Tone
+  /** What the number means, on hover. A metric nobody can define is a metric
+   *  nobody can act on — and these are invented words (span, passes, streak,
+   *  touch), not ones a reader arrives already knowing. */
+  hint?: string
+}) {
   const color =
     tone === 'live'
       ? 'text-live'
@@ -60,7 +73,7 @@ export function Metric({ label, value, tone }: { label: string; value: ReactNode
           ? 'text-running'
           : 'text-primary'
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-0.5" title={hint}>
       <span className={`tabular font-mono text-[18px] leading-none ${color}`}>{value}</span>
       <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">{label}</span>
     </div>
