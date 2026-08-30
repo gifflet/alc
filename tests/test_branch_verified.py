@@ -116,3 +116,61 @@ def test_a_verified_branch_keeps_the_original_wording(tmp_path, monkeypatch) -> 
     item = next(i for i in inbox_mod._branches(root) if i["branch"].endswith("7777aaaa"))
     assert item["verified"] is True
     assert item["reason"] == "run work ready to land"
+
+
+# ---------------------------------------------------------------------------
+# The CLI has the same surface, and `--all` is the more dangerous one: it merges
+# in bulk with no per-branch decision.
+# ---------------------------------------------------------------------------
+
+
+def _land(*argv: str) -> int:
+    args = cli_mod._build_parser().parse_args(["land", *argv])
+    return cli_mod.cmd_land(args)
+
+
+def test_land_listing_marks_the_branch_that_never_passed(tmp_path, monkeypatch, capsys) -> None:
+    root = _project(tmp_path, monkeypatch)
+    _branch(root, "alc/run-1111aaaa")
+    _branch(root, "alc/run-2222bbbb")
+    (root / ".alc" / "runs").mkdir(parents=True, exist_ok=True)
+    (root / ".alc" / "runs" / "alc-run-1111aaaa.report.json").write_text("{}")
+
+    _land()
+    out = capsys.readouterr().out
+    assert "alc/run-1111aaaa   (run)\n" in out, "a verified branch keeps its plain line"
+    assert "alc/run-2222bbbb   (run)  ← checks did not pass" in out
+
+
+def test_land_all_warns_before_merging_unverified_work(tmp_path, monkeypatch, capsys) -> None:
+    root = _project(tmp_path, monkeypatch)
+    _branch(root, "alc/run-3333cccc")
+
+    _land("--all")
+    err = capsys.readouterr().err
+    assert "checks did NOT pass" in err
+    assert "alc/run-3333cccc" in err
+
+
+def test_land_all_stays_quiet_when_every_branch_passed(tmp_path, monkeypatch, capsys) -> None:
+    # The warning must be about this case only. Crying wolf on every drain would
+    # train the operator to ignore it.
+    root = _project(tmp_path, monkeypatch)
+    _branch(root, "alc/run-4444dddd")
+    (root / ".alc" / "runs").mkdir(parents=True, exist_ok=True)
+    (root / ".alc" / "runs" / "alc-run-4444dddd.report.json").write_text("{}")
+
+    _land("--all")
+    assert "checks did NOT pass" not in capsys.readouterr().err
+
+
+def test_land_json_carries_the_field(tmp_path, monkeypatch, capsys) -> None:
+    import json as _json
+
+    root = _project(tmp_path, monkeypatch)
+    _branch(root, "alc/run-5555eeee")
+    capsys.readouterr()  # drain init's output; json.loads cannot skip a prefix
+
+    _land("--json")
+    entries = _json.loads(capsys.readouterr().out)
+    assert entries[0]["verified"] is False

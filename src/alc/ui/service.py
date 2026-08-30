@@ -24,10 +24,10 @@ from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
 from alc.branches import (
     branch_diff,
+    branch_verified,
     delete_branches,
     list_alc_branches,
     prune_worktrees,
-    run_report_filename,
 )
 from alc.checks import audit_checks, check_history
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
@@ -974,28 +974,14 @@ def team_retire(root: Path, member: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def branch_verified(root: Path, branch: str, label: str) -> bool | None:
-    """Did the run behind *branch* pass its checks? None when unknowable.
-
-    An isolated `alc run` archives `<branch>.report.json` only when the report
-    succeeded (cli.py: `if report.success and blueprint.mode != "spike"`), and a
-    spike never commits a branch at all. So for a `run` branch the report is
-    present exactly when the run passed — and absent when it failed or was
-    interrupted, which is the case worth warning about.
-
-    No other producer writes a branch-named report: `flow`, `tick` and
-    `fanout-*` branches would all look unverified under the same test. They get
-    None — no claim — because a false alarm on every drained task would be worse
-    than the silence this replaces.
-    """
-    if label != "run":
-        return None
+def _verified_for(root: Path, branch: str, label: str) -> bool | None:
+    """Resolve this project's runs dir, then defer to `branches.branch_verified`."""
     try:
-        manifest = load_manifest(operator_layer(root))
-        runs = operator_layer(root).parent / manifest.runs_dir
+        ol = operator_layer(root)
+        runs = ol.parent / load_manifest(ol).runs_dir
     except (OSError, ValueError):
         return None
-    return (runs / run_report_filename(branch)).exists()
+    return branch_verified(runs, branch, label)
 
 
 def list_branches(root: Path) -> dict:
@@ -1016,7 +1002,7 @@ def list_branches(root: Path) -> dict:
     out = []
     for b in list_alc_branches(repo_root):
         entry = asdict(b)
-        entry["verified"] = branch_verified(root, b.name, b.label)
+        entry["verified"] = _verified_for(root, b.name, b.label)
         out.append(entry)
     return {"available": True, "branches": out}
 

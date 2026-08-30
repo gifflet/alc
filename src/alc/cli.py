@@ -2351,7 +2351,8 @@ def cmd_land(args: argparse.Namespace) -> int:
     Prints ``MergeReport.summary()`` and exits 1 when anything conflicted (0
     otherwise). Outside a git repository this is a clear error, exit 1.
     """
-    from alc.branches import list_alc_branches
+    from alc.branches import branch_verified, list_alc_branches
+    from alc.intake import load_manifest
     from alc.merge import auto_merge_branches
     from alc.worktree import git_toplevel, is_git_repo
 
@@ -2366,10 +2367,39 @@ def cmd_land(args: argparse.Namespace) -> int:
         return 1
     repo_root = git_toplevel(Path.cwd())
 
+    # A committed branch is not a verified one: an interrupted run whose checks
+    # failed still commits its worktree. `branch_verified` names that case so the
+    # listing and --all stop treating it as finished work.
+    try:
+        _ol = _find_operator_layer()
+        _runs_dir = _ol.parent / load_manifest(_ol).runs_dir
+    except (OSError, ValueError, SystemExit):
+        _runs_dir = None
+
+    def _verified(b) -> bool | None:
+        return None if _runs_dir is None else branch_verified(_runs_dir, b.name, b.label)
+
     if args.branch:
         branches = args.branch
     elif args.all:
-        branches = [b.name for b in list_alc_branches(repo_root) if not b.merged]
+        unmerged = [b for b in list_alc_branches(repo_root) if not b.merged]
+        unverified = [b.name for b in unmerged if _verified(b) is False]
+        if unverified:
+            # --all merges in bulk with no per-branch decision, so this is the
+            # only moment the fact can reach the operator.
+            print(
+                "[WARNING] these branches committed work whose checks did NOT pass "
+                "(the run failed or was interrupted):",
+                file=sys.stderr,
+            )
+            for name in unverified:
+                print(f"  {name}", file=sys.stderr)
+            print(
+                "  Landing them merges unverified work. Review with "
+                "`alc land <branch>` one at a time, or `git diff` first.",
+                file=sys.stderr,
+            )
+        branches = [b.name for b in unmerged]
     else:
         # List path — machine-readable (--json) or human-readable (default).
         unmerged = [b for b in list_alc_branches(repo_root) if not b.merged]
@@ -2378,13 +2408,14 @@ def cmd_land(args: argparse.Namespace) -> int:
 
             from alc.output import emit_json
 
-            emit_json([asdict(b) for b in unmerged])
+            emit_json([{**asdict(b), "verified": _verified(b)} for b in unmerged])
             return 0
         if not unmerged:
             print("No unmerged alc/ branches.")
             return 0
         for b in unmerged:
-            print(f"{b.name}   ({b.label})")
+            mark = "  ← checks did not pass" if _verified(b) is False else ""
+            print(f"{b.name}   ({b.label}){mark}")
         print("Run: alc land --all")
         return 0
 
