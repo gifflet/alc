@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "alc-runtime"
-version = "0.44.1"
+version = "0.44.2"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
