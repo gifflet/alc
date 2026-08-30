@@ -128,8 +128,23 @@ function RunsCard() {
                 className="flex min-h-[var(--ui-row-h)] w-full items-center gap-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
               >
                 <StatusDot tone={r.finished ? 'idle' : 'running'} pulse={!r.finished} />
-                <span className="w-10 font-mono text-[length:var(--ui-text-label)] text-faint">{r.kind}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--ui-text-label)] text-muted">{r.stem}</span>
+                {/* Same shape as the Runs view: the task leads, the stem sits
+                    under it as the address you would paste into `alc runs`.
+                    This card used to show kind + stem only, and the stem is
+                    truncated here — so every row read
+                    "run  20260830T041713-run-chore-in-d…" and the one part that
+                    told them apart was the part removed. */}
+                <span className="flex min-w-0 flex-1 flex-col justify-center leading-tight">
+                  <span className="truncate text-muted" title={r.title || r.stem}>
+                    {r.title || r.stem}
+                  </span>
+                  {r.title && (
+                    <span className="truncate font-mono text-[length:var(--ui-text-label)] text-faint">
+                      {r.unit ? `${r.unit} · ` : ''}
+                      {r.stem}
+                    </span>
+                  )}
+                </span>
                 <RelativeTime value={r.mtime} />
               </button>
             </li>

@@ -167,3 +167,104 @@ class TestRunsTail:
         lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
         assert len(lines) == 20
         assert json.loads(lines[0])["event"] == "event_5"
+
+
+class TestRunsListLeadsWithTheTask:
+    """The stem's slug is a lossy prefix of the task; the title is not.
+
+    A run asked to fix the closing advice in install.sh is stemmed
+    ``run-chore-in-docs-site-scripts-dist-install``, which reads as a run about
+    installing something. Five such rows differ only by a trailing hash.
+    """
+
+    @staticmethod
+    def _run_with_task(operator_layer: Path, stem: str, task: str, unit: str = "chore") -> None:
+        runs_dir = operator_layer / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        header = json.dumps({"event": "mandate_started", "task": task, "blueprint": unit})
+        (runs_dir / f"{stem}.jsonl").write_text(header + "\n")
+
+    def test_the_task_leads_and_the_stem_follows_it(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(operator_layer.parent)
+        self._run_with_task(
+            operator_layer,
+            "20260830T041713-run-chore-in-docs-site-scripts-dist-install-e40d96",
+            "In install.sh the closing line always prints the wrong advice after an upgrade.",
+        )
+
+        assert cmd_runs(_ns(runs_action="list")) == 0
+        out = capsys.readouterr().out
+        task_at = out.index("In install.sh the closing line")
+        stem_at = out.index("20260830T041713")
+        assert task_at < stem_at
+
+    def test_the_stem_stays_whole_and_pasteable(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(operator_layer.parent)
+        stem = "20260830T041713-run-chore-in-docs-site-scripts-dist-install-e40d96"
+        self._run_with_task(operator_layer, stem, "fix the closing advice")
+
+        assert cmd_runs(_ns(runs_action="list")) == 0
+        assert stem in capsys.readouterr().out
+
+    def test_two_runs_with_the_same_slug_are_told_apart_by_their_tasks(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(operator_layer.parent)
+        self._run_with_task(
+            operator_layer, "20260830T041713-run-chore-fix-the-install-a1", "fix the install banner"
+        )
+        self._run_with_task(
+            operator_layer, "20260830T041714-run-chore-fix-the-install-b2", "fix the install exit code"
+        )
+
+        assert cmd_runs(_ns(runs_action="list")) == 0
+        out = capsys.readouterr().out
+        assert "fix the install banner" in out
+        assert "fix the install exit code" in out
+
+    def test_the_unit_is_named_beside_the_task(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(operator_layer.parent)
+        self._run_with_task(operator_layer, "20260830T041713-run-bug-x-a1", "fix it", unit="bug")
+
+        assert cmd_runs(_ns(runs_action="list")) == 0
+        assert "[bug]" in capsys.readouterr().out
+
+    def test_a_very_long_task_is_cut_to_one_line(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        # Cut from the RIGHT, unlike a path: the start of a sentence is the part
+        # that says what it is about.
+        monkeypatch.chdir(operator_layer.parent)
+        task = "Rework the installer so that " + "x" * 400
+        self._run_with_task(operator_layer, "20260830T041713-run-chore-rework-a1", task)
+
+        assert cmd_runs(_ns(runs_action="list")) == 0
+        out = capsys.readouterr().out
+        assert "Rework the installer so that" in out
+        assert "…" in out
+        assert max(len(line) for line in out.splitlines()) < 200
+
+    def test_a_run_without_a_task_still_lists_its_stem(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(operator_layer.parent)
+        _write_run(operator_layer, "20260830T041713-run-chore-untitled-a1", ["mandate_started"])
+
+        assert cmd_runs(_ns(runs_action="list")) == 0
+        assert "20260830T041713-run-chore-untitled-a1" in capsys.readouterr().out
+
+    def test_json_output_is_untouched(self, operator_layer: Path, monkeypatch, capsys) -> None:
+        # The human listing changed shape; the machine contract did not.
+        monkeypatch.chdir(operator_layer.parent)
+        self._run_with_task(operator_layer, "20260830T041713-run-chore-x-a1", "fix it")
+
+        assert cmd_runs(_ns(runs_action="list", json=True)) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["runs"][0]["title"] == "fix it"
+        assert payload["runs"][0]["stem"] == "20260830T041713-run-chore-x-a1"

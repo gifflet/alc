@@ -143,7 +143,7 @@ signal was a "2" on a rail icon. "Mix Health: No stage declared" got a full card
 Proposal: when the Inbox is non-empty, it leads the Dashboard. It is the only
 thing on the page that needs a human.
 
-### C3 — Make runs tellable apart
+### C3 — Make runs tellable apart — **DONE**
 *Finding 16.*
 
 Five rows reading `run 20260830T041713-run-chore-in-d…`, truncated so that the

@@ -440,3 +440,54 @@ describe('Dashboard — work that needs a human', () => {
     expect(uiStore.getState().tabs.some((t) => t.title === 'Inbox')).toBe(true)
   })
 })
+
+describe('Dashboard — telling recent runs apart', () => {
+  const withRuns = (runs: unknown[]) => installFetch({ ...dashboardStubs, '/runs': { runs, total: runs.length } })
+
+  it('leads each row with the task, not the stem', async () => {
+    withRuns([
+      {
+        stem: '20260830T041713-run-chore-in-docs-site-scripts-dist-install-e40d96',
+        kind: 'run',
+        title: 'Fix the closing advice install.sh prints after an upgrade',
+        unit: 'chore',
+        mtime: 1783828795,
+        size: 712,
+        finished: true,
+        stale: false,
+      },
+    ])
+    renderWithProviders(<Dashboard />)
+    const task = await screen.findByText('Fix the closing advice install.sh prints after an upgrade')
+    const stem = screen.getByText(/20260830T041713-run-chore-in-docs-site/)
+    // The stem is still there as the address — below the task, not instead of it.
+    expect(task.compareDocumentPosition(stem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('tells apart two runs whose stems share a prefix', async () => {
+    withRuns([
+      { stem: '20260830T041713-run-chore-fix-the-install-a1', kind: 'run', title: 'fix the install banner', unit: 'chore', mtime: 1783828795, size: 1, finished: true, stale: false },
+      { stem: '20260830T041714-run-chore-fix-the-install-b2', kind: 'run', title: 'fix the install exit code', unit: 'chore', mtime: 1783828796, size: 1, finished: true, stale: false },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('fix the install banner')).toBeInTheDocument()
+    expect(screen.getByText('fix the install exit code')).toBeInTheDocument()
+  })
+
+  it('falls back to the stem when a run has no task recorded', async () => {
+    withRuns([
+      { stem: '20260830T041713-run-chore-untitled-a1', kind: 'run', title: '', unit: '', mtime: 1783828795, size: 1, finished: true, stale: false },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('20260830T041713-run-chore-untitled-a1')).toBeInTheDocument()
+  })
+
+  it('still opens the run it names', async () => {
+    withRuns([
+      { stem: '20260830T041713-run-chore-x-a1', kind: 'run', title: 'fix it', unit: 'chore', mtime: 1783828795, size: 1, finished: true, stale: false },
+    ])
+    renderWithProviders(<Dashboard />)
+    await userEvent.click(await screen.findByText('fix it'))
+    expect(uiStore.getState().tabs.some((t) => t.title === '20260830T041713-run-chore-x-a1')).toBe(true)
+  })
+})

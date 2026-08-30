@@ -2986,7 +2986,17 @@ def cmd_runs(args: argparse.Namespace) -> int:
             status = "finished" if run["finished"] else ("stale" if run["stale"] else "running")
             net = run["net_lines"]
             net_str = f"{net:+d}" if net is not None else "n/a"
-            print(f"{run['stem']}   ({run['kind']}, {status})   net-lines={net_str}")
+            # The stem's slug is a lossy prefix of the task: a run asked to fix
+            # the closing advice in install.sh becomes "run-chore-in-docs-site-
+            # scripts-dist-install", which reads as a run about installing. The
+            # title says what was actually asked, so it leads; the stem stays
+            # whole on its own line because it is what you paste into
+            # `alc runs show`.
+            title = (run.get("title") or "").strip()
+            if title:
+                unit = run.get("unit") or ""
+                print(f"{title[:100]}{'…' if len(title) > 100 else ''}{f'   [{unit}]' if unit else ''}")
+            print(f"  {run['stem']}   ({run['kind']}, {status})   net-lines={net_str}")
         print(f"Showing {len(result['runs'])} of {result['total']} run(s).")
         return 0
 
