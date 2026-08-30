@@ -118,6 +118,66 @@ def _validate_tier(manifest, tier: str | None) -> str | None:
     return None
 
 
+# "What can I run?" is the first question after a first successful run, and the
+# CLI had no answer to it: `alc run` teaches ONE Blueprint name, `alc status`
+# reports queue and branches but not Blueprints, and naming one that does not
+# exist raised a bare FileNotFoundError traceback. The listing lives here, on the
+# failure path, because that is where a stranger asks.
+def _list_units(directory: "Path", suffix: str) -> list[tuple[str, str]]:
+    """Return ``(name, purpose)`` for every unit file in *directory*, sorted.
+
+    The purpose is read from YAML front-matter (Markdown) or a top-level
+    ``purpose:`` key (YAML), best-effort: an unreadable or purpose-less unit
+    still lists, with an empty purpose. Discovery must never fail on a malformed
+    neighbour.
+    """
+    if not directory.is_dir():
+        return []
+    units: list[tuple[str, str]] = []
+    for path in sorted(directory.glob(f"*{suffix}")):
+        purpose = ""
+        try:
+            # Blueprints carry `purpose:`, Flows and Specialists `description:`.
+            # Both, so one listing serves every kind without a per-kind branch.
+            for line in path.read_text().splitlines()[:20]:
+                for key in ("purpose:", "description:"):
+                    if line.startswith(key):
+                        purpose = line.split(":", 1)[1].strip().strip("\"'")
+                        break
+                if purpose:
+                    break
+        except (OSError, UnicodeDecodeError):
+            # UnicodeDecodeError is a ValueError, not an OSError: a non-UTF-8
+            # neighbour would otherwise take the whole listing down with it.
+            pass
+        units.append((path.stem, purpose))
+    return units
+
+
+def _print_units(kind: str, directory: "Path", suffix: str, *, stream=None) -> None:
+    """Print what this project has of *kind*, aligned, with each unit's purpose."""
+    out = stream if stream is not None else sys.stdout
+    units = _list_units(directory, suffix)
+    if not units:
+        print(f"This project has no {kind}s. Create one with `alc new {kind} <name>`.", file=out)
+        return
+    width = max(len(name) for name, _ in units)
+    print(f"{kind.capitalize()}s in this project:", file=out)
+    for name, purpose in units:
+        print(f"  {name.ljust(width)}  {purpose}".rstrip(), file=out)
+
+
+def _no_such_unit(kind: str, name: str, directory: "Path", suffix: str) -> int:
+    """Report an unknown unit by name, then list the ones that exist. Exit code 1.
+
+    Replaces a FileNotFoundError traceback, which named the path it could not
+    open and nothing a reader could act on.
+    """
+    print(f"[ERROR] no such {kind}: '{name}'", file=sys.stderr)
+    _print_units(kind, directory, suffix, stream=sys.stderr)
+    return 1
+
+
 # The Scorecard's four words are invented, and a first run is exactly when that
 # matters: `touch=0` on a run that changed nothing reads as neutral, and nothing
 # on screen says whether high or low is good. One line, under the numbers,
@@ -860,7 +920,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     blueprints_dir = operator_layer.parent / manifest.blueprints_dir
-    blueprint = load_blueprint(blueprints_dir, args.blueprint)
+    # No Blueprint named: answer "what can I run?" instead of an argparse usage
+    # line. This is the discovery path — there is no other command that lists them.
+    if args.blueprint is None:
+        _print_units("blueprint", blueprints_dir, ".md")
+        print('\nRun one with: alc run <blueprint> "<task>"')
+        return 0
+    if args.task is None:
+        print(f"[ERROR] alc run {args.blueprint} needs a task, e.g.", file=sys.stderr)
+        print(f'  alc run {args.blueprint} "<a small, well-scoped task>"', file=sys.stderr)
+        return 1
+    try:
+        blueprint = load_blueprint(blueprints_dir, args.blueprint)
+    except FileNotFoundError:
+        return _no_such_unit("blueprint", args.blueprint, blueprints_dir, ".md")
 
     # Validate --tier early before any work is done.
     tier_err = _validate_tier(manifest, args.tier)
@@ -1847,7 +1920,10 @@ def cmd_specialist(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     specialists_dir = operator_layer.parent / manifest.specialists_dir
-    specialist = load_specialist(specialists_dir, args.name)
+    try:
+        specialist = load_specialist(specialists_dir, args.name)
+    except FileNotFoundError:
+        return _no_such_unit("specialist", args.name, specialists_dir, ".yaml")
 
     run_log = new_run_log_path(
         operator_layer.parent / manifest.runs_dir, "specialist", f"{args.name} {args.task}"
@@ -1887,7 +1963,10 @@ def cmd_flow(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     flows_dir = operator_layer.parent / manifest.flows_dir
-    flow = load_flow(flows_dir, args.flow_name)
+    try:
+        flow = load_flow(flows_dir, args.flow_name)
+    except FileNotFoundError:
+        return _no_such_unit("flow", args.flow_name, flows_dir, ".yaml")
 
     # Validate --tier early before any work is done.
     tier_err = _validate_tier(manifest, args.tier)
@@ -3757,8 +3836,13 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc run <blueprint> "<task>" [--engine NAME] [--isolate] [--primer NAME]
     #          [--bundle] [--from-bundle REF]
     run_parser = subparsers.add_parser("run", help="Run a Blueprint against a task.")
-    run_parser.add_argument("blueprint", help="Blueprint name (e.g. 'chore').")
-    run_parser.add_argument("task", help="Free-text task description.")
+    # Both optional so a bare `alc run` can LIST the Blueprints instead of
+    # printing a usage line. argparse errors before cmd_run gets a say, and the
+    # bare invocation is exactly how someone asks what they can run.
+    run_parser.add_argument(
+        "blueprint", nargs="?", help="Blueprint name (e.g. 'chore'). Omit to list them."
+    )
+    run_parser.add_argument("task", nargs="?", help="Free-text task description.")
     run_parser.add_argument(
         "--json",
         action="store_true",

@@ -57,9 +57,24 @@ export default async function DocPage({ params }: { params: Promise<Params> }) {
   if (!slug || slug.length === 0) {
     return (
       <div className="py-16">
-        <p className="text-muted">
+        {/* The label used to read "Start with the installation guide" while the
+            href resolved to the introduction — a link that named one destination
+            and went to another. It also gave a reader arriving from a link no
+            idea what the four getting-started pages are for. */}
+        <p className="max-w-xl text-muted">
+          Four pages take you from nothing to a verified run: what ALC is, how to
+          install it, your first run, and the twenty minutes that make its checks
+          real. Everything after those is reference.
+        </p>
+        <p className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
           <Link href={firstDocHref()} className="text-accent underline underline-offset-4">
-            Start with the installation guide
+            Start at the beginning
+          </Link>
+          <Link
+            href="/docs/getting-started/installation"
+            className="text-muted underline underline-offset-4"
+          >
+            Or jump to installation
           </Link>
         </p>
       </div>

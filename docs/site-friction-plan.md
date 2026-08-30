@@ -41,7 +41,7 @@ page. Everything else in this document was checked against a running site or a
 running binary; that one claim was checked against a source file, and it was the
 one that was wrong.
 
-**#3 belongs in Tier 2** — it is not a false claim, it is an unsignposted fork on
+**#3 belongs in Tier 2 — done.** — it is not a false claim, it is an unsignposted fork on
 a stranger's first decision. Label one path primary. The curl-pipe-sh is the one
 a cautious developer bounces off, and it is currently the one in the hero.
 
@@ -124,7 +124,7 @@ not by the drain.
 
 ---
 
-## Tier 2 — It blocks a task
+## Tier 2 — It blocks a task — **DONE**
 
 ### T2.1 — Answer "what can I run?"
 *Finding 13. Verified: no such command among the 34.*

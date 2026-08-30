@@ -190,7 +190,7 @@ Three commands to a validated Operator Layer
 
 ### Body
 
-The PyPI package is `alc-runtime`; it puts the `alc` command on your PATH. A freshly scaffolded project defaults to the free Mock engine, so you can prove the whole control plane works before spending anything on it.
+The one-liner at the top of this page is the recommended path: it installs `uv` if you need it, then runs the first line below. This block is that same install spelled out, followed by the workflow — take it if you already use uv or would rather see each step. The PyPI package is `alc-runtime`; it puts the `alc` command on your PATH, and a freshly scaffolded project defaults to the free Mock engine, so you can prove the whole control plane works before spending anything on it.
 
 `alc onboard` is the step that replaces the scaffold's placeholder check: it reads the test and lint commands your project already declares — `package.json` scripts, Makefile targets, `tox`, `pre-commit` — and adopts them, so the guarantee is made of your checks rather than a stand-in.
 
