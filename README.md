@@ -113,7 +113,7 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | **Run** one verified unit | `alc run <blueprint> "…"` · `alc spike "…"` · `alc flow <flow> "…"` |
 | **From a goal**, let ALC plan | `alc conduct "<goal>"` |
 | **Explore** alternatives | `alc explore … --variants N` → `alc compare --diff` → `alc adopt` |
-| **Run unattended** | `alc enqueue …` → `alc tick` · `alc cycle` / `alc loop` |
+| **Run unattended** | `alc enqueue …` → `alc tick` · `alc loop --once` / `alc loop` |
 | **Integrate** the result | `alc land` · `alc discard` |
 
 <details>
@@ -145,9 +145,9 @@ alc tick --concurrency 4                # drain the queue 4 tasks at a time
 | `alc team hire\|list\|retire\|status` | Scaffold, roster, or retire an Archetype Pack — the five are `prototyper`, `builder`, `sweeper`, `grower`, `maintainer`. Hiring is ADDITIVE (writes only the pack's missing files; `--force` overwrites). `alc init --stage pre-pmf\|growth\|strong-pmf` installs that stage's combo; `status` also shows Mix Health when `stage` is declared |
 | `alc checks audit [--json]` | Re-detect your stack(s) and PROPOSE check_set upgrades against the Manifest — never writes; flags checks still commented out for a missing binary |
 | `alc signal ingest --kind K --source S --title T` | Ingest a typed real-usage signal (`error`\|`feedback`\|`issue`\|`review`); `--from-file PATH` accepts an already-formed JSON payload; `alc signal list [--json]` shows what's pending consumption by a `signals` replenish loop |
-| `alc serve --webhook [--host H] [--port P] [--token T]` | A minimal HTTP door onto signal intake and the enqueue path — `POST /signal`, `POST /enqueue`, `GET /health`; validates and writes only, never executes; `alc tick`/`alc cycle` drains what lands |
+| `alc serve --webhook [--host H] [--port P] [--token T]` | A minimal HTTP door onto signal intake and the enqueue path — `POST /signal`, `POST /enqueue`, `GET /health`; validates and writes only, never executes; `alc tick`/`alc loop --once` drains what lands |
 | `alc artifacts [<stem>] [--json]` | List a run's captured e2e evidence (screenshots, curled responses, the health-poll log) — proof a `needs_service` run's `capture:` command actually verified the app live; defaults to the most recent run with artifacts |
-| `alc schedule install\|list\|remove <tick\|cycle NAME> --every 15m` | Generate and manage the crontab entry (or print the line to paste when no `crontab` is available) that fires `alc tick`/`alc cycle` on a cadence — idempotent install, marker-scoped remove |
+| `alc schedule install\|list\|remove <tick\|cycle NAME> --every 15m` | Generate and manage the crontab entry (or print the line to paste when no `crontab` is available) that fires `alc tick`/`alc loop NAME --once` on a cadence — idempotent install, marker-scoped remove |
 | `alc setup [--engine]` | Install/update the user-level editor skill (Claude Code or Gemini) |
 | `alc ui [--lan] [--port 8642]` | Serve the web IDE (dashboard, queue, live runs, loops, config) — needs the optional `ui` extra |
 

@@ -124,7 +124,7 @@ export function More({ onOpenSpike }: { onOpenSpike?: () => void }) {
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-[length:var(--ui-text-body)] text-primary">Manifest</span>
               <span className="truncate text-[length:var(--ui-text-label)] text-faint">
-                Read the Operator Layer config
+                Read the .alc/ config
               </span>
             </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-faint" />

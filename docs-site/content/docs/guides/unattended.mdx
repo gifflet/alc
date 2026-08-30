@@ -155,7 +155,7 @@ alc serve --webhook --port 8787 --token "$ALC_WEBHOOK_TOKEN"
 | `POST /enqueue` | Write a queue task |
 | `GET /health` | Liveness |
 
-It **validates and writes only, and never executes anything**. `alc tick` or `alc cycle` drains what lands, on its own turn. That separation is deliberate: an external caller can create demand, but it cannot make the control plane skip a step.
+It **validates and writes only, and never executes anything**. `alc tick` or `alc loop --once` drains what lands, on its own turn. That separation is deliberate: an external caller can create demand, but it cannot make the control plane skip a step.
 
 `--webhook` is required — it is the only mode `alc serve` offers today, so the command reads as an explicit choice rather than an accidental default. `--token` is a bearer token checked on every request. Omit it and the port answers unauthenticated requests, with a warning on stderr.
 

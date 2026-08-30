@@ -21,7 +21,7 @@ export function SiteJsonLd() {
       '@type': 'SoftwareApplication',
       '@id': absolute('/#software'),
       name: SITE.name,
-      alternateName: 'Agentic Layer Compiler & Runtime',
+      alternateName: 'ALC control plane',
       description: SITE.description,
       applicationCategory: 'DeveloperApplication',
       operatingSystem: 'macOS, Linux, Windows',

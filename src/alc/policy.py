@@ -449,7 +449,7 @@ def lint_flow(
                     severity="error",
                     message=(
                         f"Flow '{flow.name}', stage '{stage.name}': blueprint "
-                        f"'{stage.blueprint}' does not exist in the Operator Layer "
+                        f"'{stage.blueprint}' does not exist in .alc/ "
                         f"(available: {sorted(available_blueprints)})."
                     ),
                 )
@@ -461,7 +461,7 @@ def lint_flow(
                     severity="error",
                     message=(
                         f"Flow '{flow.name}', stage '{stage.name}': specialist "
-                        f"'{stage.specialist}' does not exist in the Operator Layer "
+                        f"'{stage.specialist}' does not exist in .alc/ "
                         f"(available: {sorted(available_specialists)})."
                     ),
                 )

@@ -82,14 +82,23 @@ class TestBuildLine:
             "*/15 * * * * cd /proj && /usr/bin/alc tick # alc-schedule:tick"
         )
 
-    def test_cycle_includes_the_loop_name(self) -> None:
+    def test_cycle_writes_the_current_spelling_and_keeps_its_marker(self) -> None:
+        # The target keyword stays `cycle` — the marker keys on it, so an entry
+        # installed before the verbs merged still resolves for list/remove. What
+        # goes INTO cron is `alc loop <name> --once`, so a scheduled fire does
+        # not mail the operator a deprecation notice every time it runs.
         line = build_line(
             "cycle", "deliver", Path("/proj"), "0 */2 * * *", ["/usr/bin/alc"]
         )
         assert line == (
-            "0 */2 * * * cd /proj && /usr/bin/alc cycle deliver "
+            "0 */2 * * * cd /proj && /usr/bin/alc loop deliver --once "
             "# alc-schedule:cycle:deliver"
         )
+
+    def test_a_scheduled_line_never_uses_the_deprecated_verb(self) -> None:
+        line = build_line("cycle", "deliver", Path("/proj"), "*/5 * * * *", ["/usr/bin/alc"])
+
+        assert " cycle deliver" not in line
 
     def test_paths_with_spaces_are_quoted(self) -> None:
         line = build_line(

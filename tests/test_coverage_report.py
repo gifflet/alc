@@ -7,6 +7,7 @@ Conformant is about shape; a reader takes it as sound.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from alc.models import Blueprint, Check, Manifest
@@ -94,3 +95,65 @@ def test_a_set_reaches_a_stack_only_when_a_blueprint_wires_it(tmp_path: Path) ->
 
 def test_a_fully_covered_flat_project_says_nothing(tmp_path: Path) -> None:
     assert coverage_report(_manifest(), [_bp("chore", [PYTEST])], tmp_path) == []
+
+
+class TestLintHumanOutput:
+    """The pure `coverage_report` was covered; the sentence an operator reads
+    was not. A3 taught the difference: a layer can be well-formed and still
+    reach none of the project, and only the CLI string says so."""
+
+    @staticmethod
+    def _project(tmp_path: Path, monkeypatch, *, nested: bool) -> None:
+        layer = tmp_path / ".alc"
+        (layer / "blueprints").mkdir(parents=True)
+        (layer / "manifest.yaml").write_text(
+            "version: 1\ndefault_engine: mock\n"
+            "compute_tiers:\n  standard:\n    mock: mock-small\n"
+            "engines:\n  mock:\n    type: mock\n"
+            "check_sets:\n  python:\n    - name: test\n      command: [\"pytest\", \"-q\"]\n"
+            "blueprints_dir: .alc/blueprints\nflows_dir: .alc/flows\n"
+        )
+        (layer / "blueprints" / "chore.md").write_text(
+            "---\nname: chore\npurpose: Do a chore.\ncompute_tier: standard\n"
+            "checks:\n  - name: test\n    command: [\"pytest\", \"-q\"]\n"
+            "report:\n  format: json\n  schema:\n    status: string\n---\n# Workflow\n1. Go.\n"
+        )
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.1.0"\n')
+        if nested:
+            (tmp_path / "ui").mkdir()
+            (tmp_path / "ui" / "package.json").write_text('{"name":"ui","scripts":{"test":"x"}}')
+        monkeypatch.chdir(tmp_path)
+
+    def test_a_reachable_layer_reports_well_formed(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        from alc.cli import cmd_lint
+
+        self._project(tmp_path, monkeypatch, nested=False)
+
+        assert cmd_lint(argparse.Namespace(json=False)) == 0
+        out = capsys.readouterr().out
+        assert "No violations found" in out
+        assert "does not reach" not in out
+
+    def test_an_unreached_stack_is_named_not_called_conformant(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        from alc.cli import cmd_lint
+
+        self._project(tmp_path, monkeypatch, nested=True)
+
+        assert cmd_lint(argparse.Namespace(json=False)) == 0
+        out = capsys.readouterr().out
+        assert "does not reach all of this project" in out
+        assert "ui/" in out
+
+    def test_the_json_contract_stays_an_array_of_violations(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        import json as _json
+
+        from alc.cli import cmd_lint
+
+        self._project(tmp_path, monkeypatch, nested=True)
+
+        assert cmd_lint(argparse.Namespace(json=True)) == 0
+        assert _json.loads(capsys.readouterr().out) == []

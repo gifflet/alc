@@ -439,7 +439,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    print("Initialised Operator Layer:")
+    print("Initialised .alc/ (the Operator Layer):")
     for path in created:
         print(f"  {path}")
 
@@ -855,12 +855,12 @@ def cmd_lint(args: argparse.Namespace) -> int:
 
     if not violations:
         if coverage:
-            print("No violations found — the Operator Layer is well-formed.")
+            print("No violations found — .alc/ is well-formed.")
             print("But it does not reach all of this project:")
             for line in coverage:
                 print(line)
         else:
-            print("No violations found. Operator Layer is conformant.")
+            print("No violations found — .alc/ is well-formed.")
         return 0
 
     for v in violations:
@@ -1400,8 +1400,16 @@ def cmd_cycle(args: argparse.Namespace) -> int:
 
 
 def cmd_loop(args: argparse.Namespace) -> int:
-    """Run `alc loop <name> [--interval S]`: foreground wrapper repeating cycles."""
+    """Run `alc loop <name>`: repeat cycles until the loop stops.
+
+    ``--once`` and ``--status`` delegate to ``cmd_cycle``, which is the single
+    implementation of one cycle — the merge is at the CLI surface, not a second
+    copy of the behaviour.
+    """
     import time
+
+    if getattr(args, "once", False) or getattr(args, "status", False):
+        return cmd_cycle(args)
 
     from alc.events import abort_event_on_interrupt
     from alc.loop import (
@@ -1657,7 +1665,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
     if not violations:
-        print("No violations found. Operator Layer is conformant.")
+        print("No violations found — .alc/ is well-formed.")
     else:
         for v in violations:
             tag = "[ERROR]" if v.severity == "error" else "[WARN] "
@@ -3732,7 +3740,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc init [--force] [--setup] [--stage pre-pmf|growth|strong-pmf]
     init_parser = subparsers.add_parser(
         "init",
-        help="Scaffold a default Operator Layer (.alc/) into the current directory.",
+        help="Scaffold a default .alc/ (the Operator Layer) into the current directory.",
     )
     init_parser.add_argument(
         "--force",
@@ -3824,7 +3832,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # alc lint
     lint_parser = subparsers.add_parser(
-        "lint", help="Check the Operator Layer for Policy Gate violations."
+        "lint", help="Check .alc/ for Policy Gate violations (not your source code)."
     )
     lint_parser.add_argument(
         "--json",
@@ -4296,10 +4304,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc cycle <name> [--engine NAME] [--concurrency N] [--status] [--reset]
     cycle_parser = subparsers.add_parser(
         "cycle",
-        help=(
-            "Run ONE Autonomous Loop cycle (replenish -> drain -> check stop) and "
-            "exit. State persists between fires — call via cron."
-        ),
+        help="Deprecated alias for `alc loop <name> --once`.",
     )
     cycle_parser.add_argument("name", help="Loop name (e.g. 'deliver').")
     cycle_parser.add_argument("--engine", default=None, help="Override the default engine.")
@@ -4338,16 +4343,48 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # alc loop <name> [--engine NAME] [--interval S]
+    # alc loop <name> [--once] [--engine NAME] [--interval S]
+    #
+    # One verb for one unit. `cycle` runs one iteration of a `loop` while `loop`
+    # repeats `cycle` — two verbs splitting one noun in a direction nobody
+    # guesses, and the collision lands on the unattended tier. `--once` says the
+    # same thing in a way a reader can predict from the command they already know.
     loop_parser = subparsers.add_parser(
         "loop",
         help=(
-            "Foreground wrapper that repeats `alc cycle` until the loop stops, "
-            "sleeping between cycles. For interactive use without cron."
+            "Run an Autonomous Loop until it stops, sleeping between cycles. "
+            "Add --once for a single cycle (the cron target)."
         ),
     )
     loop_parser.add_argument("name", help="Loop name (e.g. 'deliver').")
+    loop_parser.add_argument(
+        "--once",
+        action="store_true",
+        default=False,
+        help=(
+            "Run ONE cycle (replenish -> drain -> check stop) and exit. State "
+            "persists between fires — this is what cron calls."
+        ),
+    )
     loop_parser.add_argument("--engine", default=None, help="Override the default engine.")
+    loop_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=0,
+        help="With --once, override the loop's drain concurrency (0 = use the definition).",
+    )
+    loop_parser.add_argument(
+        "--status",
+        action="store_true",
+        default=False,
+        help="Print the loop state without running anything.",
+    )
+    loop_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="With --status, print the loop state as JSON (machine-readable).",
+    )
     loop_parser.add_argument(
         "--interval",
         type=int,
@@ -4388,7 +4425,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc primer <action> <name> [--force]
     primer_parser = subparsers.add_parser(
         "primer",
-        help="Manage Primer files (curated context blocks) in the Operator Layer.",
+        help="Manage Primer files (curated context blocks) in .alc/.",
     )
     primer_parser.add_argument(
         "action",
@@ -5003,6 +5040,15 @@ def _dispatch() -> None:
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
     elif args.command == "cycle":
+        # Deprecated, not removed: `alc cycle` is in people's crontabs, and a
+        # rename that breaks a scheduled job at 3am to improve a noun is not a
+        # trade worth making. The notice goes to stderr so a cron mail carries it
+        # while the exit code and stdout stay exactly as before.
+        print(
+            "[WARN] `alc cycle` is deprecated — use `alc loop "
+            f"{getattr(args, 'name', '<name>')} --once`. It still works.",
+            file=sys.stderr,
+        )
         sys.exit(cmd_cycle(args))
     elif args.command == "loop":
         sys.exit(cmd_loop(args))

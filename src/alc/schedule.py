@@ -85,7 +85,15 @@ def build_line(
     Every token is shell-quoted (cron runs the line through ``/bin/sh -c``), so
     a project path or binary path containing spaces is still safe.
     """
-    argv = [*binary, target, *([name] if name else [])]
+    # The schedule TARGET keyword stays `cycle` (it is what the marker keys on,
+    # so an entry installed before this still resolves for `list`/`remove`), but
+    # the command written into cron is the current spelling. Without this, every
+    # newly scheduled fire would mail the operator a deprecation notice.
+    argv = (
+        [*binary, "loop", name, "--once"]
+        if target == "cycle" and name
+        else [*binary, target, *([name] if name else [])]
+    )
     command = " ".join(shlex.quote(a) for a in argv)
     return f"{cron_expr} cd {shlex.quote(str(cwd))} && {command} {marker(target, name)}"
 

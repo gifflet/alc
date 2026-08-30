@@ -12,21 +12,27 @@ An Autonomous Loop is one step past the queue. Instead of you filling it, the lo
 Each cycle is one fire. State persists between fires, so the loop is safe to drive from cron.
 
 ```bash
-alc cycle deliver             # run ONE cycle and exit
-alc cycle deliver --status    # print the state without running anything
-alc cycle deliver --reset     # reset the state, then run one cycle
+alc loop deliver --once             # run ONE cycle and exit — the cron target
+alc loop deliver --status           # print the state without running anything
+alc loop deliver --once --reset     # reset the state, then run one cycle
 ```
 
-| `alc cycle` flag | Effect |
+| `alc loop` flag | Effect |
 |---|---|
+| `--once` | Run one cycle and exit, instead of repeating |
 | `--engine NAME` | Override the engine for this cycle |
-| `--concurrency N` | Override the loop's drain concurrency (0 = use the definition) |
+| `--concurrency N` | With `--once`, override the loop's drain concurrency (0 = use the definition) |
 | `--status` | Print the loop state and exit |
 | `--reset` | Reset the state first |
 | `--json` | With `--status`, print the state as JSON |
+| `--interval S` | Seconds to sleep between cycles when repeating (default 300) |
 | `--allow-dirty` | Silence the dirty working-tree notice |
 
-For interactive use without cron, `alc loop` is a foreground wrapper that repeats `alc cycle` until the loop stops:
+**`alc cycle deliver` is the old spelling of `alc loop deliver --once`.** It still
+works and warns on stderr, so a crontab installed before the two verbs merged
+keeps running unchanged.
+
+Without `--once`, the same command repeats until the loop stops, sleeping between cycles — that is the interactive shape:
 
 ```bash
 alc loop deliver --interval 300      # sleep 300s between cycles (the default)
@@ -141,7 +147,7 @@ Every step reuses a primitive that already existed — the queue, the Policy Gat
 ## Reading the state
 
 ```bash
-alc cycle deliver --status --json
+alc loop deliver --status --json
 ```
 
 | State field | Meaning |

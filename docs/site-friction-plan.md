@@ -158,7 +158,7 @@ product is explained, and people arriving from a link never see it.
 
 ---
 
-## Tier 3 — Naming (your decisions, not mine)
+## Tier 3 — Naming (your decisions, not mine) — **DONE**, all three as recommended
 
 These are breaking or doc-wide. I can execute any of them; I should not pick.
 
