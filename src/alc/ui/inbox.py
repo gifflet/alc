@@ -93,15 +93,25 @@ def _branches(root: Path) -> list[dict]:
     for branch in listing["branches"]:
         if branch["merged"]:
             continue
+        # `verified is False` means a run branch with no archived report: its
+        # checks failed or it was interrupted, and it committed anyway. Saying
+        # "ready to land" about that is the one thing this product must not do.
+        verified = branch.get("verified")
+        reason = (
+            f"{branch['label']} work — checks did not pass, review before landing"
+            if verified is False
+            else f"{branch['label']} work ready to land"
+        )
         items.append(
             {
                 "kind": "branch",
                 "id": f"branch:{branch['name']}",
                 "title": branch["name"],
-                "reason": f"{branch['label']} work ready to land",
+                "reason": reason,
                 "order": -branch["committed_at"],  # newest first
                 "branch": branch["name"],
                 "committed_at": branch["committed_at"],
+                "verified": verified,
             }
         )
     return items

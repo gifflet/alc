@@ -187,6 +187,8 @@ export interface InboxItem {
   /** branch */
   branch?: string
   committed_at?: number
+  /** false when the run behind this branch never passed its checks. See Branch. */
+  verified?: boolean | null
   /** loop */
   loop?: string
   cycle?: number
@@ -225,6 +227,12 @@ export interface Branch {
   label: string
   committed_at: number
   merged: boolean
+  /** Did the run behind this branch pass its checks?
+   *  true  — an archived report exists, so it passed.
+   *  false — a `run` branch with no report: it failed or was interrupted, and
+   *          committed anyway. The case worth warning about.
+   *  null  — flow/tick/fanout, which archive no branch-named report. No claim. */
+  verified: boolean | null
 }
 
 /** GET /branches's shape: outside a git repo, `available` is false and

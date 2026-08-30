@@ -22,7 +22,13 @@ from alc import onboard as onboard_core
 from alc import runs as runs_core
 from alc import signals as signals_core
 from alc.audit import audit_window, parse_since
-from alc.branches import branch_diff, delete_branches, list_alc_branches, prune_worktrees
+from alc.branches import (
+    branch_diff,
+    delete_branches,
+    list_alc_branches,
+    prune_worktrees,
+    run_report_filename,
+)
 from alc.checks import audit_checks, check_history
 from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
 from alc.engines.registry import resolve_engine
@@ -968,8 +974,37 @@ def team_retire(root: Path, member: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def branch_verified(root: Path, branch: str, label: str) -> bool | None:
+    """Did the run behind *branch* pass its checks? None when unknowable.
+
+    An isolated `alc run` archives `<branch>.report.json` only when the report
+    succeeded (cli.py: `if report.success and blueprint.mode != "spike"`), and a
+    spike never commits a branch at all. So for a `run` branch the report is
+    present exactly when the run passed — and absent when it failed or was
+    interrupted, which is the case worth warning about.
+
+    No other producer writes a branch-named report: `flow`, `tick` and
+    `fanout-*` branches would all look unverified under the same test. They get
+    None — no claim — because a false alarm on every drained task would be worse
+    than the silence this replaces.
+    """
+    if label != "run":
+        return None
+    try:
+        manifest = load_manifest(operator_layer(root))
+        runs = operator_layer(root).parent / manifest.runs_dir
+    except (OSError, ValueError):
+        return None
+    return (runs / run_report_filename(branch)).exists()
+
+
 def list_branches(root: Path) -> dict:
     """Return {available, branches}: the project's `alc/*` branches.
+
+    Each branch carries `verified`: True when its run passed, False when a `run`
+    branch has no archived report (it failed or was interrupted, yet still
+    committed), None when the producer does not archive one. See
+    `branch_verified`.
 
     Outside a git repository (or with no `git` binary) this is a clear
     ``{"available": False, "branches": []}`` — never a 500 — mirroring
@@ -978,10 +1013,12 @@ def list_branches(root: Path) -> dict:
     if not is_git_repo(root):
         return {"available": False, "branches": []}
     repo_root = git_toplevel(root)
-    return {
-        "available": True,
-        "branches": [asdict(b) for b in list_alc_branches(repo_root)],
-    }
+    out = []
+    for b in list_alc_branches(repo_root):
+        entry = asdict(b)
+        entry["verified"] = branch_verified(root, b.name, b.label)
+        out.append(entry)
+    return {"available": True, "branches": out}
 
 
 def _resolve_land_delivery(

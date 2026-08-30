@@ -210,7 +210,15 @@ describe('Queue actions', () => {
   })
 })
 
-const branch: Branch = { name: 'alc/tick-aaaaaaaa', label: 'tick', committed_at: 1, merged: false }
+// verified is null on purpose: a tick branch archives no branch-named report,
+// so the absence of one proves nothing about it.
+const branch: Branch = {
+  name: 'alc/tick-aaaaaaaa',
+  label: 'tick',
+  committed_at: 1,
+  merged: false,
+  verified: null,
+}
 
 describe('Branches', () => {
   it('lists unmerged alc/* branches and lands one', async () => {
