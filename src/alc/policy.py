@@ -92,6 +92,17 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           standing exception the
                                                           lint stays silent about is
                                                           invisible attack surface.
+    16. Blueprint has NO check_set and resolves to nothing but the smoke
+        placeholder                              (warn)  — a check that always
+                                                          passes is not a
+                                                          guarantee, and this is
+                                                          exactly what a fresh
+                                                          scaffold ships. Rule
+                                                          11's complement: 11
+                                                          covers a declared-but-
+                                                          empty check_set, this
+                                                          covers the inline
+                                                          default.
 
     Rule 1 is the ONE relaxation in the whole gate (roadmap-phase-3.md T1): a
     Blueprint declaring `mode: spike` still gets flagged for having no checks,
@@ -259,6 +270,32 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                         f"Blueprint '{bp.name}' declares archetype='{bp.archetype}' "
                         f"which is not a recognised value "
                         f"(known: {sorted(VALID_ARCHETYPES)})."
+                    ),
+                )
+            )
+
+        # Rule 16: the complement of rule 11 — NO check_set, and the inline
+        # checks are nothing but the scaffold's smoke placeholder. This is what
+        # every fresh `alc init` ships when it cannot find the project's tools,
+        # and until now it produced no violation at all: the gate refused an
+        # EMPTY check list (rule 1) and stayed silent about one that always
+        # passes — a false green the landing now warns readers about, told here
+        # to the operator too. Firing on every fresh project is correct: unlike
+        # the A3 false alarm (an unreferenced-but-harmless check_set), a run
+        # reporting SUCCESS on a placeholder is claiming a guarantee it does not
+        # have. `plan` is exempt via is_smoke_only (a planning stage produces no
+        # executable code); `mode: spike` is not, matching rule 1's treatment.
+        if bp.check_set is None and is_smoke_only(manifest, bp):
+            violations.append(
+                Violation(
+                    rule="blueprint-checks-smoke-only",
+                    severity="warn",
+                    message=(
+                        f"Blueprint '{bp.name}' has only the scaffold's placeholder check "
+                        "(`smoke: [\"true\"]`), which always passes — so a SUCCESS from "
+                        "this Blueprint verifies nothing. Replace it with your real test/"
+                        "lint commands, or run `alc onboard` to adopt the ones this "
+                        "project already declares."
                     ),
                 )
             )

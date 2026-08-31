@@ -470,10 +470,30 @@ class TestSmokeOnlyPolicyRule:
         violations = lint(self._manifest_with_empty_set(), [bp])
         assert not any(v.rule == "blueprint-checks-smoke-only" for v in violations)
 
-    def test_no_check_set_never_warns_even_when_smoke_only(self) -> None:
-        # Constraint: the default `alc init` layer (no stack detected) writes
-        # smoke-only Blueprints with NO check_set — must stay lint-clean.
+    def test_no_check_set_warns_when_smoke_only(self) -> None:
+        # The constraint this once pinned ("the default init layer must stay
+        # lint-clean") was reversed on purpose: a check that always passes is
+        # not a guarantee, and staying silent about it was the gap the site
+        # friction study proved — the gate refused an EMPTY check list and said
+        # nothing about one that cannot fail. Firing on every fresh project is
+        # correct; a warn never blocks (exit stays 0).
         bp = _blueprint("chore", check_set=None)
+        violations = lint(_manifest(), [bp])
+        hits = [v for v in violations if v.rule == "blueprint-checks-smoke-only"]
+        assert len(hits) == 1
+        assert hits[0].severity == "warn"
+        assert "alc onboard" in hits[0].message
+
+    def test_the_inline_and_check_set_paths_never_double_fire(self) -> None:
+        # Rule 16 covers check_set=None, rule 11 covers a declared-but-empty
+        # set. One Blueprint must land in exactly one of them.
+        bp = _blueprint("chore", check_set="python")
+        violations = lint(self._manifest_with_empty_set(), [bp])
+        hits = [v for v in violations if v.rule == "blueprint-checks-smoke-only"]
+        assert len(hits) == 1
+
+    def test_a_real_inline_check_stays_silent(self) -> None:
+        bp = _blueprint("chore", check_set=None, checks=[Check(name="test", command=["pytest", "-q"])])
         violations = lint(_manifest(), [bp])
         assert not any(v.rule == "blueprint-checks-smoke-only" for v in violations)
 
