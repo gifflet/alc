@@ -165,3 +165,38 @@ D5 marker and the activity feed made the wandering VISIBLE, which is what let
 the operator decide to cancel — the control plane cannot stop a model from
 exploring, but it made the exploration legible and the cancel safe. Worth
 watching whether a tighter directive template ("stop after the change") pays.
+
+## Round 4 — rung 3, and the ladder climbed whole
+
+`alc conduct` was given a GOAL — the Scorecard's circular Span definition,
+drifted across three surfaces — and the full ladder composed: the Conductor
+planned one ship-flow unit and enqueued it (rung 3), the queue drained from a
+tap on the phone (rung 2), the two-stage flow ran plan→build one-shot each
+(rung 1), and the branch arrived in the Inbox as **verified: True — the first
+tick branch ever to say so**, finding 9's fix proving itself on the rung-3
+path. The diff was exactly on-goal (docs table, UI hint, test), and the engine
+judged correctly that the CLI legend needed no change: it carries directions,
+not definitions. Landed from the phone through the calm dialog: fdb01ed.
+
+### 12. [observation] Cancelling a draining exec leaves the task pending — and it will run again
+The cancel-salvage-land sequence of round 3 left its queue task file pending
+(a task archives only after processing), and the next drain re-ran it. The
+capability to prevent this exists — the Queue's pending-task delete — but
+nothing CONNECTS the cancel to it: no "task still pending" note on the
+cancelled exec, so the operator who already landed the salvaged work gets a
+surprise re-run. The re-run itself behaved perfectly: the engine reported "the
+state already satisfies the task", made no changes, and the exit cleaned both
+worktree and ephemeral branch. Legible, safe, and still a surprise.
+
+### 13. [observation] The Conductor does not plan bare-Blueprint units
+The planner routed a single-file docs chore through the ship flow (a plan turn
+plus a deep-tier build turn) because its prompt offers only Flows and
+Specialists. `kind: run` (finding 8) exists all the way through the queue now;
+teaching the planning prompt to use it would let a conducted chore cost one
+standard-tier turn instead of two turns at plan+deep.
+
+### 14. [observation] A superseded failure lingers in the Inbox offering a Retry that recreates garbage
+The mis-written task's failure (the `flow: chore` writer bug) still sits in
+the Inbox offering Retry — which would re-enqueue the broken file. True
+history, stale advice. Acting on it honestly means deleting the done record in
+the Queue view; nothing suggests that.
