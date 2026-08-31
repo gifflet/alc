@@ -72,7 +72,14 @@ Exactly one of these per check entry.
   command: ["pytest", "-q"]
 ```
 
-Run directly, with no shell. This is the default and the one to reach for.
+Run directly, with no shell. This is the default and the one to reach for. A lint check follows the same shape:
+
+```yaml
+- name: lint
+  command: ["uvx", "ruff@0.15.21", "check", "."]
+```
+
+Match the pin to the version your CI uses — that way local law and CI law cannot disagree.
 
 ### `shell` — a one-liner via `sh -c`
 
