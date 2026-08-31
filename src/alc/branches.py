@@ -235,15 +235,19 @@ def branch_verified(runs_dir: Path, branch: str, label: str) -> bool | None:
     was interrupted yet still committed. That last case is the one worth naming:
     a branch indistinguishable from verified work.
 
-    No other producer writes a branch-named report. `flow`, `tick` and `fanout-*`
-    branches would all read as unverified under the same test, so they get None
-    — no claim. A false alarm on every drained task would be worse than the
-    silence this replaces.
+    A queue drain archives the same branch-named report for a successful `tick`
+    branch (dogfood finding 9: both tasks of the first unattended run passed
+    every check and the Inbox could only shrug None — the run KNEW), so `tick`
+    joins `run` under the same test. A tick branch from BEFORE the drain wrote
+    reports reads False ("review before landing"): conservative, and the only
+    honest direction available. `flow` and `fanout-*` still archive nothing and
+    stay None — no claim; a false alarm on every fan-out would be worse than
+    the silence.
 
     Pure on purpose: callers resolve `runs_dir` themselves, so this stays free of
     manifest loading and usable from both the CLI and the web service.
     """
-    if label != "run":
+    if label not in ("run", "tick"):
         return None
     return (runs_dir / run_report_filename(branch)).exists()
 

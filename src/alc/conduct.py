@@ -559,8 +559,12 @@ def dispatch_enqueue(
             "task": item.task,
             "isolate": isolate,
         }
-        if item.kind == "specialist":
-            task_data["kind"] = "specialist"
+        if item.kind in ("specialist", "run"):
+            # The else-branch below silently rewrote a `run` unit as a flow task
+            # (`flow: chore`), which the drain then failed to load — caught live
+            # by the first dogfood of the run kind, after the unit tests missed
+            # it: they wrote task YAML by hand and never exercised this writer.
+            task_data["kind"] = item.kind
             task_data["name"] = item.name
         else:
             # Legacy-compatible flow task: only the `flow:` field.

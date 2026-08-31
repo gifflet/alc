@@ -36,9 +36,10 @@ export function EnqueueDialog({
   const id = useProjectId()
   const flows = useCollection(id, 'flows').data ?? []
   const specialists = useCollection(id, 'specialists').data ?? []
+  const blueprints = useCollection(id, 'blueprints').data ?? []
 
   const [mode, setMode] = useState<'single' | 'batch'>('single')
-  const [kind, setKind] = useState<'flow' | 'specialist'>('flow')
+  const [kind, setKind] = useState<'flow' | 'specialist' | 'run'>('flow')
   const [name, setName] = useState('')
   const [task, setTask] = useState('')
   const [batchText, setBatchText] = useState('')
@@ -46,7 +47,9 @@ export function EnqueueDialog({
   const [taskId, setTaskId] = useState('')
   const [deps, setDeps] = useState<string[]>([])
 
-  const units = kind === 'flow' ? flows : specialists
+  // `run` queues a bare Blueprint — the chore-sized task that used to need a
+  // wrapper flow written by hand (dogfood finding 8).
+  const units = kind === 'flow' ? flows : kind === 'run' ? blueprints : specialists
   // Keep the unit selection valid as the kind toggles or the lists load.
   useEffect(() => {
     if (units.length && !units.some((u) => u.name === name)) setName(units[0].name)
@@ -96,10 +99,11 @@ export function EnqueueDialog({
           <Field label="Kind">
             <Select
               value={kind}
-              onChange={(v) => setKind(v as 'flow' | 'specialist')}
+              onChange={(v) => setKind(v as 'flow' | 'specialist' | 'run')}
               options={[
                 { value: 'flow', label: 'flow' },
                 { value: 'specialist', label: 'specialist' },
+                { value: 'run', label: 'blueprint' },
               ]}
             />
           </Field>

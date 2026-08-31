@@ -14,11 +14,12 @@ from pathlib import Path
 import yaml
 
 from alc.commitmsg import make_commit_message_provider
+from alc.branches import run_report_filename
 from alc.events import bind_run_log, emit, new_run_log_path
 from alc.flow import FlowRunner
 from alc.intake import load_flow, load_specialist
 from alc.merge import auto_merge_branches
-from alc.models import FlowReport, Manifest, QueueTask, RunReport, Scorecard, TickResult
+from alc.models import FlowDefinition, FlowReport, FlowStage, Manifest, QueueTask, RunReport, Scorecard, TickResult
 from alc.notify import fire as notify_fire
 from alc.specialist import run_specialist
 from alc.textutil import slugify as _slugify
@@ -342,7 +343,18 @@ def _process_task_body(
                 return _run_specialist_task(
                     manifest, ol, qt, unit_name, workdir, env, engine=effective_engine
                 )
-            flow = load_flow(flows_dir, unit_name)
+            if qt.kind == "run":
+                # A queued Blueprint is a synthetic one-stage flow — the wrapper
+                # operators used to write by hand (dogfood finding 8), moved
+                # inside the tool so everything downstream (FlowReport, stages,
+                # archiving, Mix Health) keeps one shape.
+                flow = FlowDefinition(
+                    name=unit_name,
+                    description=f"queued blueprint: {unit_name}",
+                    stages=[FlowStage(name=unit_name, blueprint=unit_name)],
+                )
+            else:
+                flow = load_flow(flows_dir, unit_name)
             runner = FlowRunner(manifest=manifest, operator_layer=operator_layer)
             return runner.run(
                 flow=flow,
@@ -477,6 +489,24 @@ def _process_task_body(
     (done_dir / f"{task_file.stem}.report.json").write_text(
         report.model_dump_json(indent=2)
     )
+    # Also archive under the BRANCH's name when this task committed one and
+    # passed. Both tick tasks in the first unattended dogfood passed every
+    # check, yet the Inbox showed `verified: None` — the run KNEW and the
+    # branch could not say (finding 9). This is the same filename convention a
+    # direct `alc run` archives, so branch_verified answers for tick branches
+    # exactly as it does for run branches, and `alc discard` already cleans it
+    # up by that name. Success-only on purpose: an ABSENT report is what marks
+    # a branch unverified, so writing one for a failed run would forge the
+    # very signal A1 exists to protect.
+    if success and branch is not None:
+        try:
+            runs_dir = operator_layer.parent / manifest.runs_dir
+            runs_dir.mkdir(parents=True, exist_ok=True)
+            (runs_dir / run_report_filename(branch)).write_text(
+                report.model_dump_json(indent=2)
+            )
+        except OSError:
+            pass  # best-effort: a failed archive must never fail the drain
     task_file.rename(done_dir / task_file.name)
 
     # Push notify: the failure is already detected (`success` is False) — tell

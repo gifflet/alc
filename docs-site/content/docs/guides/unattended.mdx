@@ -31,7 +31,7 @@ alc enqueue db "add an index for the orders lookup" --kind specialist
 | `--from-file PATH` | Batch-enqueue from a file |
 | `--json` | Print the written filenames as JSON |
 
-`alc enqueue` writes the task file directly, with **no planning turn**. That is the difference from `alc conduct --enqueue`, which spends an engine turn deciding what to write.
+`alc enqueue` writes the task file directly, with **no planning turn**. It takes a Flow, a Specialist, or — with `--kind run` — a bare Blueprint, which is the shape most queued tasks start as: chore-sized. A queued Blueprint runs as a one-stage flow, so its report, archive and Mix Health attribution look exactly like everything else's. That is the difference from `alc conduct --enqueue`, which spends an engine turn deciding what to write.
 
 ### Ordering and safety
 

@@ -2278,7 +2278,7 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
     from pydantic import ValidationError
 
     from alc.conduct import dispatch_enqueue
-    from alc.intake import load_flow, load_manifest, load_specialist
+    from alc.intake import load_blueprint, load_flow, load_manifest, load_specialist
     from alc.models import ConductorPlan, PlannedUnit
 
     operator_layer = _find_operator_layer()
@@ -2314,10 +2314,15 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
 
     flows_dir = operator_layer.parent / manifest.flows_dir
     specialists_dir = operator_layer.parent / manifest.specialists_dir
+    blueprints_dir = operator_layer.parent / manifest.blueprints_dir
     for item in items:
         try:
             if item.kind == "specialist":
                 load_specialist(specialists_dir, item.name)
+            elif item.kind == "run":
+                # Dogfood finding 8: the first task anyone drops in a queue is
+                # chore-sized, and queueing one used to require a wrapper flow.
+                load_blueprint(blueprints_dir, item.name)
             else:
                 load_flow(flows_dir, item.name)
         except FileNotFoundError as exc:
@@ -4002,7 +4007,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     enqueue_parser.add_argument(
         "--kind",
-        choices=["flow", "specialist"],
+        choices=["flow", "specialist", "run"],
         default="flow",
         help="Unit kind to dispatch (default: flow).",
     )

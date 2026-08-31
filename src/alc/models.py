@@ -681,7 +681,7 @@ class QueueTask(BaseModel):
     task: str
     engine: str | None = None
     isolate: bool = True
-    kind: Literal["flow", "specialist"] = "flow"
+    kind: Literal["flow", "specialist", "run"] = "flow"
     name: str | None = None
     # How many times THIS task lineage has already been retried. Legacy task
     # files omit this and default to 0 (backward compat).
@@ -841,7 +841,7 @@ class PlannedUnit(BaseModel):
     This keeps the ``PlannedFlow`` alias constructible with keyword argument ``flow=``.
     """
 
-    kind: Literal["flow", "specialist"]
+    kind: Literal["flow", "specialist", "run"]
     name: str          # validated against the catalog (Flow or Specialist name)
     task: str
     # Optional short slug identifying this unit so another unit may depend on it.

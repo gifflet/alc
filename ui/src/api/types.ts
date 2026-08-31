@@ -98,7 +98,7 @@ export interface QueueTask {
   task: string
   engine: string | null
   isolate: boolean
-  kind: 'flow' | 'specialist'
+  kind: 'flow' | 'specialist' | 'run'
   name: string | null
   retries: number
   retry_of: string | null
