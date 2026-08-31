@@ -1,5 +1,0 @@
-name: quick
-description: One chore-sized mandate off the queue — the enqueueable shape of `alc run chore`.
-stages:
-  - name: build
-    blueprint: chore
