@@ -31,7 +31,11 @@ function ProblemRow({ v }: { v: Violation }) {
       <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${color}`} />
       <span className="flex min-w-0 flex-wrap gap-x-2">
         <span className="shrink-0 font-mono text-[length:var(--ui-text-label)] text-faint">{v.rule}</span>
-        <span className="min-w-[12rem] shrink-0 grow text-muted">{v.message}</span>
+        {/* No shrink-0 here: it pinned the span at its content width (measured
+            1780px on a 411px panel), so the message never wrapped — it scrolled.
+            min-w keeps it jumping to its own full line beside a long rule name;
+            grow + shrinkable is what lets the text actually wrap there. */}
+        <span className="min-w-[12rem] grow text-muted">{v.message}</span>
       </span>
     </>
   )
