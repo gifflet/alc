@@ -118,16 +118,106 @@ def _validate_tier(manifest, tier: str | None) -> str | None:
     return None
 
 
-def _print_run_report(report) -> None:
-    """Print the human-readable summary and full JSON for a RunReport."""
+# "What can I run?" is the first question after a first successful run, and the
+# CLI had no answer to it: `alc run` teaches ONE Blueprint name, `alc status`
+# reports queue and branches but not Blueprints, and naming one that does not
+# exist raised a bare FileNotFoundError traceback. The listing lives here, on the
+# failure path, because that is where a stranger asks.
+def _list_units(directory: "Path", suffix: str) -> list[tuple[str, str]]:
+    """Return ``(name, purpose)`` for every unit file in *directory*, sorted.
+
+    The purpose is read from YAML front-matter (Markdown) or a top-level
+    ``purpose:`` key (YAML), best-effort: an unreadable or purpose-less unit
+    still lists, with an empty purpose. Discovery must never fail on a malformed
+    neighbour.
+    """
+    if not directory.is_dir():
+        return []
+    units: list[tuple[str, str]] = []
+    for path in sorted(directory.glob(f"*{suffix}")):
+        purpose = ""
+        try:
+            # Blueprints carry `purpose:`, Flows and Specialists `description:`.
+            # Both, so one listing serves every kind without a per-kind branch.
+            for line in path.read_text().splitlines()[:20]:
+                for key in ("purpose:", "description:"):
+                    if line.startswith(key):
+                        purpose = line.split(":", 1)[1].strip().strip("\"'")
+                        break
+                if purpose:
+                    break
+        except (OSError, UnicodeDecodeError):
+            # UnicodeDecodeError is a ValueError, not an OSError: a non-UTF-8
+            # neighbour would otherwise take the whole listing down with it.
+            pass
+        units.append((path.stem, purpose))
+    return units
+
+
+def _print_units(kind: str, directory: "Path", suffix: str, *, stream=None) -> None:
+    """Print what this project has of *kind*, aligned, with each unit's purpose."""
+    out = stream if stream is not None else sys.stdout
+    units = _list_units(directory, suffix)
+    if not units:
+        print(f"This project has no {kind}s. Create one with `alc new {kind} <name>`.", file=out)
+        return
+    width = max(len(name) for name, _ in units)
+    print(f"{kind.capitalize()}s in this project:", file=out)
+    for name, purpose in units:
+        print(f"  {name.ljust(width)}  {purpose}".rstrip(), file=out)
+
+
+def _no_such_unit(kind: str, name: str, directory: "Path", suffix: str) -> int:
+    """Report an unknown unit by name, then list the ones that exist. Exit code 1.
+
+    Replaces a FileNotFoundError traceback, which named the path it could not
+    open and nothing a reader could act on.
+    """
+    print(f"[ERROR] no such {kind}: '{name}'", file=sys.stderr)
+    _print_units(kind, directory, suffix, stream=sys.stderr)
+    return 1
+
+
+# The Scorecard's four words are invented, and a first run is exactly when that
+# matters: `touch=0` on a run that changed nothing reads as neutral, and nothing
+# on screen says whether high or low is good. One line, under the numbers,
+# carrying the part you cannot act without — the direction.
+# Direction only, not definitions: what the reader cannot act without is which
+# way is good, and the four meanings live in the docs and the UI's own tooltips.
+# Kept under 80 columns so it never wraps into the ragged mess it is fixing.
+_SCORECARD_LEGEND = "           good: span ↑  passes ↓  streak ↑  touch ↓ (touch 0 is the goal)"
+
+
+def _print_scorecard(scorecard) -> None:
+    """Print the Scorecard line plus its one-line legend."""
+    print(
+        f"Scorecard: span={scorecard.span} passes={scorecard.passes} "
+        f"streak={scorecard.streak} touch={scorecard.touch}"
+    )
+    print(_SCORECARD_LEGEND)
+
+
+def _print_run_report(report, as_json: bool = False) -> None:
+    """Print a RunReport: the human summary, or the full JSON under `--json`.
+
+    The JSON used to follow the summary unconditionally — about thirty-five lines
+    of serialised model after the four that say what happened, with the one
+    actionable sentence a run produces ("Isolated changes committed on branch…")
+    printed below all of it. `alc audit` already showed the better shape: five
+    readable lines and no dump.
+
+    --json REPLACES the summary rather than adding to it, matching `alc lint`
+    and `alc land`. The report is also archived to runs/ either way, so nothing
+    that wanted the data has lost it.
+    """
+    if as_json:
+        print(report.model_dump_json(indent=2))
+        return
     status = "SUCCESS" if report.success else "FAILED"
     print(f"Status:   {status}")
     print(f"Engine:   {report.engine}")
     print(f"Attempts: {report.scorecard.passes}")
-    print(
-        f"Scorecard: span={report.scorecard.span} passes={report.scorecard.passes} "
-        f"streak={report.scorecard.streak} touch={report.scorecard.touch}"
-    )
+    _print_scorecard(report.scorecard)
     if report.changed_files:
         print("Changed files:")
         for path in report.changed_files:
@@ -136,20 +226,21 @@ def _print_run_report(report) -> None:
         print("Warnings:")
         for w in report.warnings:
             print(f"  [WARN] {w}")
-    print()
-    print(report.model_dump_json(indent=2))
 
 
-def _print_flow_report(report) -> None:
-    """Print the human-readable summary and full JSON for a FlowReport."""
+def _print_flow_report(report, as_json: bool = False) -> None:
+    """Print a FlowReport: the human summary, or the full JSON under `--json`.
+
+    Same contract as `_print_run_report`.
+    """
+    if as_json:
+        print(report.model_dump_json(indent=2))
+        return
     status = "SUCCESS" if report.success else "FAILED"
     print(f"Flow:     {report.flow}")
     print(f"Status:   {status}")
     print(f"Engine:   {report.engine}")
-    print(
-        f"Scorecard: span={report.scorecard.span} passes={report.scorecard.passes} "
-        f"streak={report.scorecard.streak} touch={report.scorecard.touch}"
-    )
+    _print_scorecard(report.scorecard)
     print()
     for stage_report in report.stages:
         stage_status = "SUCCESS" if stage_report.success else "FAILED"
@@ -159,8 +250,6 @@ def _print_flow_report(report) -> None:
         )
         for w in stage_report.warnings:
             print(f"    [WARN] {w}")
-    print()
-    print(report.model_dump_json(indent=2))
 
 
 def _print_isolation_result(wt) -> None:
@@ -335,7 +424,13 @@ def cmd_init(args: argparse.Namespace) -> int:
     contract as `alc team hire`. Without it, only a discovery hint is printed —
     no pack is installed unless explicitly asked (opt-in byte-identical `init`).
     """
-    from alc.scaffold import detect_default_engine, detect_stack, scaffold
+    from alc.scaffold import (
+        detect_ci_config,
+        detect_default_engine,
+        detect_nested_stacks,
+        detect_stack,
+        scaffold,
+    )
 
     project_root = Path.cwd()
     try:
@@ -344,7 +439,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    print("Initialised Operator Layer:")
+    print("Initialised .alc/ (the Operator Layer):")
     for path in created:
         print(f"  {path}")
 
@@ -425,13 +520,44 @@ def cmd_init(args: argparse.Namespace) -> int:
             "package.json scripts, …) into check_sets."
         )
 
+    # A commented-out check is an instruction to install a tool and uncomment,
+    # and that instruction leads to an UNPINNED tool. This repo's own CI runs
+    # `uvx ruff@0.15.21`, so following the advice would install a ruff that can
+    # disagree with the pipeline that actually gates the project. alc does not
+    # parse CI configs (harvest.py keeps that deliberately out of scope), so this
+    # names the file and stops — an authoritative source the operator can read
+    # beats a guess dressed up as one.
+    ci_config = detect_ci_config(project_root)
+    if ci_config is not None:
+        print(
+            f"This project already runs checks in {ci_config} — prefer the commands "
+            "it uses (they are usually version-pinned) over the ones scaffolded "
+            "above. `alc onboard` adopts the ones ALC can read."
+        )
+
+    # A stack one level down is invisible to the root scan, so its code would be
+    # "verified" by checks that never load it — the tool's central promise made
+    # true only in the letter. The manifest now carries them commented out; this
+    # is where the operator finds out they exist.
+    nested = detect_nested_stacks(project_root)
+    if nested:
+        named = ", ".join(f"{label} in {sub}/" for sub, label, _set, _checks in nested)
+        print(
+            f"Also found {named} — NOT covered by the checks above. "
+            "Scaffolded commented-out in .alc/manifest.yaml check_sets; uncomment "
+            "once those directories have their dependencies installed."
+        )
+
     if args.stage:
         _install_stage_packs(project_root, args.stage, args.force)
     else:
+        # Deferred on purpose, and phrased as deferred. This used to open with
+        # a capitalised proper noun three sentences into first contact, offered
+        # alongside the real next step — so it competed with `Next:` and lost,
+        # but cost a beat to decide it was not for you yet.
         print(
-            "Archetype Packs (test authoring, dead-code sweeps, dependency "
-            "patrol, …) are available via `alc team hire <archetype>`. "
-            "See: alc team list"
+            "Optional, later: alc team list — prebuilt agent teams for test "
+            "authoring, dead-code sweeps and dependency patrol."
         )
 
     if args.setup:
@@ -692,6 +818,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
     from alc.policy import (
+        coverage_report,
         has_errors,
         lint,
         lint_loops,
@@ -709,9 +836,17 @@ def cmd_lint(args: argparse.Namespace) -> int:
     violations += lint_stage(manifest, blueprints)
     violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
+    # Shape and reach are different questions. lint has only ever answered the
+    # first, while printing a sentence readers take as an answer to both.
+    coverage = coverage_report(manifest, blueprints, operator_layer.parent)
+
     if getattr(args, "json", False):
         from alc.output import emit_json
 
+        # The array shape is a public contract — `alc lint --json | jq '.[].rule'`
+        # is a reasonable thing to have written. Coverage is a human-readable
+        # note; wrapping the array to carry it would break that for a feature
+        # nobody asked to consume by machine.
         emit_json([
             {"rule": v.rule, "severity": v.severity, "message": v.message}
             for v in violations
@@ -719,12 +854,22 @@ def cmd_lint(args: argparse.Namespace) -> int:
         return 1 if has_errors(violations) else 0
 
     if not violations:
-        print("No violations found. Operator Layer is conformant.")
+        if coverage:
+            print("No violations found — .alc/ is well-formed.")
+            print("But it does not reach all of this project:")
+            for line in coverage:
+                print(line)
+        else:
+            print("No violations found — .alc/ is well-formed.")
         return 0
 
     for v in violations:
         tag = "[ERROR]" if v.severity == "error" else "[WARN] "
         print(f"{tag} [{v.rule}] {v.message}")
+    if coverage:
+        print("Coverage:")
+        for line in coverage:
+            print(line)
 
     if has_errors(violations):
         return 1
@@ -775,7 +920,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     blueprints_dir = operator_layer.parent / manifest.blueprints_dir
-    blueprint = load_blueprint(blueprints_dir, args.blueprint)
+    # No Blueprint named: answer "what can I run?" instead of an argparse usage
+    # line. This is the discovery path — there is no other command that lists them.
+    if args.blueprint is None:
+        _print_units("blueprint", blueprints_dir, ".md")
+        print('\nRun one with: alc run <blueprint> "<task>"')
+        return 0
+    if args.task is None:
+        print(f"[ERROR] alc run {args.blueprint} needs a task, e.g.", file=sys.stderr)
+        print(f'  alc run {args.blueprint} "<a small, well-scoped task>"', file=sys.stderr)
+        return 1
+    try:
+        blueprint = load_blueprint(blueprints_dir, args.blueprint)
+    except FileNotFoundError:
+        return _no_such_unit("blueprint", args.blueprint, blueprints_dir, ".md")
 
     # Validate --tier early before any work is done.
     tier_err = _validate_tier(manifest, args.tier)
@@ -872,15 +1030,22 @@ def cmd_run(args: argparse.Namespace) -> int:
                 wt.commit_on_exit = False
             wt.__exit__(*exc_info)
 
-        # Re-raise non-PolicyViolation exceptions after cleanup.
+        # Re-raise non-PolicyViolation exceptions after cleanup — but say where
+        # the work went first. `wt.__exit__` above ran on this path too, so an
+        # interrupt COMMITS whatever the engine had already written onto the run
+        # branch and removes the worktree. Staying silent leaves that branch to
+        # be met later by `alc land` with no record of where it came from, and
+        # leaves the UI (which reads isolation_finished) with nothing to name.
         if exc_info[1] is not None and not isinstance(exc_info[1], PolicyViolationError):
+            _print_isolation_result(wt)
+            _emit_isolation_result(run_log, wt)
             raise exc_info[1]
 
         if report is None:
             # PolicyViolationError path.
             return 1
 
-        _print_run_report(report)
+        _print_run_report(report, as_json=getattr(args, "json", False))
         _print_isolation_result(wt)
         _emit_isolation_result(run_log, wt)
         if report.success and blueprint.mode != "spike":
@@ -916,7 +1081,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    _print_run_report(report)
+    _print_run_report(report, as_json=getattr(args, "json", False))
     if report.success and blueprint.mode != "spike":
         _archive_run_report(
             run_log.with_suffix(".report.json"),
@@ -1235,8 +1400,16 @@ def cmd_cycle(args: argparse.Namespace) -> int:
 
 
 def cmd_loop(args: argparse.Namespace) -> int:
-    """Run `alc loop <name> [--interval S]`: foreground wrapper repeating cycles."""
+    """Run `alc loop <name>`: repeat cycles until the loop stops.
+
+    ``--once`` and ``--status`` delegate to ``cmd_cycle``, which is the single
+    implementation of one cycle — the merge is at the CLI surface, not a second
+    copy of the behaviour.
+    """
     import time
+
+    if getattr(args, "once", False) or getattr(args, "status", False):
+        return cmd_cycle(args)
 
     from alc.events import abort_event_on_interrupt
     from alc.loop import (
@@ -1492,7 +1665,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
     if not violations:
-        print("No violations found. Operator Layer is conformant.")
+        print("No violations found — .alc/ is well-formed.")
     else:
         for v in violations:
             tag = "[ERROR]" if v.severity == "error" else "[WARN] "
@@ -1755,7 +1928,10 @@ def cmd_specialist(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     specialists_dir = operator_layer.parent / manifest.specialists_dir
-    specialist = load_specialist(specialists_dir, args.name)
+    try:
+        specialist = load_specialist(specialists_dir, args.name)
+    except FileNotFoundError:
+        return _no_such_unit("specialist", args.name, specialists_dir, ".yaml")
 
     run_log = new_run_log_path(
         operator_layer.parent / manifest.runs_dir, "specialist", f"{args.name} {args.task}"
@@ -1795,7 +1971,10 @@ def cmd_flow(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     flows_dir = operator_layer.parent / manifest.flows_dir
-    flow = load_flow(flows_dir, args.flow_name)
+    try:
+        flow = load_flow(flows_dir, args.flow_name)
+    except FileNotFoundError:
+        return _no_such_unit("flow", args.flow_name, flows_dir, ".yaml")
 
     # Validate --tier early before any work is done.
     tier_err = _validate_tier(manifest, args.tier)
@@ -1911,7 +2090,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
         if report is None:
             return 1
 
-        _print_flow_report(report)
+        _print_flow_report(report, as_json=getattr(args, "json", False))
         _print_isolation_result(wt)
         _emit_isolation_result(run_log, wt)
         if args.bundle:
@@ -1934,7 +2113,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
 
-    _print_flow_report(report)
+    _print_flow_report(report, as_json=getattr(args, "json", False))
     if args.bundle:
         bundles_dir = operator_layer.parent / manifest.bundles_dir
         path = write_bundle(bundles_dir, args.flow_name, args.task, report)
@@ -2351,7 +2530,8 @@ def cmd_land(args: argparse.Namespace) -> int:
     Prints ``MergeReport.summary()`` and exits 1 when anything conflicted (0
     otherwise). Outside a git repository this is a clear error, exit 1.
     """
-    from alc.branches import list_alc_branches
+    from alc.branches import branch_verified, list_alc_branches
+    from alc.intake import load_manifest
     from alc.merge import auto_merge_branches
     from alc.worktree import git_toplevel, is_git_repo
 
@@ -2366,10 +2546,39 @@ def cmd_land(args: argparse.Namespace) -> int:
         return 1
     repo_root = git_toplevel(Path.cwd())
 
+    # A committed branch is not a verified one: an interrupted run whose checks
+    # failed still commits its worktree. `branch_verified` names that case so the
+    # listing and --all stop treating it as finished work.
+    try:
+        _ol = _find_operator_layer()
+        _runs_dir = _ol.parent / load_manifest(_ol).runs_dir
+    except (OSError, ValueError, SystemExit):
+        _runs_dir = None
+
+    def _verified(b) -> bool | None:
+        return None if _runs_dir is None else branch_verified(_runs_dir, b.name, b.label)
+
     if args.branch:
         branches = args.branch
     elif args.all:
-        branches = [b.name for b in list_alc_branches(repo_root) if not b.merged]
+        unmerged = [b for b in list_alc_branches(repo_root) if not b.merged]
+        unverified = [b.name for b in unmerged if _verified(b) is False]
+        if unverified:
+            # --all merges in bulk with no per-branch decision, so this is the
+            # only moment the fact can reach the operator.
+            print(
+                "[WARNING] these branches committed work whose checks did NOT pass "
+                "(the run failed or was interrupted):",
+                file=sys.stderr,
+            )
+            for name in unverified:
+                print(f"  {name}", file=sys.stderr)
+            print(
+                "  Landing them merges unverified work. Review with "
+                "`alc land <branch>` one at a time, or `git diff` first.",
+                file=sys.stderr,
+            )
+        branches = [b.name for b in unmerged]
     else:
         # List path — machine-readable (--json) or human-readable (default).
         unmerged = [b for b in list_alc_branches(repo_root) if not b.merged]
@@ -2378,13 +2587,14 @@ def cmd_land(args: argparse.Namespace) -> int:
 
             from alc.output import emit_json
 
-            emit_json([asdict(b) for b in unmerged])
+            emit_json([{**asdict(b), "verified": _verified(b)} for b in unmerged])
             return 0
         if not unmerged:
             print("No unmerged alc/ branches.")
             return 0
         for b in unmerged:
-            print(f"{b.name}   ({b.label})")
+            mark = "  ← checks did not pass" if _verified(b) is False else ""
+            print(f"{b.name}   ({b.label}){mark}")
         print("Run: alc land --all")
         return 0
 
@@ -2902,7 +3112,17 @@ def cmd_runs(args: argparse.Namespace) -> int:
             status = "finished" if run["finished"] else ("stale" if run["stale"] else "running")
             net = run["net_lines"]
             net_str = f"{net:+d}" if net is not None else "n/a"
-            print(f"{run['stem']}   ({run['kind']}, {status})   net-lines={net_str}")
+            # The stem's slug is a lossy prefix of the task: a run asked to fix
+            # the closing advice in install.sh becomes "run-chore-in-docs-site-
+            # scripts-dist-install", which reads as a run about installing. The
+            # title says what was actually asked, so it leads; the stem stays
+            # whole on its own line because it is what you paste into
+            # `alc runs show`.
+            title = (run.get("title") or "").strip()
+            if title:
+                unit = run.get("unit") or ""
+                print(f"{title[:100]}{'…' if len(title) > 100 else ''}{f'   [{unit}]' if unit else ''}")
+            print(f"  {run['stem']}   ({run['kind']}, {status})   net-lines={net_str}")
         print(f"Showing {len(result['runs'])} of {result['total']} run(s).")
         return 0
 
@@ -3422,6 +3642,31 @@ def cmd_ui(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # Every other command acts on the project you are standing in. `alc ui` alone
+    # read the global registry and ignored the cwd, so `cd my-project && alc ui`
+    # opened a list of whatever had been registered before — and to reach the
+    # project you were in you had to type its absolute path into a dialog.
+    #
+    # The registry stays global; this only decides where the tool lands. Adding
+    # is idempotent and validates, so a directory that is not an ALC project
+    # leaves everything exactly as it was.
+    landing = ""
+    here = _find_operator_layer().parent
+    if (here / ".alc" / "manifest.yaml").is_file():
+        from alc.ui.registry import ProjectRegistry
+
+        try:
+            registry = ProjectRegistry(default_registry_path())
+            known = {p.id for p in registry.list()}
+            current = registry.add(here)
+            landing = f"/projects/{current.id}"
+            if current.id not in known:
+                # It writes to a file shared by every project; say so rather than
+                # changing persistent state silently.
+                print(f"Registered {current.name} ({here}) in the project list.", flush=True)
+        except Exception:  # noqa: BLE001 — never let this stop the server starting
+            landing = ""
+
     app = create_app(default_registry_path(), ui_dist=frontend, token=token)
     auth_note = " · token required" if token else ""
     # flush: stdout is block-buffered when piped, and these lines are the whole
@@ -3432,7 +3677,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
     # the operator actually types — here, and on whatever else is on the network:
     # a second laptop, a desktop, a tablet, a phone.
     shown = "127.0.0.1" if host == "0.0.0.0" else host  # noqa: S104
-    query = f"/?t={token}" if token else ""
+    query = f"{landing or '/'}?t={token}" if token else landing
     print(f"  Local:   http://{shown}:{args.port}{query}", flush=True)
     if host == "0.0.0.0":  # noqa: S104
         lan = _lan_address()
@@ -3495,7 +3740,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc init [--force] [--setup] [--stage pre-pmf|growth|strong-pmf]
     init_parser = subparsers.add_parser(
         "init",
-        help="Scaffold a default Operator Layer (.alc/) into the current directory.",
+        help="Scaffold a default .alc/ (the Operator Layer) into the current directory.",
     )
     init_parser.add_argument(
         "--force",
@@ -3587,7 +3832,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # alc lint
     lint_parser = subparsers.add_parser(
-        "lint", help="Check the Operator Layer for Policy Gate violations."
+        "lint", help="Check .alc/ for Policy Gate violations (not your source code)."
     )
     lint_parser.add_argument(
         "--json",
@@ -3599,8 +3844,19 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc run <blueprint> "<task>" [--engine NAME] [--isolate] [--primer NAME]
     #          [--bundle] [--from-bundle REF]
     run_parser = subparsers.add_parser("run", help="Run a Blueprint against a task.")
-    run_parser.add_argument("blueprint", help="Blueprint name (e.g. 'chore').")
-    run_parser.add_argument("task", help="Free-text task description.")
+    # Both optional so a bare `alc run` can LIST the Blueprints instead of
+    # printing a usage line. argparse errors before cmd_run gets a say, and the
+    # bare invocation is exactly how someone asks what they can run.
+    run_parser.add_argument(
+        "blueprint", nargs="?", help="Blueprint name (e.g. 'chore'). Omit to list them."
+    )
+    run_parser.add_argument("task", nargs="?", help="Free-text task description.")
+    run_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the full report as JSON instead of the human summary.",
+    )
     run_parser.add_argument("--engine", default=None, help="Override the default engine.")
     run_parser.add_argument(
         "--isolate",
@@ -3651,6 +3907,12 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     spike_parser.add_argument("task", help="Free-text task description.")
+    spike_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the full report as JSON instead of the human summary.",
+    )
     spike_parser.add_argument("--engine", default=None, help="Override the default engine.")
 
     # alc tick
@@ -4042,10 +4304,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc cycle <name> [--engine NAME] [--concurrency N] [--status] [--reset]
     cycle_parser = subparsers.add_parser(
         "cycle",
-        help=(
-            "Run ONE Autonomous Loop cycle (replenish -> drain -> check stop) and "
-            "exit. State persists between fires — call via cron."
-        ),
+        help="Deprecated alias for `alc loop <name> --once`.",
     )
     cycle_parser.add_argument("name", help="Loop name (e.g. 'deliver').")
     cycle_parser.add_argument("--engine", default=None, help="Override the default engine.")
@@ -4084,16 +4343,48 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # alc loop <name> [--engine NAME] [--interval S]
+    # alc loop <name> [--once] [--engine NAME] [--interval S]
+    #
+    # One verb for one unit. `cycle` runs one iteration of a `loop` while `loop`
+    # repeats `cycle` — two verbs splitting one noun in a direction nobody
+    # guesses, and the collision lands on the unattended tier. `--once` says the
+    # same thing in a way a reader can predict from the command they already know.
     loop_parser = subparsers.add_parser(
         "loop",
         help=(
-            "Foreground wrapper that repeats `alc cycle` until the loop stops, "
-            "sleeping between cycles. For interactive use without cron."
+            "Run an Autonomous Loop until it stops, sleeping between cycles. "
+            "Add --once for a single cycle (the cron target)."
         ),
     )
     loop_parser.add_argument("name", help="Loop name (e.g. 'deliver').")
+    loop_parser.add_argument(
+        "--once",
+        action="store_true",
+        default=False,
+        help=(
+            "Run ONE cycle (replenish -> drain -> check stop) and exit. State "
+            "persists between fires — this is what cron calls."
+        ),
+    )
     loop_parser.add_argument("--engine", default=None, help="Override the default engine.")
+    loop_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=0,
+        help="With --once, override the loop's drain concurrency (0 = use the definition).",
+    )
+    loop_parser.add_argument(
+        "--status",
+        action="store_true",
+        default=False,
+        help="Print the loop state without running anything.",
+    )
+    loop_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="With --status, print the loop state as JSON (machine-readable).",
+    )
     loop_parser.add_argument(
         "--interval",
         type=int,
@@ -4134,7 +4425,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # alc primer <action> <name> [--force]
     primer_parser = subparsers.add_parser(
         "primer",
-        help="Manage Primer files (curated context blocks) in the Operator Layer.",
+        help="Manage Primer files (curated context blocks) in .alc/.",
     )
     primer_parser.add_argument(
         "action",
@@ -4264,6 +4555,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     flow_parser.add_argument("flow_name", help="Flow name (e.g. 'ship').")
     flow_parser.add_argument("task", help="Free-text task description.")
+    flow_parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Print the full report as JSON instead of the human summary.",
+    )
     flow_parser.add_argument("--engine", default=None, help="Override the default engine.")
     flow_parser.add_argument(
         "--isolate",
@@ -4689,7 +4986,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Console-script entrypoint."""
+    """Console-script entrypoint.
+
+    Ctrl-C is a normal way to stop a run, not a crash. Left unhandled it printed
+    a twenty-line Python traceback — which, on the isolated path, buried the one
+    line that says the interrupted work was committed to a branch.
+    """
+    try:
+        _dispatch()
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        sys.exit(130)
+
+
+def _dispatch() -> None:
+    """Parse argv and run the requested command."""
     # A broken stderr pipe (cancelled exec / disconnected client) must never crash
     # the work — only the progress output is lost. Guard every stderr write once.
     sys.stderr = _ResilientStderr(sys.stderr)  # type: ignore[assignment]
@@ -4729,6 +5040,15 @@ def main() -> None:
     elif args.command == "conduct":
         sys.exit(cmd_conduct(args))
     elif args.command == "cycle":
+        # Deprecated, not removed: `alc cycle` is in people's crontabs, and a
+        # rename that breaks a scheduled job at 3am to improve a noun is not a
+        # trade worth making. The notice goes to stderr so a cron mail carries it
+        # while the exit code and stdout stay exactly as before.
+        print(
+            "[WARN] `alc cycle` is deprecated — use `alc loop "
+            f"{getattr(args, 'name', '<name>')} --once`. It still works.",
+            file=sys.stderr,
+        )
         sys.exit(cmd_cycle(args))
     elif args.command == "loop":
         sys.exit(cmd_loop(args))

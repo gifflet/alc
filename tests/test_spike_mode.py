@@ -473,12 +473,17 @@ class TestCmdSpikeSugar:
         monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine())
         monkeypatch.chdir(repo)
 
-        exit_code = cmd_spike(argparse.Namespace(task="try a risky idea", engine="mock"))
+        # json=True: the spike fence is asserted below, and the report is the
+        # only place it is stated — a spike is never archived, so there is no
+        # file to read it from afterwards.
+        exit_code = cmd_spike(
+            argparse.Namespace(task="try a risky idea", engine="mock", json=True)
+        )
 
         assert exit_code == 0
         out = capsys.readouterr().out
         assert '"blueprint": "spike"' in out
-        assert '"spike": true' in out
+        assert '"spike": true' in out  # the fenced relaxation is recorded
         assert not (repo / "notes.txt").exists()  # isolated + discarded, never landed
 
 

@@ -47,7 +47,9 @@ alc status --json              # pending tasks, outstanding failures,
                                # loop states, unmerged branches
 ```
 
-And aggregated by archetype, against your declared stage:
+And aggregated by archetype, against your declared stage — that aggregate is
+called [Mix Health](/docs/concepts/archetypes#stage-and-mix-health), and it answers whether
+your recent work matched the kind of work your stage expects:
 
 ```bash
 alc team status                # Mix Health

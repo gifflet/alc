@@ -24,12 +24,14 @@ class TestProgressPrinter:
         p.emit("A")
         assert capsys.readouterr().err.count("A") == 2
 
-    def test_truncates_to_max_width(self, capsys) -> None:
+    def test_truncates_to_max_width_from_the_middle(self, capsys) -> None:
+        # The cut takes the MIDDLE, not the tail: a progress line is "Tool: path",
+        # and both ends carry meaning while the middle is the shared directory.
         p = ProgressPrinter(max_width=5)
         p.emit("abcdefghij")
         err = capsys.readouterr().err
-        assert "abcde" in err
-        assert "abcdef" not in err
+        assert "ab…ij" in err
+        assert "abcde" not in err
 
     def test_caps_total_and_summarizes_on_close(self, capsys) -> None:
         p = ProgressPrinter(max_lines=2)

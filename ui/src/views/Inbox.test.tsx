@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Inbox } from './Inbox'
 import { installFetch, renderWithProviders } from '../test/utils'
@@ -138,5 +138,89 @@ describe('Inbox retry already queued', () => {
     installFetch({ '/inbox': { items: [QUEUED], count: 1 } })
     renderWithProviders(<Inbox />)
     expect(await screen.findByRole('button', { name: /Retry queued/ })).toBeDisabled()
+  })
+})
+
+describe('Inbox — a branch whose run never passed', () => {
+  const unverified = {
+    kind: 'branch' as const,
+    id: 'branch:alc/run-bad',
+    title: 'alc/run-bad',
+    reason: 'run work — checks did not pass, review before landing',
+    branch: 'alc/run-bad',
+    committed_at: 2,
+    verified: false,
+  }
+
+  it('does not call it ready to land', async () => {
+    // The reported case: interrupted run, failing check, committed anyway, and
+    // the Inbox said "ready to land" beside a branch that had actually passed.
+    installFetch({ '/inbox': { items: [unverified], count: 1 } })
+    renderWithProviders(<Inbox />)
+
+    expect(await screen.findByText(/checks did not pass/)).toBeInTheDocument()
+    expect(screen.queryByText(/ready to land/)).not.toBeInTheDocument()
+  })
+
+  it('says so in the Land confirmation, where the decision is made', async () => {
+    installFetch({ '/inbox': { items: [unverified], count: 1 } })
+    renderWithProviders(<Inbox />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Land/ }))
+
+    expect(await screen.findByText(/checks did NOT pass/)).toBeInTheDocument()
+    expect(screen.getByText(/Read the diff first/)).toBeInTheDocument()
+  })
+
+  it('still allows landing it — this warns, it does not refuse', async () => {
+    const mock = installFetch({
+      '/inbox': { items: [unverified], count: 1 },
+      '/branches/land': { merged: ['alc/run-bad'], left: [] },
+    })
+    renderWithProviders(<Inbox />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Land/ }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Land' }))
+
+    await waitFor(() =>
+      expect(mock.calls.some((c) => c.method === 'POST' && c.url.includes('/branches/land'))).toBe(
+        true,
+      ),
+    )
+  })
+
+  it('leaves a verified branch reading exactly as before', async () => {
+    installFetch({
+      '/inbox': {
+        items: [{ ...unverified, id: 'branch:alc/run-ok', title: 'alc/run-ok',
+                  branch: 'alc/run-ok', reason: 'run work ready to land', verified: true }],
+        count: 1,
+      },
+    })
+    renderWithProviders(<Inbox />)
+
+    expect(await screen.findByText('run work ready to land')).toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: /Land/ })[0])
+    expect(await screen.findByText(/merges the agent's commits/)).toBeInTheDocument()
+  })
+})
+
+describe('Inbox — the badge must agree with the sentence', () => {
+  it('does not print TO LAND beside "checks did not pass"', async () => {
+    installFetch({
+      '/inbox': {
+        items: [{
+          kind: 'branch' as const, id: 'branch:alc/run-bad', title: 'alc/run-bad',
+          reason: 'run work — checks did not pass, review before landing',
+          branch: 'alc/run-bad', committed_at: 2, verified: false,
+        }],
+        count: 1,
+      },
+    })
+    renderWithProviders(<Inbox />)
+
+    expect(await screen.findByText('unverified')).toBeInTheDocument()
+    expect(screen.queryByText('to land')).not.toBeInTheDocument()
   })
 })

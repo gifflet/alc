@@ -14,6 +14,19 @@ from alc.prompts import _REPAIR_TEMPLATE
 from alc.verifier import CheckResult, Verifier
 
 
+def _elapsed(seconds: float) -> str:
+    """A duration a human reads at a glance: 0.4s, 12s, 1m40s.
+
+    Seconds alone stop being legible around the minute mark, which is exactly
+    where knowing the number starts to matter.
+    """
+    if seconds < 10:
+        return f"{seconds:.1f}s"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    return f"{int(seconds) // 60}m{int(seconds) % 60:02d}s"
+
+
 def _usage_payload(usage: Usage) -> dict[str, int | float | None] | None:
     """Return a JSON-friendly usage dict, or None when nothing was reported."""
     if (
@@ -237,13 +250,22 @@ class AssuranceLoop:
                 # Emit check_started/check_finished in REAL TIME (per check) so a slow or
                 # HUNG check is visible as it runs — which check, and whether it timed out
                 # — instead of a silent freeze while it blocks the drain.
-                check_results = self._verifier.run(
-                    checks,
-                    request.workdir,
-                    on_check_start=lambda name, a=attempt_index: emit(
-                        "check_started", attempt=a, name=name
-                    ),
-                    on_check_done=lambda cr, a=attempt_index: emit(
+
+                def _started(name: str, a: int = attempt_index) -> None:
+                    # Name the check on the way IN, unterminated, and close the line
+                    # when it lands. A check that takes two minutes is otherwise
+                    # indistinguishable from one that has hung, and an operator who
+                    # cannot tell those apart kills the run to find out.
+                    print(f"  · {name}… ", end="", file=sys.stderr, flush=True)
+                    emit("check_started", attempt=a, name=name)
+
+                def _finished(cr: CheckResult, a: int = attempt_index) -> None:
+                    if cr.timed_out:
+                        verdict = f"⏱ timed out after {_elapsed(cr.duration_s)}"
+                    else:
+                        verdict = f"{'✓' if cr.passed else '✗'} {_elapsed(cr.duration_s)}"
+                    print(verdict, file=sys.stderr, flush=True)
+                    emit(
                         "check_finished",
                         attempt=a,
                         name=cr.name,
@@ -256,7 +278,13 @@ class AssuranceLoop:
                         # that succeeded, with nothing joining the two — the UI
                         # cannot tell an ignored failure from a false green.
                         quarantined=cr.name in self._quarantined,
-                    ),
+                    )
+
+                check_results = self._verifier.run(
+                    checks,
+                    request.workdir,
+                    on_check_start=_started,
+                    on_check_done=_finished,
                 )
             # Synthetic guards run AFTER the Verifier and have no subprocess of
             # their own, so the Verifier never emitted a check_finished for them.

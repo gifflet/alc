@@ -7,10 +7,11 @@
 // Recent runs, kept as the one shortcut worth having (it is what lets Runs leave
 // the mobile bar). Every card is a live query invalidated over WS.
 import { useState } from 'react'
-import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, PieChart } from 'lucide-react'
+import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, Inbox as InboxIcon, PieChart } from 'lucide-react'
 import {
   useAudit,
   useEngines,
+  useInbox,
   useQueue,
   useRuns,
   useSchedule,
@@ -28,7 +29,7 @@ import { StartWork } from '../components/StartWork'
 import { EmptyState } from '../components/EmptyState'
 import { RelativeTime } from '../components/RelativeTime'
 import { StatusDot } from '../components/StatusDot'
-import type { MixHealth } from '../api/types'
+import type { InboxItem, MixHealth } from '../api/types'
 
 /** Per-report span bars, coloured by success — a compact trend under the totals. */
 function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
@@ -55,6 +56,21 @@ function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
   )
 }
 
+/** One line per metric, matching docs/concepts/scorecard. These are invented
+ * words — span, passes, streak, touch — and the card showed eight of them with
+ * no legend, three of them reading 3, which invites the reading that they are
+ * one thing. */
+const SCORECARD_HINT = {
+  span: 'Checks satisfied across all runs — the proxy for work delivered. Higher is better.',
+  passes: 'Engine turns spent reaching done. Lower is better; a climbing count means the loop is doing your thinking.',
+  streak: 'Runs that landed one-shot, with zero repairs. Higher is better.',
+  touch: 'Times a human had to step in. Lower is better — Touch to 0 is the north star.',
+  reports: 'Archived run reports counted here.',
+  ok: 'Runs whose checks all passed.',
+  failed: 'Runs that ended with a check still failing.',
+  netLines: 'Lines added minus lines deleted across these runs. Negative is good: deletion counts as delivery.',
+} as const
+
 function ScorecardCard() {
   const id = useProjectId()
   const { data } = useScorecard(id)
@@ -68,19 +84,36 @@ function ScorecardCard() {
       {s && s.reports > 0 ? (
         <>
           <div className="grid grid-cols-4 gap-3">
-            <Metric label="span" value={s.span_total} tone="live" />
-            <Metric label="passes" value={s.passes_total} />
-            <Metric label="streak" value={s.streak_total} />
-            <Metric label="touch" value={s.touch_total} tone={s.touch_total > 0 ? 'error' : undefined} />
-            <Metric label="reports" value={s.reports} />
-            <Metric label="ok" value={s.successes} tone="live" />
-            <Metric label="failed" value={s.failures} tone={s.failures > 0 ? 'error' : undefined} />
+            <Metric label="span" value={s.span_total} tone="live" hint={SCORECARD_HINT.span} />
+            <Metric label="passes" value={s.passes_total} hint={SCORECARD_HINT.passes} />
+            <Metric label="streak" value={s.streak_total} hint={SCORECARD_HINT.streak} />
+            <Metric
+              label="touch"
+              value={s.touch_total}
+              tone={s.touch_total > 0 ? 'error' : undefined}
+              hint={SCORECARD_HINT.touch}
+            />
+            <Metric label="reports" value={s.reports} hint={SCORECARD_HINT.reports} />
+            <Metric label="ok" value={s.successes} tone="live" hint={SCORECARD_HINT.ok} />
+            <Metric
+              label="failed"
+              value={s.failures}
+              tone={s.failures > 0 ? 'error' : undefined}
+              hint={SCORECARD_HINT.failed}
+            />
             <Metric
               label="net lines"
               value={netLines ?? '—'}
               tone={s.net_lines_total != null && s.net_lines_total < 0 ? 'live' : undefined}
+              hint={SCORECARD_HINT.netLines}
             />
           </div>
+          {/* A hover title is invisible on a touch screen, and half this project's
+              use is on a phone. This one line carries the part you cannot work
+              without: which direction is good. */}
+          <p className="mt-2 text-[length:var(--ui-text-label)] text-faint">
+            Span and streak: higher is better. Passes and touch: lower is better — the goal is touch 0.
+          </p>
           {warnings > 0 && (
             <div className="mt-2">
               <Pill tone="warn">
@@ -127,8 +160,23 @@ function RunsCard() {
                 className="flex min-h-[var(--ui-row-h)] w-full items-center gap-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 hover:bg-hover"
               >
                 <StatusDot tone={r.finished ? 'idle' : 'running'} pulse={!r.finished} />
-                <span className="w-10 font-mono text-[length:var(--ui-text-label)] text-faint">{r.kind}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[length:var(--ui-text-label)] text-muted">{r.stem}</span>
+                {/* Same shape as the Runs view: the task leads, the stem sits
+                    under it as the address you would paste into `alc runs`.
+                    This card used to show kind + stem only, and the stem is
+                    truncated here — so every row read
+                    "run  20260830T041713-run-chore-in-d…" and the one part that
+                    told them apart was the part removed. */}
+                <span className="flex min-w-0 flex-1 flex-col justify-center leading-tight">
+                  <span className="truncate text-muted" title={r.title || r.stem}>
+                    {r.title || r.stem}
+                  </span>
+                  {r.title && (
+                    <span className="truncate font-mono text-[length:var(--ui-text-label)] text-faint">
+                      {r.unit ? `${r.unit} · ` : ''}
+                      {r.stem}
+                    </span>
+                  )}
+                </span>
                 <RelativeTime value={r.mtime} />
               </button>
             </li>
@@ -192,9 +240,25 @@ function MixHealthCard() {
       {!health || health.total_runs === 0 ? (
         <p className="text-[length:var(--ui-text-body)] text-faint">No data yet — no archived runs.</p>
       ) : !health.stage ? (
-        <p className="text-[length:var(--ui-text-body)] text-faint">
-          No stage declared — {health.total_runs} run{health.total_runs === 1 ? '' : 's'} unjudged.
-        </p>
+        /* This card used to spend the primary screen saying a feature you never
+           opted into is not running, in two words nothing on the page defines.
+           If it is going to take the space, it has to say what declaring a stage
+           would buy and how to do it. */
+        <div className="flex flex-col gap-1.5 text-[length:var(--ui-text-body)] text-faint">
+          <p className="text-muted">
+            No stage declared, so these {health.total_runs} run{health.total_runs === 1 ? '' : 's'} are
+            not measured against any target.
+          </p>
+          <p>
+            Set <code className="font-mono text-muted">stage:</code> to{' '}
+            <code className="font-mono text-muted">pre-pmf</code>,{' '}
+            <code className="font-mono text-muted">growth</code> or{' '}
+            <code className="font-mono text-muted">strong-pmf</code> in{' '}
+            <code className="font-mono text-muted">.alc/manifest.yaml</code> and this card reports how
+            much of your recent work matched the kind that stage expects. Advisory — it never changes
+            how a run executes.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-[length:var(--ui-text-body)] text-muted">
@@ -212,6 +276,71 @@ function MixHealthCard() {
           })()}
         </div>
       )}
+    </Card>
+  )
+}
+
+const NEEDS_YOU_LABEL: Record<InboxItem['kind'], string> = {
+  failure: 'failure',
+  branch: 'to land',
+  loop: 'loop stopped',
+}
+
+/** Work that is waiting on a decision, at the top of the page.
+ *
+ * Every other card on this screen reports on work that already happened; this
+ * is the only one about work that is stopped until a human moves it. It used to
+ * be reachable only as a number on a rail icon, while "Mix Health: no stage
+ * declared" got a full card — so the page gave its most prominent space to the
+ * thing that needed nobody. Renders NOTHING when the inbox is empty: a card
+ * saying "no decisions pending" is noise on a screen whose job is signal.
+ *
+ * Deliberately no Land/Discard here. Those actions carry confirmation dialogs
+ * that state what landing an unverified branch means, and a second copy of that
+ * logic is a second place for it to drift out of agreement with the Inbox.
+ */
+function NeedsYouCard() {
+  const id = useProjectId()
+  const { data } = useInbox(id)
+  const items = data?.items ?? []
+  if (items.length === 0) return null
+  return (
+    <Card
+      title={`Needs you (${items.length})`}
+      icon={InboxIcon}
+      action={
+        <button
+          type="button"
+          onClick={() => openView('inbox')}
+          className="min-h-[var(--ui-control-h)] rounded-panel border border-border px-2 text-[length:var(--ui-text-label)] text-muted transition-colors duration-120 hover:bg-hover"
+        >
+          Open Inbox
+        </button>
+      }
+    >
+      <ul className="flex flex-col gap-2">
+        {items.map((item) => (
+          <li key={item.id} className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <StatusDot tone={item.kind === 'failure' || item.verified === false ? 'error' : 'accent'} />
+              <span className="min-w-0 flex-1 truncate text-[length:var(--ui-text-body)] text-primary">
+                {item.title}
+              </span>
+              {/* Same wording as the Inbox row, including the unverified
+                  override: two screens describing one branch two ways is how an
+                  operator ends up trusting the wrong one. */}
+              <span
+                className={`shrink-0 text-[length:var(--ui-text-label)] uppercase tracking-wide ${
+                  item.verified === false ? 'text-error' : 'text-faint'
+                }`}
+              >
+                {item.verified === false ? 'unverified' : NEEDS_YOU_LABEL[item.kind]}
+              </span>
+            </div>
+            <p className="truncate pl-4 text-[length:var(--ui-text-label)] text-muted">{item.reason}</p>
+          </li>
+        ))}
+      </ul>
     </Card>
   )
 }
@@ -304,6 +433,12 @@ export function Dashboard() {
       {/* First thing on the page, spanning the grid. Every panel below reports
           on work that already happened; this is the only one that starts any,
           and on a fresh project the rest are empty. */}
+      {/* Above StartWork on purpose: a branch waiting on a decision outranks
+          starting more work, and the card removes itself when nothing is
+          waiting, so the calm case is unchanged. */}
+      <div className="md:col-span-2 xl:col-span-3 empty:hidden">
+        <NeedsYouCard />
+      </div>
       <div className="md:col-span-2 xl:col-span-3">
         <StartWork />
       </div>

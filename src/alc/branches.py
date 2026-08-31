@@ -226,6 +226,28 @@ def run_report_filename(branch: str) -> str:
     return branch.replace("/", "-") + ".report.json"
 
 
+def branch_verified(runs_dir: Path, branch: str, label: str) -> bool | None:
+    """Did the run behind *branch* pass its checks? None when unknowable.
+
+    An isolated `alc run` archives `<branch>.report.json` only when the report
+    succeeded, and a spike never commits a branch — so for a `run` branch the
+    report is present exactly when the run passed, and absent when it failed or
+    was interrupted yet still committed. That last case is the one worth naming:
+    a branch indistinguishable from verified work.
+
+    No other producer writes a branch-named report. `flow`, `tick` and `fanout-*`
+    branches would all read as unverified under the same test, so they get None
+    — no claim. A false alarm on every drained task would be worse than the
+    silence this replaces.
+
+    Pure on purpose: callers resolve `runs_dir` themselves, so this stays free of
+    manifest loading and usable from both the CLI and the web service.
+    """
+    if label != "run":
+        return None
+    return (runs_dir / run_report_filename(branch)).exists()
+
+
 def delete_branches(
     repo_root: Path, names: list[str], runs_dir: Path | None = None
 ) -> list[str]:

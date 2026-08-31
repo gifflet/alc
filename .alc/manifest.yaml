@@ -1,0 +1,77 @@
+version: 1
+# Chosen by probing PATH at `alc init` time (claude -> claude-code, gemini ->
+# gemini, neither -> mock). mock is a free no-op for dry runs — swap in a real
+# engine any time.
+default_engine: claude-code
+
+compute_tiers:
+  standard:
+    mock: "mock-small"
+    claude-code: "claude-sonnet-4-6"
+  deep:
+    mock: "mock-large"
+    claude-code: "claude-opus-4-8"
+
+engines:
+  mock:
+    type: mock
+  claude-code:
+    type: claude-code
+    binary: claude
+    # clean_config: true  # skip the host project's .claude/ settings and hooks
+
+# Behavioral knobs — defaults shown; uncomment a line to override:
+# default_timeout_s: 1800   # engine per-turn kill timeout (seconds)
+# plan_retries: 2           # corrective retries when a plan's JSON is malformed
+# fanout_concurrency: 4     # parallel workers for `alc conduct --parallel`
+# plan_tier: standard       # compute tier for Conductor planning turns
+
+# Reusable named check sets a Blueprint may opt into via `check_set: <name>`.
+# `alc init` pre-filled one set per detected stack plus `security`. A command
+# left commented out means its binary was not found on PATH at init time —
+# install it and uncomment the check rather than shipping a check that fails
+# on a clean checkout.
+
+  # Node detected in docs-site/ — NOT covered by the checks above.
+  # Uncomment once `docs-site` has its dependencies installed.
+  # docs-site:
+  #   - name: test
+  #     shell: "cd docs-site && npm test"
+  #   - name: lint
+  #     shell: "cd docs-site && npm run lint"
+  #   - name: typecheck
+  #     shell: "cd docs-site && npm run typecheck"
+
+  # Node detected in ui/ — NOT covered by the checks above.
+  # Uncomment once `ui` has its dependencies installed.
+  # ui:
+  #   - name: test
+  #     shell: "cd ui && npm test"
+  #   - name: lint
+  #     shell: "cd ui && npm run lint"
+  #   - name: typecheck
+  #     shell: "cd ui && npm run typecheck"
+
+worktree_provision:
+  # uv's environment. Cloned rather than linked: `uv run` may sync it,
+  # and a linked dir is shared across worktrees. Missing -> skipped.
+  - clone: .venv
+
+check_sets:
+  python:
+    - name: test
+      command: ["uv", "run", "pytest", "-q"]
+    # - name: lint
+    #   command: ["ruff", "check", "."]
+
+  security:
+    []
+    # - name: pip-audit
+    #   command: ["pip-audit"]
+    # - name: gitleaks
+    #   command: ["gitleaks", "detect"]
+
+blueprints_dir: .alc/blueprints
+flows_dir: .alc/flows
+queue_dir: .alc/queue
+specialists_dir: .alc/specialists

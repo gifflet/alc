@@ -130,6 +130,17 @@ export default function Home() {
               {c.problem.quote}
             </blockquote>
           )}
+          {/* For a CLI, the terminal output IS the demo. The page had a video of
+              one and a caption arguing it was genuine; it had no transcript you
+              could read on a phone, search, or copy. Wide, so it scrolls inside
+              itself instead of pushing the page sideways. */}
+          {c.problem.transcript.length > 0 && (
+            <div className="overflow-x-auto rounded-lg border border-border bg-panel">
+              <pre className="w-max min-w-full px-4 py-4 text-[13px] leading-relaxed text-muted">
+                <code>{c.problem.transcript.join('\n')}</code>
+              </pre>
+            </div>
+          )}
         </div>
       </Section>
 
@@ -241,7 +252,9 @@ export default function Home() {
         <div className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-2 lg:items-center">
           <div className="min-w-0">
             <SectionTitle>{c.start.heading}</SectionTitle>
-            <Lede>{inline(c.start.body)}</Lede>
+            {c.start.body.map((paragraph) => (
+              <Lede key={paragraph.slice(0, 24)}>{inline(paragraph)}</Lede>
+            ))}
             <div className="mt-8 flex flex-wrap gap-3">
               {c.start.primary && <CtaLink cta={c.start.primary} variant="primary" />}
               {c.start.secondary && <CtaLink cta={c.start.secondary} variant="secondary" />}

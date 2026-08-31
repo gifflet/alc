@@ -109,6 +109,10 @@ export function getLandingContent() {
       heading: problem['Section heading'] ?? '',
       body: (problem['Body'] ?? '').split('\n\n').filter(Boolean),
       quote: problem['Pull quote'] ?? '',
+      // Real output, as selectable text. The demo video already shows a run;
+      // what the page had nowhere was a transcript you can read on a phone,
+      // search, or copy — which for a CLI is the demo.
+      transcript: code(problem['Transcript']),
     },
     how: {
       heading: how['Section heading'] ?? '',
@@ -128,7 +132,10 @@ export function getLandingContent() {
     },
     start: {
       heading: start['Section heading'] ?? '',
-      body: start['Body'] ?? '',
+      // Split like `problem.body` and `how.body`: this field was a single string,
+      // so a second paragraph written here rendered glued to the first inside one
+      // <p>. Silent, and only visible on the page.
+      body: (start['Body'] ?? '').split('\n\n').filter(Boolean),
       code: code(start['Code block']),
       primary: cta(start['Primary CTA']),
       secondary: cta(start['Secondary CTA']),

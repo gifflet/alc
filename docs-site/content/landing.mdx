@@ -1,5 +1,5 @@
 ---
-title: ALC — Agentic Layer Compiler & Runtime
+title: ALC — a control plane for agentic coding
 description: A control plane for agentic coding. Declare how your agents should work once, run it on any coding engine, with the guardrails built in.
 ---
 
@@ -7,7 +7,7 @@ description: A control plane for agentic coding. Declare how your agents should 
 
 ### Eyebrow
 
-Agentic Layer Compiler & Runtime
+A control plane for agentic coding
 
 ### Headline
 
@@ -30,8 +30,6 @@ Link: /docs/concepts/control-plane
 ### Hero code block
 
 ```bash
-uv tool install alc-runtime
-
 alc init --setup     # scaffold .alc/, detect your stack
 alc onboard          # adopt the checks your project already declares
 alc run chore "remove the unused export endpoint"
@@ -39,7 +37,7 @@ alc run chore "remove the unused export endpoint"
 
 ### Hero caption
 
-Python 3.12. Two runtime dependencies. Works with Claude Code, Gemini, or a free Mock engine that exercises everything without a model call.
+Python 3.12 and `git`. ALC ships no model — it drives a coding CLI you already have: Claude Code or Gemini. No CLI yet? A free Mock engine exercises everything without a model call.
 
 ---
 
@@ -51,15 +49,40 @@ Everyone converges on the same habits. Then forgets them.
 
 ### Body
 
-Give the agent one task at a time. Run the tests afterwards. Don't let it edit the whole repo at once. Read the diff before you keep it.
+One task at a time. Run the tests afterwards. Read the diff before you keep it. Those habits live in your head, and they die the moment you're tired, in a hurry, or asleep — silently, because the agent reports success either way. ALC moves them into code that refuses to report success instead. [The longer argument is in the introduction.](/docs/getting-started/introduction)
 
-Those habits live in your head. They survive as long as you remember them, and they die the moment you're tired, in a hurry, or asleep. Worse, they die silently — the agent reports success either way.
+One condition, and it is the whole of the setup: the checks are yours. A fresh scaffold ships a single placeholder that always passes, so out of the box ALC enforces nothing. Wiring in your real test and lint commands is what makes the guarantee true of your code.
 
-Prompting harder doesn't fix this. A practice enforced by a paragraph in a system prompt is a practice the model may skip. A practice enforced by code that refuses to report success is one it cannot.
+Below is a real run, pasted as text — it passed on its first attempt. When a check fails instead, the loop feeds the failure back to the engine and tries again, up to four turns by default. [How that works](/docs/concepts/assurance-loop)
 
 ### Pull quote
 
 Nothing is reported done until it actually is.
+
+### Transcript
+
+```
+$ alc run bug "slugify() drops nothing and collapses nothing — three tests fail. Make them pass."
+→ Act (attempt 1/4)…
+  → claude-code working (model=claude-sonnet-4-6)…
+    • Bash: find . -type f | head -30 && echo "---" && ls -la
+    • Read: src/slugify.py
+    • Read: tests/test_slugify.py
+    • Bash: python -m pytest tests/ -v
+    • Edit: src/slugify.py
+    • Bash: python -m pytest tests/ -v
+  → claude-code done (58s, $0.202)
+→ Verify (1 check(s))…
+  · test… ✓ 0.2s
+  ✓ all checks passed
+Status:   SUCCESS
+Engine:   claude-code
+Attempts: 1
+Scorecard: span=1 passes=1 streak=1 touch=0
+           good: span ↑  passes ↓  streak ↑  touch ↓ (touch 0 is the goal)
+Changed files:
+  src/slugify.py
+```
 
 ---
 
@@ -83,7 +106,7 @@ Body: A Blueprint is a template for a class of work — chore, bug, feature — 
 ### Step 2
 
 Title: Gate
-Body: Before anything runs, the Policy Gate lints the Operator Layer and refuses a configuration that can't deliver on what it claims. A Blueprint with no checks is not a guarantee, so it isn't allowed to pretend to be one.
+Body: Before anything runs, the Policy Gate lints the Operator Layer and refuses a configuration that can't deliver on what it claims. A Blueprint with no checks is not a guarantee, so it isn't allowed to pretend to be one. It cannot judge the checks themselves, though — a check that always passes passes the gate, which is why the scaffold's placeholder is the first thing to replace.
 
 ### Step 3
 
@@ -157,7 +180,7 @@ You don't start at the top. You climb.
 
 ### Body
 
-ALC grows with you. Each rung is useful on its own, and each one earns the next.
+ALC grows with you. Each rung is useful on its own, and each one earns the next — rung 1 works on the day you install it, and rungs 2 and 3 are what you grow into once your checks and Blueprints describe real work. A Conductor with one placeholder Blueprint has nothing to plan with.
 
 ### Rung 1
 
@@ -184,21 +207,21 @@ The human is on the loop, not in it. `Touch → 0` means zero interventions — 
 
 ### Section heading
 
-Three commands to a validated Operator Layer
+Three commands to a validated `.alc/`
 
 ### Body
 
-The PyPI package is `alc-runtime`; it puts the `alc` command on your PATH. A freshly scaffolded project defaults to the free Mock engine, so you can prove the whole control plane works before spending anything on it.
+With `alc` on your PATH from the command at the top of this page, this is the whole setup. A freshly scaffolded project defaults to the free Mock engine, so you can prove the control plane works before spending anything on it.
+
+`alc onboard` is the step that replaces the scaffold's placeholder check: it reads the test and lint commands your project already declares — `package.json` scripts, Makefile targets, `tox`, `pre-commit` — and adopts them, so the guarantee is made of your checks rather than a stand-in.
 
 ### Code block
 
 ```bash
-uv tool install alc-runtime          # or: "alc-runtime[ui]" for the web UI
-
 cd your-project
 alc init --setup                     # scaffold .alc/ and install the editor skill
 alc onboard                          # adopt the checks you already declare
-alc lint                             # validate the Operator Layer
+alc lint                             # validate .alc/
 ```
 
 ### Primary CTA

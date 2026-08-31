@@ -5,9 +5,58 @@ from __future__ import annotations
 
 import sys
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+
+
+def path_roots(workdir: str | Path | None) -> tuple[str, ...]:
+    """Prefixes that mean "inside *workdir*", longest first.
+
+    Both the path as given and as resolved: macOS hands out ``/var/folders/...``
+    temp dirs that resolve to ``/private/var/folders/...`` and an engine may
+    report either form, so matching one would leave half the notes unshortened.
+    """
+    if not workdir:
+        return ()
+    raw = Path(workdir)
+    try:
+        candidates = {str(raw), str(raw.resolve())}
+    except OSError:  # pragma: no cover — an unresolvable cwd is still usable as text
+        candidates = {str(raw)}
+    return tuple(sorted((f"{c.rstrip('/')}/" for c in candidates), key=len, reverse=True))
+
+
+def shorten_path(text: str, roots: Sequence[str]) -> str:
+    """Strip a leading worktree prefix from *text* so the varying part survives.
+
+    Every path an engine reports during a run lives under the same worktree, so
+    the prefix is the one part that is identical on every line — and the part a
+    width limit would otherwise keep, dropping the filename that distinguishes
+    them. Returns *text* unchanged when it is not under any root, and when
+    stripping would leave nothing (the worktree root itself).
+    """
+    for root in roots:
+        if text.startswith(root):
+            return text[len(root) :] or text
+    return text
+
+
+def elide(text: str, width: int) -> str:
+    """Shorten *text* to *width* by removing the MIDDLE, not the tail.
+
+    A tool-call note reads "Read: <path>": the head names the tool and the tail
+    names the file. Cutting from the right keeps neither — only the shared
+    directory in between.
+    """
+    if len(text) <= width:
+        return text
+    if width <= 1:
+        return text[:width]
+    keep = width - 1  # one column for the ellipsis
+    head = keep // 2
+    return f"{text[:head]}\u2026{text[head - keep :]}"
 
 
 @dataclass(frozen=True)
@@ -65,7 +114,8 @@ class ProgressPrinter:
     inspect meaning — so this is engine-agnostic and error-type-agnostic, not a
     per-tool or per-error heuristic:
 
-    - **truncate** each line to ``max_width`` (keeps the terminal readable),
+    - **truncate** each line to ``max_width`` from the MIDDLE (keeps the terminal
+      readable without dropping the end of the line, which is the part that varies),
     - **collapse** a line identical to the one just printed (kills repeat spam),
     - **cap** the total to ``max_lines``; further lines are counted and summarised by
       ``close`` as "… (N more lines suppressed)".
@@ -105,11 +155,14 @@ class ProgressPrinter:
         line = line.strip()
         if not line:
             return
-        truncated = line[: self._max_width]
+        truncated = elide(line, self._max_width)
         with self._lock:
-            if truncated == self._last:
+            # Compare the FULL line, not the displayed one: two reads of different
+            # files in the same deep directory shorten to the same text, and
+            # deduping on that would show one line where two things happened.
+            if line == self._last:
                 return
-            self._last = truncated
+            self._last = line
             if self._printed >= self._max_lines:
                 self._suppressed += 1
                 return

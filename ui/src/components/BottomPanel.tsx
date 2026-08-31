@@ -52,7 +52,8 @@ function ProblemsTab() {
   const id = useProjectId()
   const { data } = useLint(id)
   const violations = data?.violations ?? []
-  if (violations.length === 0) {
+  const gaps = data?.coverage_gaps ?? []
+  if (violations.length === 0 && gaps.length === 0) {
     return <EmptyState icon={CircleCheck} message="No problems — policy gate is clean." />
   }
   return (
@@ -62,6 +63,28 @@ function ProblemsTab() {
           <ProblemRow v={v} />
         </div>
       ))}
+      {/* Not violations, and not silence either. The layer can pass every policy
+          rule and still verify only part of the project — which is exactly what
+          "policy gate is clean" used to say on its own. */}
+      {gaps.length > 0 && (
+        <div className="border-b border-border/15 px-[var(--ui-pad-x)] py-2">
+          <p className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-warn">
+            Not covered
+          </p>
+          {gaps.map((g, i) => (
+            <p
+              key={i}
+              className={`text-[length:var(--ui-text-body)] ${
+                g.startsWith('Nothing') || g.startsWith('Their') || g.startsWith('They')
+                  ? 'text-faint'
+                  : 'text-muted'
+              }`}
+            >
+              {g}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

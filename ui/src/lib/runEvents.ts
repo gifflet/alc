@@ -12,6 +12,9 @@ import type { RunEvent, Scorecard } from '../api/types'
 export interface TimelineCheck {
   name: string
   passed: boolean
+  /** Seconds the check took — the event has always carried it and the timeline
+   *  used to drop it, so a two-minute check looked like a two-second one. */
+  durationS: number
   /** A quarantined check runs and its failure is recorded, but it does not block
    *  success. Without this the timeline shows a failed check inside a successful
    *  run and leaves the reader to guess why. */
@@ -62,6 +65,15 @@ export interface Timeline {
   /** Check-defining files (`"path (reason)"`) the run's net diff touched — the
    * always-on tamper-evidence (check_config_edited events). Empty when clean. */
   checkConfigEdits: string[]
+}
+
+/** A duration a human reads at a glance: 0.4s, 12s, 1m40s — the same shape the
+ * CLI prints, so the two surfaces do not describe one run in two dialects. */
+export function formatElapsed(seconds: number): string {
+  if (seconds < 10) return `${seconds.toFixed(1)}s`
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const total = Math.floor(seconds)
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, '0')}s`
 }
 
 function num(event: RunEvent, key: string): number {
@@ -194,7 +206,8 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         getAttempt(group, num(event, 'attempt')).checks.push({
           name: str(event, 'name') ?? '',
           passed: event.passed === true,
-            quarantined: event.quarantined === true,
+          durationS: num(event, 'duration_s'),
+          quarantined: event.quarantined === true,
         })
         break
       }
@@ -280,10 +293,12 @@ export function describeEvent(event: RunEvent): string {
     case 'check_started':
       // Emitted as each check begins so a slow/hung check is visible AS it runs.
       return `Check ${str(event, 'name')} running…`
-    case 'check_finished':
-      return `Check ${str(event, 'name')} ${
-        event.timed_out ? 'timed out ⏱' : event.passed ? 'passed' : 'failed'
-      }`
+    case 'check_finished': {
+      // The event carries duration_s and the feed used to drop it, so a check that
+      // took two minutes read exactly like one that took two seconds.
+      const verdict = event.timed_out ? 'timed out ⏱' : event.passed ? 'passed' : 'failed'
+      return `Check ${str(event, 'name')} ${verdict} (${formatElapsed(num(event, 'duration_s'))})`
+    }
     case 'check_config_edited': {
       const files = Array.isArray(event.files) ? event.files.filter((f) => typeof f === 'string') : []
       return `modified check config: ${files.join(', ')}`

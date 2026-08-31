@@ -368,3 +368,184 @@ describe('Scorecard history chart', () => {
     expect(chart.className).not.toContain('items-end')
   })
 })
+
+describe('Dashboard — work that needs a human', () => {
+  const withInbox = (items: unknown[]) =>
+    installFetch({
+      ...dashboardStubs,
+      '/inbox': { items, count: items.length },
+    })
+
+  it('leads with pending decisions instead of burying them in a rail badge', async () => {
+    withInbox([
+      {
+        kind: 'branch',
+        id: 'b1',
+        title: 'alc/run-a1b2c3d4',
+        reason: 'run work ready to land',
+        branch: 'alc/run-a1b2c3d4',
+        verified: true,
+      },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Needs you (1)')).toBeInTheDocument()
+    expect(screen.getByText('alc/run-a1b2c3d4')).toBeInTheDocument()
+    expect(screen.getByText('run work ready to land')).toBeInTheDocument()
+  })
+
+  it('stays silent when nothing is waiting', async () => {
+    withInbox([])
+    renderWithProviders(<Dashboard />)
+    // Wait for the page to settle on a card that always renders.
+    expect(await screen.findByText('Engines')).toBeInTheDocument()
+    expect(screen.queryByText(/Needs you/)).not.toBeInTheDocument()
+  })
+
+  it('calls an unverified branch unverified, exactly as the Inbox does', async () => {
+    withInbox([
+      {
+        kind: 'branch',
+        id: 'b2',
+        title: 'alc/run-deadbeef',
+        reason: 'run work — checks did not pass, review before landing',
+        branch: 'alc/run-deadbeef',
+        verified: false,
+      },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Needs you (1)')).toBeInTheDocument()
+    expect(screen.getByText('unverified')).toBeInTheDocument()
+    expect(screen.queryByText('to land')).not.toBeInTheDocument()
+  })
+
+  it('counts every waiting item, whatever its kind', async () => {
+    withInbox([
+      { kind: 'failure', id: 'f1', title: 'chore x', reason: 'failed twice', stem: 's1' },
+      { kind: 'branch', id: 'b1', title: 'alc/run-1', reason: 'ready', branch: 'alc/run-1', verified: true },
+      { kind: 'loop', id: 'l1', title: 'nightly', reason: 'halted by a backstop', loop: 'nightly' },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('Needs you (3)')).toBeInTheDocument()
+  })
+
+  it('opens the Inbox rather than duplicating Land and Discard', async () => {
+    withInbox([
+      { kind: 'branch', id: 'b1', title: 'alc/run-1', reason: 'ready', branch: 'alc/run-1', verified: true },
+    ])
+    renderWithProviders(<Dashboard />)
+    const card = (await screen.findByText('Needs you (1)')).closest('section')!
+    expect(within(card).queryByText('Land')).not.toBeInTheDocument()
+    expect(within(card).queryByText('Discard')).not.toBeInTheDocument()
+    await userEvent.click(within(card).getByRole('button', { name: 'Open Inbox' }))
+    expect(uiStore.getState().tabs.some((t) => t.title === 'Inbox')).toBe(true)
+  })
+})
+
+describe('Dashboard — telling recent runs apart', () => {
+  const withRuns = (runs: unknown[]) => installFetch({ ...dashboardStubs, '/runs': { runs, total: runs.length } })
+
+  it('leads each row with the task, not the stem', async () => {
+    withRuns([
+      {
+        stem: '20260830T041713-run-chore-in-docs-site-scripts-dist-install-e40d96',
+        kind: 'run',
+        title: 'Fix the closing advice install.sh prints after an upgrade',
+        unit: 'chore',
+        mtime: 1783828795,
+        size: 712,
+        finished: true,
+        stale: false,
+      },
+    ])
+    renderWithProviders(<Dashboard />)
+    const task = await screen.findByText('Fix the closing advice install.sh prints after an upgrade')
+    const stem = screen.getByText(/20260830T041713-run-chore-in-docs-site/)
+    // The stem is still there as the address — below the task, not instead of it.
+    expect(task.compareDocumentPosition(stem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('tells apart two runs whose stems share a prefix', async () => {
+    withRuns([
+      { stem: '20260830T041713-run-chore-fix-the-install-a1', kind: 'run', title: 'fix the install banner', unit: 'chore', mtime: 1783828795, size: 1, finished: true, stale: false },
+      { stem: '20260830T041714-run-chore-fix-the-install-b2', kind: 'run', title: 'fix the install exit code', unit: 'chore', mtime: 1783828796, size: 1, finished: true, stale: false },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('fix the install banner')).toBeInTheDocument()
+    expect(screen.getByText('fix the install exit code')).toBeInTheDocument()
+  })
+
+  it('falls back to the stem when a run has no task recorded', async () => {
+    withRuns([
+      { stem: '20260830T041713-run-chore-untitled-a1', kind: 'run', title: '', unit: '', mtime: 1783828795, size: 1, finished: true, stale: false },
+    ])
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('20260830T041713-run-chore-untitled-a1')).toBeInTheDocument()
+  })
+
+  it('still opens the run it names', async () => {
+    withRuns([
+      { stem: '20260830T041713-run-chore-x-a1', kind: 'run', title: 'fix it', unit: 'chore', mtime: 1783828795, size: 1, finished: true, stale: false },
+    ])
+    renderWithProviders(<Dashboard />)
+    await userEvent.click(await screen.findByText('fix it'))
+    expect(uiStore.getState().tabs.some((t) => t.title === '20260830T041713-run-chore-x-a1')).toBe(true)
+  })
+})
+
+describe('Dashboard — the numbers explain themselves', () => {
+  it('says which direction is good, where a touch screen can read it', async () => {
+    renderWithProviders(<Dashboard />)
+    // The card header renders before its query resolves; wait for the grid.
+    expect(await screen.findByText('reports')).toBeInTheDocument()
+    // A hover title is invisible on a phone, and half this project's use is one.
+    expect(
+      screen.getByText(/Span and streak: higher is better\. Passes and touch: lower is better/),
+    ).toBeInTheDocument()
+  })
+
+  it('defines each invented word on hover', async () => {
+    renderWithProviders(<Dashboard />)
+    const span = (await screen.findByText('span')).closest('div')!
+    expect(span.getAttribute('title')).toMatch(/checks satisfied/i)
+    expect(screen.getByText('touch').closest('div')!.getAttribute('title')).toMatch(/human/i)
+    expect(screen.getByText('passes').closest('div')!.getAttribute('title')).toMatch(/engine turns/i)
+    expect(screen.getByText('streak').closest('div')!.getAttribute('title')).toMatch(/one-shot/i)
+  })
+
+  it('explains what declaring a stage would buy, instead of only noting its absence', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': {
+        members: [],
+        mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 3, idle_core: [] },
+      },
+    })
+    renderWithProviders(<Dashboard />)
+    // Await the body, not the header — the header renders before the query lands.
+    expect(await screen.findByText(/not measured against any target/)).toBeInTheDocument()
+    expect(screen.getByText(/how much of your recent work matched/)).toBeInTheDocument()
+    // And how to actually do it.
+    expect(screen.getByText('pre-pmf')).toBeInTheDocument()
+    expect(screen.getByText('.alc/manifest.yaml')).toBeInTheDocument()
+  })
+
+  it('still reports the mix once a stage is declared', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': {
+        members: [],
+        mix_health: {
+          stage: 'growth',
+          core: ['builder', 'sweeper', 'grower'],
+          secondary: ['maintainer'],
+          by_archetype: [{ archetype: 'builder', runs: 3, cost_usd: 0.0 }],
+          total_runs: 3,
+          idle_core: [],
+        },
+      },
+    })
+    renderWithProviders(<Dashboard />)
+    expect(await screen.findByText('growth')).toBeInTheDocument()
+    expect(screen.queryByText(/not measured against any target/)).not.toBeInTheDocument()
+  })
+})

@@ -15,7 +15,7 @@ The fast path when you already know what you want.
 | **Run** one verified unit | `alc run` · `alc spike` · `alc specialist` · `alc flow` |
 | **From a goal**, let ALC plan | `alc conduct "<goal>"` |
 | **Explore** alternatives | `alc explore` → `alc compare --diff` → `alc adopt` |
-| **Run unattended** | `alc enqueue` → `alc tick` · `alc cycle` / `alc loop` |
+| **Run unattended** | `alc enqueue` → `alc tick` · `alc loop --once` / `alc loop` |
 | **Integrate** the result | `alc land` · `alc discard` |
 | **Inspect** what happened | `alc runs` · `alc metrics` · `alc artifacts` · `alc checks history` |
 
@@ -135,33 +135,28 @@ Re-enqueue a failed task with its failure feedback appended. No stem lists the o
 | `--all` | Re-enqueue every outstanding failure (ignored when a stem is given) |
 | `--json` | List the outstanding failures as JSON |
 
-### `alc cycle <name>`
-
-Run **one** Autonomous Loop cycle — replenish, drain, check stop conditions — and exit. State persists between fires.
-
-| Flag | Default | Effect |
-|---|---|---|
-| `--engine NAME` | manifest | Override the engine for this cycle |
-| `--concurrency N` | `0` | Override the loop's drain concurrency (0 = use the definition) |
-| `--status` | off | Print the loop state without running a cycle |
-| `--reset` | off | Reset the loop state, then run one cycle |
-| `--json` | off | With `--status`, print the state as JSON |
-| `--allow-dirty` | off | Silence the dirty working-tree notice |
-
 ### `alc loop <name>`
 
-Foreground wrapper that repeats `alc cycle` until the loop stops.
+Run an Autonomous Loop. By default it repeats cycles — replenish, drain, check stop conditions — until the loop stops, sleeping between them. With `--once` it runs a single cycle and exits; state persists between fires, so that is what cron calls.
 
 | Flag | Default | Effect |
 |---|---|---|
+| `--once` | off | Run one cycle and exit instead of repeating |
 | `--engine NAME` | manifest | Override the engine |
-| `--interval S` | `300` | Seconds to sleep between cycles (0 = no sleep) |
-| `--reset` | off | Reset the stopped state first — restart in one step |
+| `--concurrency N` | `0` | With `--once`, override the loop's drain concurrency (0 = use the definition) |
+| `--status` | off | Print the loop state without running anything |
+| `--reset` | off | Reset the loop state first |
+| `--json` | off | With `--status`, print the state as JSON |
+| `--interval S` | `300` | Seconds to sleep between cycles when repeating (0 = no sleep) |
 | `--allow-dirty` | off | Silence the dirty working-tree notice |
+
+### `alc cycle <name>` *(deprecated)*
+
+The old spelling of `alc loop <name> --once`, kept because it is in people's crontabs. It behaves identically and warns on stderr. `alc schedule` writes the new spelling.
 
 ### `alc schedule install|list|remove`
 
-Manage the crontab entry that fires `alc tick` or `alc cycle NAME`.
+Manage the crontab entry that fires `alc tick` or `alc loop NAME --once`.
 
 ```bash
 alc schedule install tick --every 15m

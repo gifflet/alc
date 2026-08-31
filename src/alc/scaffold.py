@@ -507,6 +507,52 @@ def _marker_present(project_root: Path, marker: str) -> bool:
     return (project_root / marker).exists()
 
 
+# Directories never worth descending into when hunting for a nested stack: build
+# output, vendored deps, and anything hidden. Without this the walk would find a
+# package.json inside node_modules and scaffold a check for someone else's code.
+_SKIP_DIRS = frozenset(
+    {"node_modules", "vendor", "dist", "build", "target", "out", "coverage", "__pycache__"}
+)
+
+# A monorepo can hold dozens of packages. Scaffolding a check per package would
+# bury the manifest and make every run pay for all of them, so the walk stops
+# after this many and `alc init` says how many it left out.
+_MAX_NESTED_STACKS = 6
+
+
+def detect_nested_stacks(
+    project_root: Path,
+) -> list[tuple[str, str, str, list[tuple[str, list[str]]]]]:
+    """Detect stacks in the IMMEDIATE subdirectories, which the root scan misses.
+
+    `_marker_present` tests the project root only. A repo that keeps its frontend
+    in `ui/` — the common monorepo shape — therefore got checks covering the root
+    stack alone, while the tool went on to promise it runs "this project's own
+    checks". This finds what that scan cannot see.
+
+    Depth 1 on purpose: it covers ui/, web/, frontend/, api/, packages that sit
+    one level down, without walking a tree whose size nobody bounded.
+
+    Returns (subdir, label, set_name, checks) per stack found, capped at
+    `_MAX_NESTED_STACKS`.
+    """
+    found: list[tuple[str, str, str, list[tuple[str, list[str]]]]] = []
+    try:
+        children = sorted(d for d in project_root.iterdir() if d.is_dir())
+    except OSError:
+        return []
+    for child in children:
+        if child.name.startswith(".") or child.name in _SKIP_DIRS:
+            continue
+        for markers, label, set_name, checks in _STACK_DEFS:
+            if any(_marker_present(child, m) for m in markers):
+                found.append((child.name, label, set_name, checks))
+                break  # one stack per directory, marker precedence order
+        if len(found) >= _MAX_NESTED_STACKS:
+            break
+    return found
+
+
 def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, list[str]]]]]:
     """Detect every technology stack present, each with its full check battery.
 
@@ -555,6 +601,32 @@ def _build_check_sets(
     security.append(_GITLEAKS_CHECK)
     sets["security"] = resolve_python_checks(security, project_root)
     return sets
+
+
+# A project that already runs checks in CI has an authoritative answer to "how
+# does this repo lint?" — and it is usually PINNED, where the scaffolded guess is
+# not. alc does not parse CI configs (see harvest.py: deliberately out of scope),
+# so this only detects that one EXISTS and says so. Naming a file the operator
+# can read beats inventing a command that can disagree with their own pipeline.
+_CI_CONFIG_GLOBS: tuple[str, ...] = (
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml",
+    ".gitlab-ci.yml",
+    ".circleci/config.yml",
+    "azure-pipelines.yml",
+)
+
+
+def detect_ci_config(project_root: Path) -> str | None:
+    """Return the path of a CI config in *project_root*, or None.
+
+    Existence only — never parsed, never executed.
+    """
+    for pattern in _CI_CONFIG_GLOBS:
+        for match in sorted(project_root.glob(pattern)):
+            if match.is_file():
+                return str(match.relative_to(project_root))
+    return None
 
 
 def render_check_set(
@@ -654,7 +726,42 @@ def _render_check_sets_block(
             blocks.append(render_check_set(name, resolved, unavailable=unavailable))
         else:
             blocks.append(render_check_set(name, checks))
+    # A stack one level down is invisible to the root scan, so its code would be
+    # "verified" by checks that never load it. Write it in, commented, so the gap
+    # is on the page instead of only in the outcome.
+    for subdir, label, _set_name, checks in detect_nested_stacks(project_root):
+        blocks.append(render_nested_check_set(subdir, label, checks))
     return "\n\n".join(blocks)
+
+
+def render_nested_check_set(subdir: str, label: str, checks: list[tuple[str, list[str]]]) -> str:
+    """Render one subdirectory stack as a COMMENTED check set.
+
+    Commented, not live, and by the same rule this file already applies to a
+    check whose binary is off PATH: a live check that fails on a clean checkout
+    breaks every run. `cd ui && npm test` needs an install in that directory, so
+    on a fresh clone it would fail for a reason no run caused.
+
+    Written as `shell:` because Check has no working directory — a one-liner is
+    the mechanism already there, not a new one.
+
+    The point is not to run these. It is that a blind spot the operator cannot
+    see becomes one written into their manifest, named, with the reason.
+    """
+    lines = [
+        f"  # {label} detected in {subdir}/ — NOT covered by the checks above.",
+        "  #",
+        "  # TWO steps to turn it on, not one: uncommenting only declares the set.",
+        f"  #   1. install {subdir}/'s dependencies, then uncomment below",
+        f"  #   2. add `check_set: {subdir}` to the Blueprints that should run it",
+        "  #      (a Blueprint runs its check_set PLUS its own `checks:`)",
+        f"  # {subdir}:",
+    ]
+    for check_name, command in checks:
+        joined = " ".join(command)
+        lines.append(f"  #   - name: {check_name}")
+        lines.append(f'  #     shell: "cd {subdir} && {joined}"')
+    return "\n".join(lines)
 
 
 # Per-stack gitignored dependency to auto-provision into every isolated worktree,
@@ -707,12 +814,14 @@ def _render_worktree_provision_block(
         for _label, set_name, _checks in stacks
         if set_name in _STACK_PROVISIONS
     ]
-    if not entries:
+    uv_venv = _uv_venv_provision(stacks, project_root)
+    if not entries and not uv_venv:
         return ""
     lines = [
-        "# Gitignored runtime deps symlinked into each isolated worktree before a run.",
+        "# Gitignored runtime deps provisioned into each isolated worktree before a run.",
         "# A git worktree checks out only tracked files, so these dirs would be absent",
-        "# and a check like tsc/eslint/vitest would exit 127 — link them in.",
+        "# and a check like tsc/eslint/vitest — or `uv run pytest` — would fail there",
+        "# while passing here.",
         "#",
         "# `refresh` + `when_changed` close the deps-bump false green: when a run edits a",
         "# dependency manifest, ALC runs the install in an ISOLATED deps dir BEFORE the",
@@ -732,7 +841,44 @@ def _render_worktree_provision_block(
         lines.append(f"  - link: {entry['path']}")
         lines.append(f"    refresh: [{', '.join(refresh)}]")
         lines.append(f"    when_changed: [{', '.join(when_changed)}]")
+    lines.extend(uv_venv)
     return "\n".join(lines) + "\n\n"
+
+
+def _uv_venv_provision(
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path | None,
+) -> list[str]:
+    """The `.venv` entry for a uv-managed project, or [] when it does not apply.
+
+    Keyed on the RUNNER, not on the stack. Python at large has no single
+    always-gitignored env dir — poetry and pipenv put theirs outside the project
+    by default — which is why this block used to skip Python entirely. But once
+    `resolve_python_checks` has rewritten a check as `uv run pytest`, the project
+    demonstrably uses uv, and uv's env is `.venv` at the root. Without it a fresh
+    worktree builds a new venv from base dependencies alone, so a project whose
+    tests need an extra fails there for a reason that has nothing to do with the
+    change under test.
+
+    `clone`, not `link`: `uv run` may sync the env it is given, and a linked dir
+    is shared across worktrees where a mutation corrupts siblings. A clone is
+    copy-on-write, so it is isolated and still cheap.
+
+    No `refresh`. The Node analogue would be `uv sync`, which drops extras — it
+    would strip the very packages the clone was carrying and reintroduce the
+    failure this exists to prevent.
+    """
+    if project_root is None:
+        return []
+    if not any(set_name == "python" for _label, set_name, _checks in stacks):
+        return []
+    if not (project_root / "uv.lock").exists():
+        return []
+    return [
+        "  # uv's environment. Cloned rather than linked: `uv run` may sync it,",
+        "  # and a linked dir is shared across worktrees. Missing -> skipped.",
+        "  - clone: .venv",
+    ]
 
 
 # ---------------------------------------------------------------------------

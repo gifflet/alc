@@ -64,10 +64,13 @@ def test_tool_uses_are_emitted_to_the_run_log(
     assert result.ok is True
     events = [json.loads(ln) for ln in log.read_text().splitlines() if ln.strip()]
     tool_uses = [e["note"] for e in events if e.get("event") == "engine_activity"]
+    # /app/... is outside this request's workdir (tmp_path), so both file reads
+    # carry the escape marker: the turn was informed by state the run does not
+    # control, and nothing else on any surface would ever show that.
     assert tool_uses == [
         "Bash: grep -rn STEPS .",
-        "Read: /app/src/foo.js",
-        "Edit: /app/src/foo.js",
+        "Read: /app/src/foo.js  ⇱ outside the workdir",
+        "Edit: /app/src/foo.js  ⇱ outside the workdir",
     ]
 
 

@@ -49,12 +49,38 @@ export function RunOutcome({
 
   if (aborted) {
     return (
-      <div className="flex items-start gap-2.5 rounded-panel border border-warn/40 bg-warn/5 px-3 py-2.5">
-        <AlertTriangle className="mt-[2px] h-4 w-4 shrink-0 text-warn" />
-        <p className="text-[length:var(--ui-text-body)] text-muted">
-          <span className="text-primary">Stopped before finishing.</span> Nothing was reported as
-          done. Any edits it had already made are still in the working tree.
-        </p>
+      <div className="flex flex-col">
+        <div className="flex items-start gap-2.5 rounded-panel border border-warn/40 bg-warn/5 px-3 py-2.5">
+          <AlertTriangle className="mt-[2px] h-4 w-4 shrink-0 text-warn" />
+          <p className="text-[length:var(--ui-text-body)] text-muted">
+            <span className="text-primary">Stopped before finishing.</span> Nothing was reported as
+            done.{' '}
+            {/* This said "still in the working tree" for every abort, which is
+                false for an isolated run: stopping one still commits whatever
+                the engine had written onto its branch and removes the worktree,
+                so the working tree named here never held the edits at all. */}
+            {branch ? (
+              <>
+                Whatever it had already written was committed to{' '}
+                <span className="font-mono text-primary">{branch}</span>. The checks never finished,
+                so read it before you keep it.
+              </>
+            ) : (
+              <>Any edits it had already made are still in your working tree.</>
+            )}
+          </p>
+        </div>
+        {branch && onSeeChanges && (
+          <ActionButton
+            onClick={() => onSeeChanges(branch)}
+            tone="ghost"
+            size="md"
+            className="mt-2 self-start"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            See what changed
+          </ActionButton>
+        )}
       </div>
     )
   }

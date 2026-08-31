@@ -48,7 +48,7 @@ Don't make the agent rediscover your codebase on every run. Write a small curate
 alc primer new payments               # scaffolds .alc/primers/payments.md
 ```
 
-Small, high-value context beats a large always-on memory file. This is the Trim half of the [Context Budget](/docs/concepts/single-mandate#context-budget).
+Small, high-value context beats a large always-on memory file — a Primer is a file naming where the relevant code lives, and nothing more.
 
 ## 4. Run it
 
@@ -60,8 +60,8 @@ You get live progress — each file read and edited, the model in use, the runni
 
 Two heads-ups:
 
-- **The model comes from the Blueprint's compute tier.** The scaffolded `feature` Blueprint uses the `deep` tier, which maps to the most expensive model. Pass `--tier standard` to override it for one invocation without editing the Blueprint.
-- **Without `--isolate`, edits land in your working tree.** If you cancel mid-run, partial changes stay — including new, *untracked* files. Check `git status`, not just `git diff --stat`; the latter hides untracked files. The run report lists what the agent changed.
+- **A run can cost up to four model turns.** The Assurance Loop takes one attempt and repairs up to three times — `max_repairs` defaults to 3 — so a run that keeps failing its checks invokes the model four times before it gives up. Multiply that by the Blueprint's compute tier: `chore` above runs at `standard`, while the scaffolded `feature` Blueprint uses `deep`, which maps to the most expensive model. Pass `--tier standard` to override the tier for one invocation without editing the Blueprint.
+- **Cancelling leaves work behind, and where depends on `--isolate`.** Without it, partial edits stay in your working tree — including new, *untracked* files, so check `git status` and not just `git diff --stat`, which hides them. **With** `--isolate`, cancelling still commits whatever the engine had already written onto the run's branch and removes the worktree; the CLI names that branch as it exits. Either way the run report lists what the agent changed.
 
 To keep your working tree clean, add `--isolate` and the whole run happens on a throwaway branch in a git worktree:
 
@@ -85,6 +85,13 @@ When you are ready to stop being present for every run, the queue takes over: se
 
 ## Known rough edges
 
-Honest, and still being smoothed:
+Honest, and still being smoothed. Every one of these is written up where it
+bites; collected here so the list is not one item long while the real traps sit
+scattered as inline warnings.
 
-- The `claude-code` engine runs inside your project, so it inherits your `.claude/` hooks and settings by default. That can add harmless noise to the output. Set `clean_config: true` on the engine entry in `manifest.yaml` to restrict the CLI to user-level settings and skip the project's `.claude/` configuration.
+- **The `claude-code` engine inherits your project's `.claude/` config.** It runs inside your project, so your hooks and settings apply and can add harmless noise to the output. Set `clean_config: true` on the engine entry in `manifest.yaml` to restrict it to user-level settings.
+- **A check that already fails on a clean checkout makes every run fail, forever.** The agent cannot fix problems that were not its task, so it burns the whole repair budget and reports failure. Run each check yourself once first — [Make the checks real](/docs/getting-started/checks) covers this properly.
+- **Checks are judged by exit code, and some tools do not use it.** `gofmt -l` exits 0 even when files are unformatted. Wrap those in a `shell:` one-liner that turns the output into a status.
+- **A fresh scaffold verifies nothing.** `alc init` writes `command: ["true"]` when it cannot find your tools, and a check that always passes is not a guarantee. Replace it, or run `alc onboard` to adopt the checks your project already declares.
+- **`--isolate` is a no-op outside a git repository.** There is no worktree to make, so the run happens in place and the CLI says `--isolate ignored: not inside a git repository`. It is a warning, not a refusal — your files are edited directly.
+- **`uv tool install --force` silently reuses a cached build** when the version is unchanged. If you are iterating on ALC itself and reinstalling as a tool, bump the version first or your changes will not land.

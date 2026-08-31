@@ -132,12 +132,23 @@ export function Inbox() {
             className="flex flex-col gap-[var(--ui-gap)] border-b border-border/15 px-[var(--ui-pad-x)] py-[var(--ui-pad-y)]"
           >
             <div className="flex min-w-0 items-center gap-2">
-              <StatusDot tone={item.kind === 'failure' ? 'error' : 'accent'} />
+              <StatusDot
+                tone={
+                  item.kind === 'failure' || item.verified === false ? 'error' : 'accent'
+                }
+              />
               <span className="min-w-0 flex-1 truncate text-[length:var(--ui-text-title)] text-primary">
                 {item.title}
               </span>
-              <span className="shrink-0 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
-                {KIND_LABEL[item.kind]}
+              {/* "TO LAND" is an instruction, and it was printed beside a row
+                  saying the checks did not pass. The badge has to agree with the
+                  sentence under it. */}
+              <span
+                className={`shrink-0 text-[length:var(--ui-text-label)] uppercase tracking-wide ${
+                  item.verified === false ? 'text-error' : 'text-faint'
+                }`}
+              >
+                {item.verified === false ? 'unverified' : KIND_LABEL[item.kind]}
               </span>
             </div>
             <p className="text-[length:var(--ui-text-body)] text-muted">
@@ -154,8 +165,16 @@ export function Inbox() {
       {landing && (
         <ConfirmDialog
           title="Land branch"
-          message={`Land ${landing} into your current branch? This merges the agent's commits into your history — review the diff first if you have not.`}
+          // An unverified branch can still be landed — this codebase warns and
+          // never refuses, and the operator may have read the diff and decided.
+          // But the fact cannot be discoverable only three views away.
+          message={
+            items.find((i) => i.branch === landing)?.verified === false
+              ? `${landing} committed work whose checks did NOT pass — the run failed or was interrupted. Landing merges it into your history anyway. Read the diff first.`
+              : `Land ${landing} into your current branch? This merges the agent's commits into your history — review the diff first if you have not.`
+          }
           confirmLabel="Land"
+          tone={items.find((i) => i.branch === landing)?.verified === false ? 'error' : 'accent'}
           onConfirm={() => {
             land.mutate({ branches: [landing] })
             setLanding(null)

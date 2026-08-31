@@ -67,6 +67,9 @@ fi
 # ---------------------------------------------------------------------------
 # 2. alc
 # ---------------------------------------------------------------------------
+ALC_WAS_INSTALLED=0
+command -v alc >/dev/null 2>&1 && ALC_WAS_INSTALLED=1 || true
+
 step "Installing ${BOLD}$PACKAGE${RESET}"
 uv tool install --upgrade "$PACKAGE" || die 'uv tool install failed.'
 
@@ -138,5 +141,9 @@ say ''
 say "${GREEN}${BOLD}$VERSION${RESET} is installed."
 [ -n "$PATH_NOTE" ] && say "To use it in this terminal, $PATH_NOTE"
 say ''
-say "Next: ${BOLD}alc init${RESET}   ${DIM}(sets up .alc/ in a project)${RESET}"
+if [ "$ALC_WAS_INSTALLED" = "1" ]; then
+    say "Updated: ${BOLD}alc${RESET} is up to date — no further setup needed."
+else
+    say "Next: ${BOLD}alc init${RESET}   ${DIM}(sets up .alc/ in a project)${RESET}"
+fi
 say "Docs: ${DIM}https://alc-runtime.vercel.app/docs${RESET}"

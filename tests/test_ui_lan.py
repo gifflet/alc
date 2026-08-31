@@ -63,7 +63,10 @@ def test_lan_without_a_token_warns(served, capsys) -> None:
     assert "[WARNING]" in capsys.readouterr().err
 
 
-def test_lan_carries_the_token_into_both_urls(served, capsys, monkeypatch) -> None:
+def test_lan_carries_the_token_into_both_urls(served, capsys, monkeypatch, tmp_path) -> None:
+    # From a directory that is NOT a project: `alc ui` now lands on the project
+    # you are standing in, and this test is about the token, not the landing.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli_mod, "_lan_address", lambda: "192.168.1.42")
     cli_mod.cmd_ui(_args(lan=True, token="s3cret"))
     out = capsys.readouterr().out

@@ -1,9 +1,18 @@
 ---
 title: Installation
-description: Install the alc command with uv, optionally with the web UI, and verify it works.
+description: Install the alc command in one line, optionally with the web UI, and verify it works.
 order: 2
 ---
 ALC needs Python 3.12 or newer. The PyPI package is **`alc-runtime`**; it puts the **`alc`** command on your PATH.
+
+## Before you install
+
+**ALC ships no model.** It drives a coding CLI you already have — the `claude`
+binary from Claude Code, or `gemini` from the Gemini CLI. If you have neither,
+installing still works and `alc init` will select the **Mock** engine: a free,
+hermetic no-op that exercises the whole control plane and changes no code. That
+is genuinely useful for proving your setup, and it is not what you want for real
+work, so it is worth knowing which one you are getting before you start.
 
 ## Install
 

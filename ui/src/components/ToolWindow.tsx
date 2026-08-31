@@ -97,7 +97,13 @@ function LeafRow({
         active ? 'bg-hover text-primary' : 'text-muted hover:bg-hover'
       }`}
     >
-      <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-1.5">
+      {/* h-full for the same reason as the Loops row: the leaf is --ui-row-h,
+          the button was only as tall as its label. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex h-full min-w-0 flex-1 items-center gap-1.5"
+      >
         <Icon className="h-3.5 w-3.5 shrink-0 text-faint" />
         <span className="truncate">{name}</span>
       </button>

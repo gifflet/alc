@@ -187,6 +187,8 @@ export interface InboxItem {
   /** branch */
   branch?: string
   committed_at?: number
+  /** false when the run behind this branch never passed its checks. See Branch. */
+  verified?: boolean | null
   /** loop */
   loop?: string
   cycle?: number
@@ -225,6 +227,12 @@ export interface Branch {
   label: string
   committed_at: number
   merged: boolean
+  /** Did the run behind this branch pass its checks?
+   *  true  — an archived report exists, so it passed.
+   *  false — a `run` branch with no report: it failed or was interrupted, and
+   *          committed anyway. The case worth warning about.
+   *  null  — flow/tick/fanout, which archive no branch-named report. No claim. */
+  verified: boolean | null
 }
 
 /** GET /branches's shape: outside a git repo, `available` is false and
@@ -360,6 +368,10 @@ export interface Violation {
 
 export interface LintResult {
   violations: Violation[]
+  /** What the checks do NOT reach: sets no Blueprint wires, stacks no check
+   *  mentions. Not violations — the layer can be well-formed and still verify
+   *  only part of the project, which is what "policy gate is clean" hid. */
+  coverage_gaps: string[]
 }
 
 export interface EngineInfo {
