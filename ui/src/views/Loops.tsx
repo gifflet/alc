@@ -64,7 +64,12 @@ function LoopRow({ name }: { name: string }) {
         <button
           type="button"
           onClick={() => uiStore.openTab({ target: { type: 'loop', name }, title: name })}
-          className="flex min-w-0 flex-1 items-center gap-2 truncate text-left text-muted"
+          // h-full, not just flex-1: the ROW is --ui-row-h (48px on a coarse
+          // pointer) but the button only spanned its text, so the tap target was
+          // 22px inside a 48px row a thumb is aiming at. Same shape as the Hire
+          // buttons that lost their padding — the visual size and the hit area
+          // have to be the same thing.
+          className="flex h-full min-w-0 flex-1 items-center gap-2 truncate text-left text-muted"
         >
           <span className="min-w-0 flex-1 truncate">{name}</span>
         </button>
