@@ -170,7 +170,9 @@ export function Install() {
         >
           read the script
         </a>{' '}
-        first if you would rather.
+        first if you would rather. Already use uv, or would rather not pipe a script?{' '}
+        <code className="font-mono text-muted">uv tool install alc-runtime</code> does the same
+        thing.
       </p>
 
       {/* Without JS the tabs cannot switch and the server's guess stands, so a
