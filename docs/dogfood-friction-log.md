@@ -104,3 +104,33 @@ all five checks in its isolated worktree once the provisions were real, and its
 branch landed from the phone through the verified-path dialog. The engine's
 README edit — `a7b0480` — is the first change alc landed on alc with the full
 check law in force.
+
+## Round 2 — the unattended tier, from a phone
+
+Rung 2 exercised end to end: two real chores enqueued, the queue drained by a
+tap on the phone, the Fleet card narrating each unit live (phase, unit, check,
+engine), both branches reviewed and landed from the phone's Inbox. The engine's
+diffs were exactly what was asked — the Node 20 actions bump and the pinned
+lint example — and local gates (content gate, tsc, YAML parse, alc lint)
+confirm them; CI will prove the bump on the next push.
+
+### 8. [stumble] A Blueprint cannot be enqueued
+`alc enqueue` takes `--kind {flow,specialist}` — `QueueTask.kind` is closed to
+those two. `alc run chore` exists for the attended tier, but queueing the same
+chore means writing a wrapper flow first (`quick`, one stage, blueprint:
+chore). The wrapper is one file and `alc new flow` scaffolds most of it, but
+the asymmetry costs the exact moment the product pitches: "drop tasks in a
+queue and let cron drain them" — the first task a user drops is chore-sized.
+
+### 9. [stumble] A tick branch that PASSED its checks lands as verified: None
+Both queue tasks succeeded — every check green in their worktrees — yet the
+Inbox shows `verified: None → "tick work ready to land"`. A1's three-valued
+design is behaving exactly as built (tick/flow branches archive no
+branch-named report, so verification is unknowable from the branch), but real
+information is being dropped on the floor: the run KNEW. Archiving
+branch-named reports for tick/flow work would let the Inbox say "verified"
+when it is true, which is the whole point of A1.
+
+### 10. [papercut] The UI's Drain has no concurrency
+The CLI has `alc tick --concurrency N`; the phone's Drain dialog runs the
+sequential default with no option. Two tasks took two serial engine turns.
