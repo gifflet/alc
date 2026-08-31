@@ -170,9 +170,14 @@ export function Install() {
         >
           read the script
         </a>{' '}
-        first if you would rather. Already use uv, or would rather not pipe a script?{' '}
-        <code className="font-mono text-muted">uv tool install alc-runtime</code> does the same
-        thing.
+        first if you would rather. Prefer not to pipe a script?{' '}
+        <a
+          href="/docs/getting-started/installation#installing-by-hand"
+          className="text-muted underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-current"
+        >
+          There is a one-line alternative
+        </a>
+        .
       </p>
 
       {/* Without JS the tabs cannot switch and the server's guess stands, so a
