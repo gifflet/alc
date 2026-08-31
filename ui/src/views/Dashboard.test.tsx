@@ -506,7 +506,7 @@ describe('Dashboard — the numbers explain themselves', () => {
   it('defines each invented word on hover', async () => {
     renderWithProviders(<Dashboard />)
     const span = (await screen.findByText('span')).closest('div')!
-    expect(span.getAttribute('title')).toMatch(/checks satisfied/i)
+    expect(span.getAttribute('title')).toMatch(/checks that passed/i)
     expect(screen.getByText('touch').closest('div')!.getAttribute('title')).toMatch(/human/i)
     expect(screen.getByText('passes').closest('div')!.getAttribute('title')).toMatch(/engine turns/i)
     expect(screen.getByText('streak').closest('div')!.getAttribute('title')).toMatch(/one-shot/i)

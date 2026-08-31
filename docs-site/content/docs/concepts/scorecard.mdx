@@ -7,7 +7,7 @@ Every run records four health metrics. They are deliberately few, and deliberate
 
 | Metric | Direction | Meaning |
 |---|---|---|
-| **Span** | ↑ | Amount of work delivered per prompt — checks satisfied |
+| **Span** | ↑ | Number of checks that passed at the end of the run — more checks passing per prompt means more verified work per prompt. |
 | **Passes** | ↓ | Engine turns needed to reach done |
 | **Streak** | ↑ | Consecutive one-shot successes, with zero repairs |
 | **Touch** | ↓ | Human interventions required |

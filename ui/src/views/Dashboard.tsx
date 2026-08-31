@@ -61,7 +61,7 @@ function ScorecardHistory({ points }: { points: ScorecardPoint[] }) {
  * no legend, three of them reading 3, which invites the reading that they are
  * one thing. */
 const SCORECARD_HINT = {
-  span: 'Checks satisfied across all runs — the proxy for work delivered. Higher is better.',
+  span: 'Number of checks that passed at the end of the run — more checks passing per prompt means more verified work per prompt.',
   passes: 'Engine turns spent reaching done. Lower is better; a climbing count means the loop is doing your thinking.',
   streak: 'Runs that landed one-shot, with zero repairs. Higher is better.',
   touch: 'Times a human had to step in. Lower is better — Touch to 0 is the north star.',
