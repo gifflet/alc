@@ -29,13 +29,13 @@ D4 trap). Fixed here: one `project` check_set mirroring CI, including
 `--extra ui` on pytest (a plain `uv run` sync in a worktree drops the extra and
 tests/ui loses fastapi — learned on this repo during C4).
 
-### 2. [stumble] `alc checks audit` proposes a duplicate of a check it cannot recognise
+### 2. [stumble — FIXED] `alc checks audit` proposes a duplicate of a check it cannot recognise
 With the `project` set already running `uv run --extra ui pytest -q`, the audit
 proposes creating a NEW `python` set with `uv run pytest -q` — a worse duplicate
 (no extra, no pin). The identity test compares exact invocations, so any
 argv variation makes an existing check invisible to it.
 
-### 3. [stumble] A missing provision fails with the tool's error, not the cause
+### 3. [stumble — FIXED] A missing provision fails with the tool's error, not the cause
 With `worktree_provision` absent (operator error, see 6), the isolated run's
 Node checks failed with "This is not the tsc command you are looking for" and
 ERR_MODULE_NOT_FOUND — npx fetching strays because node_modules did not exist
@@ -46,7 +46,7 @@ in your project but is gitignored and not in worktree_provision") would turn a
 cryptic wall into a fix. The engine then burned a repair turn on an environment
 problem it could never fix.
 
-### 4. [BLOCKER] The UI's Cancel breaks the promise the CLI's Ctrl-C keeps
+### 4. [BLOCKER — FIXED] The UI's Cancel breaks the promise the CLI's Ctrl-C keeps
 D2 (998ef9d) made an interrupted isolated run COMMIT its work to the branch and
 say so — in the CLI, the UI verdict, and the docs. The UI's Cancel goes through
 `ExecManager.cancel`: SIGTERM, then **SIGKILL after 5 seconds**. The worktree's
@@ -61,12 +61,12 @@ message (an aborted run does not need an engine-authored one — this also makes
 CLI Ctrl-C faster and engine-free); and/or have cancel's grace wait for the
 exit-commit rather than a wall-clock 5s.
 
-### 5. [stumble] Recovering the orphaned work took git surgery
+### 5. [stumble — PREVENTED by 4's fix] Recovering the orphaned work took git surgery
 `git -C <leaked-worktree> commit`, `git worktree remove --force`, then the
 Inbox flow. A user who cannot name those commands loses the work the product
 promised to keep.
 
-### 6. [note, operator error with a lesson] A careless manifest edit deleted
+### 6. [note — FIXED with a lint rule] A careless manifest edit deleted
 `worktree_provision` wholesale and nothing said so. Provisions are optional, so
 lint stayed green while every future isolated run silently lost its deps. A
 coverage-style advisory (A3's shape) could notice: Blueprints whose checks cd
@@ -78,3 +78,29 @@ the message became a 1780px single line scrolling inside a 411px panel. vitest
 and tsc passed; only measuring on the device caught it. "ALC verified that it
 builds and your checks pass; it did not verify that it is right. Read the
 diff." The tagline earned its keep; Touch went to 1, honestly.
+
+## Resolution round
+
+All actionable findings fixed in one pass, each calibrated by reinstating the
+old behaviour:
+
+- **4**: the worktree's abort-path exit-commit uses the static message — never
+  an engine call — and the UI cancel's grace rose from 5s to 30s (the exit
+  still deletes provisioned node_modules; the kill is a backstop for a hang,
+  not a guillotine for a healthy unwind).
+- **3**: worktree creation prints one stderr hint per gitignored dep dir that
+  exists in the main tree and not in the worktree, naming `worktree_provision`.
+- **6**: `provision-missing-for-check-dir` (warn) fires when a check cds into a
+  directory whose node_modules exists on disk with no provision covering it —
+  wired into the CLI's lint, team-hire's lint, and the UI service.
+- **2**: the audit compares invocations by flag-free token inclusion (with
+  uvx's `tool@version` pin and the bare-cwd `.` normalised), across ALL sets —
+  and an is_new set whose every proposal was suppressed no longer prints an
+  empty header.
+
+The live rehearsal of 4's fix turned into a better proof: the same phone-driven
+run that failed every Node check in the morning (finding 3's conditions) passed
+all five checks in its isolated worktree once the provisions were real, and its
+branch landed from the phone through the verified-path dialog. The engine's
+README edit — `a7b0480` — is the first change alc landed on alc with the full
+check law in force.

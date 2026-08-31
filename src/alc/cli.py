@@ -818,6 +818,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     """Run `alc lint`: check the Operator Layer for Policy Gate violations."""
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
     from alc.policy import (
+        lint_provision_coverage,
         coverage_report,
         has_errors,
         lint,
@@ -833,6 +834,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     violations = lint(manifest, blueprints)
     violations += validate_prompts(manifest, operator_layer, blueprints)
     violations += validate_provisions(manifest, operator_layer.parent)
+    violations += lint_provision_coverage(manifest, blueprints, operator_layer.parent)
     violations += lint_stage(manifest, blueprints)
     violations += lint_loops(manifest, load_all_loops(manifest, operator_layer))
 
@@ -1596,6 +1598,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
     from alc.packs import PACKS, pack_files, split_pack_files
     from alc.policy import (
+        lint_provision_coverage,
         has_errors,
         lint,
         lint_loops,
@@ -1657,6 +1660,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     violations = lint(manifest, blueprints)
     violations += validate_prompts(manifest, operator_layer, blueprints)
     violations += validate_provisions(manifest, project_root)
+    violations += lint_provision_coverage(manifest, blueprints, project_root)
     violations += lint_stage(manifest, blueprints)
     # Hiring the maintainer pack onto a manifest with no env-refresh provision is
     # the exact "existing project adopts a deps loop" moment this rule targets:

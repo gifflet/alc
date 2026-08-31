@@ -3,6 +3,7 @@
 # An error violation blocks alc run; a warn is advisory only.
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -719,6 +720,59 @@ def validate_prompts(
                     )
                 )
 
+    return violations
+
+
+_CD_PREFIX = re.compile(r"cd\s+([A-Za-z0-9._/-]+)\s*&&")
+
+
+def lint_provision_coverage(
+    manifest: Manifest, blueprints: list[Blueprint], project_root: Path
+) -> list[Violation]:
+    """Warn when a check runs inside a directory whose gitignored deps no
+    provision covers — the isolated-run failure is otherwise diagnosed from
+    npx's stray-package errors, three checks and one burned repair turn later.
+
+    Dogfood finding 6: `worktree_provision` is optional, so deleting it (or
+    never writing it) keeps lint green while every isolated run silently loses
+    its node_modules. The signal used here is deliberately narrow, the A3
+    lesson: only a check whose ``shell`` cds into a directory that has a
+    node_modules ON DISK, with no provision naming that directory, fires. A
+    project that runs its checks at the root, or has not installed deps at all,
+    stays silent.
+    """
+    violations: list[Violation] = []
+    provisioned = {spec.path for spec in manifest.worktree_provision}
+    seen: set[str] = set()
+    for bp in blueprints:
+        for check in resolve_checks(manifest, bp):
+            if not check.shell:
+                continue
+            m = _CD_PREFIX.match(check.shell.strip())
+            if not m:
+                continue
+            subdir = m.group(1).rstrip("/")
+            dep_dir = f"{subdir}/node_modules"
+            if dep_dir in seen:
+                continue
+            if not (project_root / dep_dir).exists():
+                continue  # deps not installed -> a different problem, not this one
+            if dep_dir in provisioned or subdir in provisioned:
+                continue
+            seen.add(dep_dir)
+            violations.append(
+                Violation(
+                    rule="provision-missing-for-check-dir",
+                    severity="warn",
+                    message=(
+                        f"check '{check.name}' runs in {subdir}/, whose node_modules "
+                        "is gitignored and not in worktree_provision — in an "
+                        "isolated run that directory will be empty and the check "
+                        f"will fail with its tool's error, not this cause. Add "
+                        f"`- clone: {dep_dir}` (or link:) to worktree_provision."
+                    ),
+                )
+            )
     return violations
 
 
