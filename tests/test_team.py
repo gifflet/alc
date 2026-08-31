@@ -56,7 +56,11 @@ class TestTeamHire:
 
         out = capsys.readouterr().out
         assert "Hired 'builder'" in out
-        assert "No violations found" in out
+        # The post-hire lint no longer calls this scaffold clean: its Blueprints
+        # carry only the smoke placeholder, and a pack hired onto checks that
+        # verify nothing deserves the warn more, not less. Advisory — the hire
+        # itself still succeeds (exit 0 asserted above).
+        assert "blueprint-checks-smoke-only" in out
 
     def test_hire_unknown_archetype_is_a_clear_error(self, project: Path, capsys) -> None:
         assert cmd_team(_ns(team_action="hire", archetype="nosuchpack")) == 1

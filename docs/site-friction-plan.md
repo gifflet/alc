@@ -103,7 +103,7 @@ promise it qualifies (it was 771 words after, in my first attempt — measuring
 caught it), the Gate step names what the gate cannot judge, and Get started
 carries the action (`alc onboard`) rather than a second copy of the caveat.
 
-**Follow-up worth considering, not done:** make `alc lint` warn when a
+**Follow-up — done (rule 16):** make `alc lint` warn when a
 Blueprint's checks are all trivially-passing placeholders. It would put the
 truth where the operator is, not only where the reader is. It fires on every
 fresh project — which is correct here, unlike the false alarm this was nearly
