@@ -216,7 +216,7 @@ The thesis is well written and earns its place in `introduction.mdx`.
 
 ---
 
-## Tier 5 — Small, and cheap
+## Tier 5 — Small, and cheap — **DONE**
 
 - **#24** "Known rough edges" has exactly **one** bullet (verified) while real
   ones sit scattered as inline warnings. Collect them.

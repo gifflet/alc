@@ -25,8 +25,15 @@ A bare `alc team` is the same as `alc team status`, so the command family opens 
 | **Prototyper** | Churns out new ideas; most don't ship | A `spike` Blueprint (`mode: spike`) fencing the checks gate — `alc spike "…"` is the entry point |
 | **Builder** | Turns a prototype into production-quality product or infra | `test` (test authoring) and `qa` (live e2e) Blueprints, plus a hardened `ship-hardened` Flow |
 | **Sweeper** | Cleans the UI, simplifies code, removes features | A `janitor` Specialist that names the real dead-code command for your stack, a `refactor` Blueprint, a `sweep` Loop, and an `unship` Flow |
-| **Grower** | Iterates a built product to improve product-market fit | *Partial*: a do-it-yourself issue and error-sweep Specialist (`listen`). Real signal intake and a `regression` replenish kind are separate control-plane features, available to any Blueprint |
+| **Grower** | Iterates a built product to improve product-market fit | A `listen` Specialist that sweeps issues and errors — see the note below |
 | **Maintainer** | Keeps a mature system safe, reliable, fast and efficient at scale | A `patrol` Flow gated by the `security` check set, a `deps` Specialist, and a `deps-refresh` Loop |
+
+**The Grower pack is the thinnest of the five.** It ships a `listen` Specialist
+you drive yourself: you point it at your issues and errors, and it sweeps them.
+What it does *not* ship is automatic intake of those signals, or a loop kind that
+replenishes itself from regressions. Both of those exist in the control plane and
+work with any Blueprint — they are simply not wired up for you here. Hire it for
+the Specialist; do not expect it to run unattended out of the box.
 
 ## The Sweeper's `unship` gate
 
