@@ -104,7 +104,7 @@ Write one or more queue tasks directly, with no planning turn.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--kind flow\|specialist` | `flow` | Unit kind to dispatch |
+| `--kind flow\|specialist\|run` | `flow` | Unit kind to dispatch — `run` queues a bare Blueprint as a one-stage flow |
 | `--engine NAME` | manifest | Engine for this task |
 | `--isolate` / `--no-isolate` | **isolate** | Whether to run in an isolated worktree |
 | `--id ID` | none | Slug another task can `--depends-on` |

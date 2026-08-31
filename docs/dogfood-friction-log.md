@@ -114,7 +114,7 @@ diffs were exactly what was asked — the Node 20 actions bump and the pinned
 lint example — and local gates (content gate, tsc, YAML parse, alc lint)
 confirm them; CI will prove the bump on the next push.
 
-### 8. [stumble] A Blueprint cannot be enqueued
+### 8. [stumble — FIXED] A Blueprint cannot be enqueued
 `alc enqueue` takes `--kind {flow,specialist}` — `QueueTask.kind` is closed to
 those two. `alc run chore` exists for the attended tier, but queueing the same
 chore means writing a wrapper flow first (`quick`, one stage, blueprint:
@@ -122,7 +122,7 @@ chore). The wrapper is one file and `alc new flow` scaffolds most of it, but
 the asymmetry costs the exact moment the product pitches: "drop tasks in a
 queue and let cron drain them" — the first task a user drops is chore-sized.
 
-### 9. [stumble] A tick branch that PASSED its checks lands as verified: None
+### 9. [stumble — FIXED] A tick branch that PASSED its checks lands as verified: None
 Both queue tasks succeeded — every check green in their worktrees — yet the
 Inbox shows `verified: None → "tick work ready to land"`. A1's three-valued
 design is behaving exactly as built (tick/flow branches archive no
@@ -131,6 +131,37 @@ information is being dropped on the floor: the run KNEW. Archiving
 branch-named reports for tick/flow work would let the Inbox say "verified"
 when it is true, which is the whole point of A1.
 
-### 10. [papercut] The UI's Drain has no concurrency
-The CLI has `alc tick --concurrency N`; the phone's Drain dialog runs the
-sequential default with no option. Two tasks took two serial engine turns.
+### 10. [papercut — RETRACTED] The UI's Drain has no concurrency
+RETRACTED: the Drain dialog HAS a Concurrency field (Queue.tsx, `NumberInput`).
+I read only the first lines of the dialog's text through CDP and reported the
+absence of something I had not looked for. Same lesson as the site study's #3:
+a partial read is not a verification.
+
+## Round 3 — findings 8 and 9 fixed, and what fixing them caught
+
+`kind: run` queues a bare Blueprint (both surfaces: CLI `--kind run`, the
+dialog's "blueprint" option); dispatch wraps it in a synthetic one-stage flow
+so everything downstream keeps one shape. A drained tick branch that PASSES
+archives a branch-named report, so the Inbox now says verified — pre-upgrade
+tick branches read "review before landing", the conservative direction.
+
+The first live use caught what nine unit tests had not: `dispatch_enqueue`
+silently rewrote a run unit as `flow: chore`, which the drain then failed to
+load. The tests wrote task YAML by hand and never exercised the WRITER. Fixed,
+with two tests that go enqueue→file and enqueue→drain.
+
+The second live use proved the round-1 BLOCKER fix on its exact broken path: a
+run that wandered off-task was cancelled FROM THE PHONE mid-Act, and the
+worktree exit committed the work already done — static message `alc:
+alc/tick-12eecdf3`, no engine call, zero leaked worktrees — landing in the
+Inbox as UNVERIFIED with the red dialog. The cancel salvaged a correct deletion
+from a wandering run; reading the diff confirmed it was exactly the asked-for
+change, and it landed from the phone.
+
+### 11. [observation] The engine wandered on a delete-one-file task
+"Delete .alc/flows/quick.yaml ... touch nothing else" produced minutes of
+exploratory git/grep/python activity after the deletion was already made. The
+D5 marker and the activity feed made the wandering VISIBLE, which is what let
+the operator decide to cancel — the control plane cannot stop a model from
+exploring, but it made the exploration legible and the cancel safe. Worth
+watching whether a tighter directive template ("stop after the change") pays.

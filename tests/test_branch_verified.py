@@ -76,16 +76,19 @@ def test_a_run_branch_without_one_is_not_verified(tmp_path, monkeypatch) -> None
     assert entry["verified"] is False
 
 
-def test_other_producers_make_no_claim(tmp_path, monkeypatch) -> None:
-    # flow/tick/fanout never archive a branch-named report, so absence proves
-    # nothing. Warning on them would put a false alarm on every drained task.
+def test_flow_and_fanout_make_no_claim_but_tick_now_answers(tmp_path, monkeypatch) -> None:
+    # flow/fanout never archive a branch-named report, so absence proves
+    # nothing there. `tick` DOES since the drain archives reports (dogfood
+    # finding 9) — so an unreported tick branch reads False: "review before
+    # landing", the conservative direction for pre-upgrade branches.
     root = _project(tmp_path, monkeypatch)
     for name in ("alc/flow-cccc3333", "alc/tick-dddd4444", "alc/fanout-x-eeee5555"):
         _branch(root, name)
 
     by_name = {b["name"]: b for b in service.list_branches(root)["branches"]}
-    for name in ("alc/flow-cccc3333", "alc/tick-dddd4444", "alc/fanout-x-eeee5555"):
-        assert by_name[name]["verified"] is None, name
+    assert by_name["alc/flow-cccc3333"]["verified"] is None
+    assert by_name["alc/fanout-x-eeee5555"]["verified"] is None
+    assert by_name["alc/tick-dddd4444"]["verified"] is False
 
 
 def test_a_project_outside_git_still_degrades_cleanly(tmp_path) -> None:
