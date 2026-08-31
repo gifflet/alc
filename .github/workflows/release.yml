@@ -26,7 +26,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # tags are needed to detect already-released versions
 
@@ -42,11 +42,11 @@ jobs:
             echo "released=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
         if: steps.version.outputs.released == 'false'
         with:
           enable-cache: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.version.outputs.released == 'false'
         with:
           node-version: 22
