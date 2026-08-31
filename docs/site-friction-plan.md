@@ -194,7 +194,7 @@ on whether the acronym is worth keeping at all.
 
 ---
 
-## Tier 4 — Landing craft
+## Tier 4 — Landing craft — **DONE**
 
 ### T4.1 — A transcript above the fold *(findings 16, 17 as corrected)*
 ~200 words of thesis precede any instruction. Not "no demo" — the video is

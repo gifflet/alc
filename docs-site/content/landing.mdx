@@ -39,7 +39,7 @@ alc run chore "remove the unused export endpoint"
 
 ### Hero caption
 
-Python 3.12. Two runtime dependencies. ALC ships no model — it drives a coding CLI you already have: Claude Code or Gemini. No CLI yet? A free Mock engine exercises everything without a model call.
+Python 3.12 and `git`. ALC ships no model — it drives a coding CLI you already have: Claude Code or Gemini. No CLI yet? A free Mock engine exercises everything without a model call.
 
 ---
 
@@ -51,17 +51,40 @@ Everyone converges on the same habits. Then forgets them.
 
 ### Body
 
-Give the agent one task at a time. Run the tests afterwards. Don't let it edit the whole repo at once. Read the diff before you keep it.
-
-Those habits live in your head. They survive as long as you remember them, and they die the moment you're tired, in a hurry, or asleep. Worse, they die silently — the agent reports success either way.
-
-Prompting harder doesn't fix this. A practice enforced by a paragraph in a system prompt is a practice the model may skip. A practice enforced by code that refuses to report success is one it cannot.
+One task at a time. Run the tests afterwards. Read the diff before you keep it. Those habits live in your head, and they die the moment you're tired, in a hurry, or asleep — silently, because the agent reports success either way. ALC moves them into code that refuses to report success instead. [The longer argument is in the introduction.](/docs/getting-started/introduction)
 
 One condition, and it is the whole of the setup: the checks are yours. A fresh scaffold ships a single placeholder that always passes, so out of the box ALC enforces nothing. Wiring in your real test and lint commands is what makes the guarantee true of your code.
+
+Below is a real run, pasted as text — it passed on its first attempt. When a check fails instead, the loop feeds the failure back to the engine and tries again, up to four turns by default. [How that works](/docs/concepts/assurance-loop)
 
 ### Pull quote
 
 Nothing is reported done until it actually is.
+
+### Transcript
+
+```
+$ alc run bug "slugify() drops nothing and collapses nothing — three tests fail. Make them pass."
+→ Act (attempt 1/4)…
+  → claude-code working (model=claude-sonnet-4-6)…
+    • Bash: find . -type f | head -30 && echo "---" && ls -la
+    • Read: src/slugify.py
+    • Read: tests/test_slugify.py
+    • Bash: python -m pytest tests/ -v
+    • Edit: src/slugify.py
+    • Bash: python -m pytest tests/ -v
+  → claude-code done (58s, $0.202)
+→ Verify (1 check(s))…
+  · test… ✓ 0.2s
+  ✓ all checks passed
+Status:   SUCCESS
+Engine:   claude-code
+Attempts: 1
+Scorecard: span=1 passes=1 streak=1 touch=0
+           good: span ↑  passes ↓  streak ↑  touch ↓ (touch 0 is the goal)
+Changed files:
+  src/slugify.py
+```
 
 ---
 
@@ -159,7 +182,7 @@ You don't start at the top. You climb.
 
 ### Body
 
-ALC grows with you. Each rung is useful on its own, and each one earns the next.
+ALC grows with you. Each rung is useful on its own, and each one earns the next — rung 1 works on the day you install it, and rungs 2 and 3 are what you grow into once your checks and Blueprints describe real work. A Conductor with one placeholder Blueprint has nothing to plan with.
 
 ### Rung 1
 
@@ -186,7 +209,7 @@ The human is on the loop, not in it. `Touch → 0` means zero interventions — 
 
 ### Section heading
 
-Three commands to a validated Operator Layer
+Install, then three commands to a validated `.alc/`
 
 ### Body
 

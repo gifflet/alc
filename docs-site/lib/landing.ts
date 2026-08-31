@@ -109,6 +109,10 @@ export function getLandingContent() {
       heading: problem['Section heading'] ?? '',
       body: (problem['Body'] ?? '').split('\n\n').filter(Boolean),
       quote: problem['Pull quote'] ?? '',
+      // Real output, as selectable text. The demo video already shows a run;
+      // what the page had nowhere was a transcript you can read on a phone,
+      // search, or copy — which for a CLI is the demo.
+      transcript: code(problem['Transcript']),
     },
     how: {
       heading: how['Section heading'] ?? '',
