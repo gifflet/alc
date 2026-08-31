@@ -192,6 +192,21 @@ class IsolatedWorktree:
                         capture_output=True,
                     )
                 raise
+        # One line of prevention where the failure would otherwise be cryptic.
+        # A gitignored dep dir (node_modules) that exists in the main tree but
+        # not in this worktree means every check that needs it will fail with
+        # the TOOL's error — npx fetching a stray `tsc` package, ESM
+        # resolution walls — and nothing connects that to its cause. Dogfood
+        # finding 3: the engine then burns repair turns on an environment
+        # problem it can never fix. Advisory only; the run proceeds unchanged.
+        for gap in unprovisioned_dep_dirs(self.path, self._repo_root):
+            print(
+                f"[hint] {gap}/node_modules exists in your project but is "
+                "gitignored and was not provisioned into this worktree — checks "
+                f"that run in {gap}/ will likely fail. Add it to "
+                "`worktree_provision` in .alc/manifest.yaml.",
+                file=sys.stderr,
+            )
         return self.path
 
     def __exit__(self, *exc) -> None:
@@ -260,7 +275,16 @@ class IsolatedWorktree:
                 )
                 has_changes = diff_check.returncode == 1  # 1 => differences exist
 
-                if has_changes and self._message_provider is not None:
+                # An ABORTED unwind (Ctrl-C, the UI's Cancel, any exception) must
+                # never wait on an engine call: the provider takes longer than the
+                # UI cancel's 5s SIGTERM->SIGKILL grace, so the kill landed mid-
+                # generation — no commit, a leaked worktree, and the engine's work
+                # orphaned. That broke, on the UI path only, the promise D2 makes
+                # everywhere: cancelling still commits your work to the branch. An
+                # aborted run does not need an engine-authored commit message; it
+                # needs the commit. The static template is instant.
+                aborted = bool(exc) and exc[0] is not None
+                if has_changes and self._message_provider is not None and not aborted:
                     try:
                         diff_text = subprocess.run(
                             ["git", "-C", str(self.path), "diff", "--cached"],
@@ -377,6 +401,28 @@ def materialize_isolated(dst: Path) -> None:
         # Dangling/missing target: leave dst absent, let the install create it fresh.
         return
     _cow_copy(target, dst)
+
+
+def unprovisioned_dep_dirs(worktree: Path, project_root: Path) -> list[str]:
+    """Project-relative dirs whose node_modules exists in the main tree but not
+    in *worktree* — the signature of a missing ``worktree_provision`` entry.
+
+    Scans the root and one level down (mirroring ``detect_nested_stacks``'s
+    depth), keyed on ``package.json`` being TRACKED so a stray directory never
+    fires. Pure read; never raises.
+    """
+    gaps: list[str] = []
+    try:
+        candidates = [project_root, *sorted(d for d in project_root.iterdir() if d.is_dir())]
+        for cand in candidates:
+            if not (cand / "package.json").is_file():
+                continue
+            rel = cand.relative_to(project_root)
+            if (cand / "node_modules").exists() and not (worktree / rel / "node_modules").exists():
+                gaps.append(str(rel) if str(rel) != "." else ".")
+    except OSError:
+        return []
+    return gaps
 
 
 def provision_worktree(

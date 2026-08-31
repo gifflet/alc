@@ -147,8 +147,18 @@ class RunManager:
         with self._lock:
             return list(self._execs.values())
 
-    def cancel(self, exec_id: str, grace_s: float = 5.0) -> bool:
-        """Terminate a running exec (SIGKILL after ``grace_s``); False if not running."""
+    def cancel(self, exec_id: str, grace_s: float = 30.0) -> bool:
+        """Terminate a running exec (SIGKILL after ``grace_s``); False if not running.
+
+        The grace is what the promise stands on: SIGTERM lets an isolated run
+        unwind through its worktree exit, which COMMITS the engine's work to the
+        run branch before removing the worktree. At 5s the kill landed mid-exit
+        and the work was orphaned. The exit no longer makes an engine call (the
+        abort path uses the static commit message), but removing a provisioned
+        worktree still deletes hundreds of MB of node_modules — 30s keeps the
+        kill a backstop for a genuinely hung process, not a guillotine for a
+        healthy unwind.
+        """
         ex = self._execs.get(exec_id)
         if ex is None or ex._proc is None or ex._proc.poll() is not None:
             return False

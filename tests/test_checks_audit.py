@@ -524,3 +524,72 @@ class TestSmokeOnlyPolicyRule:
         ]
         assert "Run `alc checks audit` to see what would become available." in warn.message
         assert "A populated check_set already exists" not in warn.message
+
+
+class TestAuditInvocationIdentity:
+    """Dogfood finding 2: the audit proposed `uv run pytest -q` while the
+    manifest already ran pytest as `uv run --extra ui pytest -q` under another
+    set — a worse duplicate (no extra, no pin). Identity is what tool runs,
+    not the exact argv."""
+
+    @staticmethod
+    def _manifest_with_project_set() -> Manifest:
+        return _manifest(
+            check_sets={
+                "project": [
+                    Check(name="test", command=["uv", "run", "--extra", "ui", "pytest", "-q"]),
+                    Check(name="lint", command=["uvx", "ruff@0.15.21", "check", "src", "tests"]),
+                ]
+            }
+        )
+
+    @staticmethod
+    def _python_project(tmp_path: Path) -> Path:
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.1.0"\n')
+        return tmp_path
+
+    def test_a_flag_variant_of_a_live_check_is_not_proposed(self, tmp_path: Path) -> None:
+        audit = audit_checks(self._manifest_with_project_set(), self._python_project(tmp_path), [])
+        proposed = [name for s in audit.check_sets for name, _ in s.add]
+
+        assert "test" not in proposed, "pytest already runs under the project set"
+
+    def test_a_pinned_uvx_variant_suppresses_the_bare_proposal(self, tmp_path: Path) -> None:
+        audit = audit_checks(self._manifest_with_project_set(), self._python_project(tmp_path), [])
+        everything = [name for s in audit.check_sets for name, _ in (*s.add, *s.unavailable)]
+
+        assert "lint" not in everything, "ruff already runs, pinned, under the project set"
+
+    def test_a_genuinely_new_tool_is_still_proposed(self, tmp_path: Path) -> None:
+        # A manifest with pytest only, in a project that detects Python: the
+        # bare-manifest baseline must keep proposing what is truly absent.
+        manifest = _manifest(
+            check_sets={"project": [Check(name="test", command=["uv", "run", "pytest", "-q"])]}
+        )
+        audit = audit_checks(manifest, self._python_project(tmp_path), [])
+        everything = [name for s in audit.check_sets for name, _ in (*s.add, *s.unavailable)]
+
+        assert "lint" in everything, "nothing in the manifest runs ruff"
+
+    def test_an_empty_new_set_is_not_listed(self, tmp_path: Path) -> None:
+        # Every proposal suppressed -> no header with nothing under it.
+        manifest = _manifest(
+            check_sets={
+                "project": [
+                    Check(name="test", command=["uv", "run", "--extra", "ui", "pytest", "-q"]),
+                    Check(name="lint", command=["uvx", "ruff@0.15.21", "check", "src", "tests"]),
+                ]
+            }
+        )
+        audit = audit_checks(manifest, self._python_project(tmp_path), [])
+
+        assert all(s.set_name != "python" for s in audit.check_sets)
+
+    def test_distinct_npm_scripts_are_not_conflated(self) -> None:
+        from alc.checks import _invocation_identity, _runs_same_tool
+
+        lint = _invocation_identity("cd ui && npm run lint")
+        test = _invocation_identity("cd ui && npm run test")
+
+        assert not _runs_same_tool(lint, test) or lint == test
+        assert lint != test

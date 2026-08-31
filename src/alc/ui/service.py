@@ -40,7 +40,13 @@ from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
 from alc.packs import PACKS, hired_archetypes, pack_files, split_pack_files
 from alc.policy import lint as _lint
-from alc.policy import coverage_report, lint_loops, validate_provisions, validate_prompts
+from alc.policy import (
+    coverage_report,
+    lint_loops,
+    lint_provision_coverage,
+    validate_provisions,
+    validate_prompts,
+)
 from alc.prompts import (
     _DEFAULT_PROMPTS,
     list_prompts,
@@ -164,6 +170,7 @@ def lint_project(root: Path) -> dict:
     violations = _lint(manifest, blueprints)
     violations += validate_prompts(manifest, ol, blueprints)
     violations += validate_provisions(manifest, root)
+    violations += lint_provision_coverage(manifest, blueprints, root)
     violations += lint_stage(manifest, blueprints)
     violations += lint_loops(manifest, load_all_loops(manifest, ol))
     return {

@@ -79,6 +79,52 @@ class ChecksAudit:
         )
 
 
+def _invocation_identity(argv_or_shell: list[str] | str) -> frozenset[str]:
+    """The flag-free tokens of an invocation — what tool actually runs.
+
+    ``["uv","run","--extra","ui","pytest","-q"]`` and ``["uv","run","pytest","-q"]``
+    both run pytest through uv; flags change HOW, not WHAT. Comparing exact argv
+    made an existing check invisible to the audit the moment it grew a flag, and
+    the audit then proposed a worse duplicate (dogfood finding 2: no pin, no
+    --extra). A SET, compared by inclusion in ``_runs_same_tool``, because a
+    flag's value (the ``ui`` in ``--extra ui``) survives flag-stripping and
+    ordered comparison would treat it as a different program.
+    """
+    tokens = argv_or_shell.split() if isinstance(argv_or_shell, str) else argv_or_shell
+    normalized = set()
+    for t in tokens:
+        if t.startswith("-") or t == ".":
+            continue  # flags and the bare-cwd argument say nothing about the tool
+        if "@" in t and not t.startswith("@"):
+            # `ruff@0.15.21` (uvx's pin syntax) runs ruff; the version is a flag
+            # in disguise. Leading-@ npm scopes (`@scope/pkg`) are left intact.
+            t = t.partition("@")[0]
+        normalized.add(t)
+    return frozenset(normalized)
+
+
+def _runs_same_tool(proposed: frozenset[str], live: frozenset[str]) -> bool:
+    """True when one invocation's flag-free tokens contain the other's.
+
+    ``{uv,run,pytest} ⊆ {uv,run,ui,pytest}``: the same pytest through uv, one
+    with an extra. Distinct tools (``npm run lint`` vs ``npm run test``) share a
+    prefix but neither contains the other.
+    """
+    return proposed <= live or live <= proposed
+
+
+def _live_identities(manifest: Manifest) -> list[frozenset[str]]:
+    """Every invocation identity declared anywhere in the manifest's check_sets."""
+    identities: list[frozenset[str]] = []
+    for checks in manifest.check_sets.values():
+        for check in checks:
+            if check.command:
+                identities.append(_invocation_identity(check.command))
+            elif check.shell:
+                identities.append(_invocation_identity(check.shell))
+    return identities
+
+
 def audit_checks(
     manifest: Manifest, project_root: Path, blueprints: list[Blueprint]
 ) -> ChecksAudit:
@@ -98,6 +144,7 @@ def audit_checks(
     check_sets: list[CheckSetAudit] = []
     for set_name, checks in sorted(fresh_sets.items()):
         live_names = {c.name for c in manifest.check_sets.get(set_name, [])}
+        live_identities = _live_identities(manifest)
         is_new = set_name not in manifest.check_sets
         add: list[tuple[str, list[str]]] = []
         unavailable: list[tuple[str, list[str]]] = []
@@ -105,6 +152,11 @@ def audit_checks(
         for check_name, command in checks:
             if check_name in live_names:
                 continue  # already live — nothing to propose
+            if any(_runs_same_tool(_invocation_identity(command), lv) for lv in live_identities):
+                # The same tool already runs under ANOTHER set (or with extra
+                # flags) — proposing it again would suggest a duplicate that is
+                # strictly worse than what the operator already wrote.
+                continue
             if shutil.which(command[0]) is not None:
                 add.append((check_name, command))
             else:
@@ -112,7 +164,10 @@ def audit_checks(
                 hint = unavailable_hint(project_root, command)
                 if hint is not None:
                     install_hints[check_name] = hint
-        if is_new or add or unavailable:
+        # An is_new set whose every proposal was suppressed (all its tools
+        # already run under other sets) would be an empty header — a proposal
+        # with nothing in it.
+        if add or unavailable:
             check_sets.append(
                 CheckSetAudit(
                     set_name=set_name,
