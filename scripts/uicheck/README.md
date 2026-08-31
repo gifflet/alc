@@ -32,6 +32,11 @@ adb shell svc power stayon usb                     # keep the screen awake
 `CDP_PORT` selects which browser a tool drives: `9333` (desktop) or `9222`
 (device). It defaults to 9222.
 
+## Ports
+
+`9333` is the desktop Chrome instance launched with `--remote-debugging-port=9333`.
+`9222` is the connected Android device, forwarded from the device's Chrome via `adb forward tcp:9222 localabstract:chrome_devtools_remote`.
+
 ## The tools
 
 | Tool | Answers |
