@@ -83,3 +83,116 @@ describe('store -> URL after mount', () => {
     expect(uiStore.getState().activeTabId).toBe('run:abc')
   })
 })
+
+describe('system back walks the app history (mobile swipe-back)', () => {
+  // The defect: every navigation used `replace: true`, so the whole app lived
+  // in ONE history entry and Android's back gesture exited the page. Opening a
+  // run from the Runs list and swiping back closed the app instead of
+  // returning to the list.
+
+  it('pushes a history entry per navigation instead of replacing', async () => {
+    window.history.replaceState({}, '', '/projects/demo/runs')
+    render(
+      <BrowserRouter>
+        <Harness id="demo" />
+      </BrowserRouter>,
+    )
+    await flush()
+    const before = window.history.length
+
+    act(() => {
+      uiStore.openTab({ target: { type: 'run', stem: '20260712T0359-run-x' }, title: 'run-x' })
+    })
+    await flush()
+
+    expect(window.location.pathname).toBe('/projects/demo/runs/20260712T0359-run-x')
+    expect(window.history.length).toBe(before + 1)
+  })
+
+  it('a pop returns to the previous view and refocuses its tab', async () => {
+    window.history.replaceState({}, '', '/projects/demo/runs')
+    render(
+      <BrowserRouter>
+        <Harness id="demo" />
+      </BrowserRouter>,
+    )
+    await flush()
+    act(() => {
+      uiStore.openTab({ target: { type: 'run', stem: '20260712T0359-run-x' }, title: 'run-x' })
+    })
+    await flush()
+
+    // The Android swipe-back reaches the app as a history pop. jsdom's own
+    // history.back() does not reliably fire through a mounted router, so the
+    // pop is delivered the way the browser delivers it: location moved, then
+    // a popstate event.
+    await act(async () => {
+      window.history.replaceState({}, '', '/projects/demo/runs')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await flush()
+
+    expect(window.location.pathname).toBe('/projects/demo/runs')
+    expect(uiStore.getState().activeTabId).toBe('view:runs')
+  })
+
+  it('the pop side never duplicates a tab', async () => {
+    window.history.replaceState({}, '', '/projects/demo/runs')
+    render(
+      <BrowserRouter>
+        <Harness id="demo" />
+      </BrowserRouter>,
+    )
+    await flush()
+    act(() => {
+      uiStore.openTab({ target: { type: 'run', stem: '20260712T0359-run-x' }, title: 'run-x' })
+    })
+    await flush()
+    const tabsBefore = uiStore.getState().tabs.length
+
+    await act(async () => {
+      window.history.replaceState({}, '', '/projects/demo/runs')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await flush()
+
+    expect(uiStore.getState().tabs.length).toBe(tabsBefore)
+  })
+
+  it('our own push does not re-hydrate the store (no ping-pong)', async () => {
+    window.history.replaceState({}, '', '/projects/demo')
+    render(
+      <BrowserRouter>
+        <Harness id="demo" />
+      </BrowserRouter>,
+    )
+    await flush()
+    const openSpy = vi.spyOn(uiStore, 'openTab')
+
+    act(() => {
+      uiStore.openTab({ target: { type: 'view', view: 'queue' }, title: 'Queue', closable: false })
+    })
+    await flush()
+
+    // Exactly the one call above — the location change it caused must not
+    // trigger a second openTab from the pop side.
+    expect(openSpy).toHaveBeenCalledTimes(1)
+    expect(window.location.pathname).toBe('/projects/demo/queue')
+  })
+
+  it('hydration normalisation still replaces, so back is not trapped', async () => {
+    // An unknown path hydrates to the dashboard; that correction must not mint
+    // an extra entry the back gesture would step through before leaving.
+    window.history.replaceState({}, '', '/projects/demo/definitely-not-a-view')
+    const before = window.history.length
+    render(
+      <BrowserRouter>
+        <Harness id="demo" />
+      </BrowserRouter>,
+    )
+    await flush()
+
+    expect(window.location.pathname).toBe('/projects/demo')
+    expect(window.history.length).toBe(before)
+  })
+})
