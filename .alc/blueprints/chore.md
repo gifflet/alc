@@ -2,9 +2,8 @@
 name: chore
 purpose: Apply a low-risk, well-scoped maintenance change.
 compute_tier: standard
-checks:
-  - name: test
-    command: ["uv", "run", "pytest", "-q"]
+check_set: project
+checks: []
 report:
   format: json
   schema:

@@ -2,9 +2,8 @@
 name: bug
 purpose: Diagnose and fix a bug.
 compute_tier: standard
-checks:
-  - name: test
-    command: ["uv", "run", "pytest", "-q"]
+check_set: project
+checks: []
 report:
   format: json
   schema:

@@ -2,9 +2,8 @@
 name: feature
 purpose: Implement a new feature.
 compute_tier: deep
-checks:
-  - name: test
-    command: ["uv", "run", "pytest", "-q"]
+check_set: project
+checks: []
 report:
   format: json
   schema:

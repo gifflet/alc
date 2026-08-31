@@ -27,42 +27,37 @@ engines:
 # plan_tier: standard       # compute tier for Conductor planning turns
 
 # Reusable named check sets a Blueprint may opt into via `check_set: <name>`.
-# `alc init` pre-filled one set per detected stack plus `security`. A command
-# left commented out means its binary was not found on PATH at init time —
-# install it and uncomment the check rather than shipping a check that fails
-# on a clean checkout.
-
-  # Node detected in docs-site/ — NOT covered by the checks above.
-  # Uncomment once `docs-site` has its dependencies installed.
-  # docs-site:
-  #   - name: test
-  #     shell: "cd docs-site && npm test"
-  #   - name: lint
-  #     shell: "cd docs-site && npm run lint"
-  #   - name: typecheck
-  #     shell: "cd docs-site && npm run typecheck"
-
-  # Node detected in ui/ — NOT covered by the checks above.
-  # Uncomment once `ui` has its dependencies installed.
-  # ui:
-  #   - name: test
-  #     shell: "cd ui && npm test"
-  #   - name: lint
-  #     shell: "cd ui && npm run lint"
-  #   - name: typecheck
-  #     shell: "cd ui && npm run typecheck"
-
+# One set, everything the repo's CI gates on, so any Blueprint that points at
+# it carries the same law CI enforces. Commands mirror .github/workflows/ci.yml
+# — including the ruff PIN, because an unpinned local lint that can disagree
+# with CI is the exact trap `alc init` now warns other projects about (D4).
 worktree_provision:
   # uv's environment. Cloned rather than linked: `uv run` may sync it,
   # and a linked dir is shared across worktrees. Missing -> skipped.
   - clone: .venv
+  # vitest writes its cache into node_modules/.vite, so a link would let every
+  # worktree mutate the main tree's copy (link is read-only-safe ONLY). Clone
+  # is copy-on-write on APFS — cheap despite the 269MB.
+  - clone: ui/node_modules
+  # docs-site's check only reads (content gate + tsc --noEmit): link is safe
+  # and skips copying 457MB per worktree.
+  - link: docs-site/node_modules
 
 check_sets:
-  python:
+  project:
+    # --extra ui: `uv run` re-syncs a cloned worktree venv, and a plain sync
+    # drops the ui extra — tests/ui then fails on a missing fastapi. Learned
+    # the hard way on this very repo.
     - name: test
-      command: ["uv", "run", "pytest", "-q"]
-    # - name: lint
-    #   command: ["ruff", "check", "."]
+      command: ["uv", "run", "--extra", "ui", "pytest", "-q"]
+    - name: lint
+      command: ["uvx", "ruff@0.15.21", "check", "src", "tests"]
+    - name: ui-test
+      shell: "cd ui && npx vitest run"
+    - name: ui-typecheck
+      shell: "cd ui && npx tsc --noEmit"
+    - name: docs-lint
+      shell: "cd docs-site && npm run lint"
 
   security:
     []
