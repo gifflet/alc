@@ -27,11 +27,16 @@ function label(exec: ExecEntry): string {
 }
 
 function ExecRow({ exec, active, onSelect }: { exec: ExecEntry; active: boolean; onSelect: () => void }) {
+  // h from the density token, not a hardcoded 26px: every other row in the app
+  // scales with density (32/40/48px), and 26px was also a sub-44px tap target
+  // on a phone — one the route sweeps never saw, because the panel opens
+  // closed. Width: a chip on narrow screens (sized to content, capped), a full
+  // rail row from sm up.
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`flex h-[26px] w-full items-center gap-2 px-2 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 ${
+      className={`flex h-[var(--ui-row-h)] max-w-[60vw] shrink-0 items-center gap-2 px-3 text-left text-[length:var(--ui-text-body)] transition-colors duration-120 sm:w-full sm:max-w-none ${
         active ? 'bg-hover text-primary' : 'text-muted hover:bg-hover'
       }`}
     >
@@ -45,9 +50,13 @@ function ExecRow({ exec, active, onSelect }: { exec: ExecEntry; active: boolean;
 function ExecHeader({ exec }: { exec: ExecEntry }) {
   const running = exec.status === 'running'
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border bg-panel px-2 text-[length:var(--ui-text-label)]">
+    // min-h from the control token: at h-7 (28px) the header could not even
+    // contain its own buttons' 44px coarse-pointer hit areas, and the title sat
+    // at label size. The title reads at body size now — it names what the whole
+    // pane shows.
+    <div className="flex min-h-[var(--ui-control-h)] shrink-0 items-center gap-2 border-b border-border bg-panel px-2 text-[length:var(--ui-text-label)]">
       <StatusDot tone={statusTone(exec)} pulse={running} />
-      <span className="font-mono text-muted">{label(exec)}</span>
+      <span className="font-mono text-[length:var(--ui-text-body)] text-muted">{label(exec)}</span>
       {running ? (
         <span className="text-running">running</span>
       ) : (
@@ -83,7 +92,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           onClick={() => execStore.clear(exec.id)}
           className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-primary"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="h-4 w-4" />
         </button>
         <button
           type="button"
@@ -91,7 +100,7 @@ function ExecHeader({ exec }: { exec: ExecEntry }) {
           onClick={() => execStore.remove(exec.id)}
           className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-primary"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
     </div>
@@ -108,9 +117,13 @@ export function Console() {
     return <EmptyState icon={Radio} message="No executions yet — run a blueprint, flow, or drain the queue." />
   }
 
+  // Stacked on narrow screens, side-by-side from sm up. The fixed w-44 rail was
+  // 43% of a 411px panel — desktop IDE proportions on a phone, with the output
+  // wrapping at every other word in what was left. As a horizontal chip strip
+  // the list costs one row and the output gets the full width.
   return (
-    <div className="flex h-full min-h-0">
-      <div className="w-44 shrink-0 overflow-auto border-r border-border bg-panel">
+    <div className="flex h-full min-h-0 flex-col sm:flex-row">
+      <div className="flex shrink-0 overflow-x-auto border-b border-border bg-panel sm:block sm:w-44 sm:overflow-y-auto sm:overflow-x-visible sm:border-b-0 sm:border-r">
         {mine.map((exec) => (
           <ExecRow
             key={exec.id}
