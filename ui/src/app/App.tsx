@@ -41,8 +41,13 @@ function Landing() {
   const [open, setOpen] = useState(true)
 
   useEffect(() => {
-    const first = projects?.find((p) => p.available) ?? projects?.[0]
-    if (first) navigate(`/projects/${first.id}`, { replace: true })
+    // Forward past the landing only when the choice is not a choice: exactly
+    // one project. With several, `/` used to drop a newcomer inside whichever
+    // project happened to be registered first — someone else's dashboard as a
+    // front door (dogfood finding 21). The selector is already on screen.
+    if (projects?.length === 1) {
+      navigate(`/projects/${projects[0].id}`, { replace: true })
+    }
   }, [projects, navigate])
 
   if (isLoading) return <EmptyState icon={Boxes} message="Loading projects…" />

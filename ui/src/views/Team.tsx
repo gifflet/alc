@@ -22,6 +22,17 @@ import type { ArchetypeSpend, LoopStatus, MixHealth, TeamMember } from '../api/t
 
 const ARCHETYPES = ['builder', 'sweeper', 'maintainer', 'grower', 'prototyper'] as const
 
+// Static mirror of packs.py's PACK_DESCRIPTIONS, same wording — the junior
+// operator's finding: five bare "Hire X" buttons made choosing an archetype
+// pure guesswork. A name is not a description, least of all an invented one.
+const ARCHETYPE_DESCRIPTION: Record<(typeof ARCHETYPES)[number], string> = {
+  builder: 'Turns prototypes into production-quality work: test authoring, live QA, and a hardened ship flow.',
+  sweeper: 'Cleans up: simplifies code, removes dead weight, and unships features safely.',
+  maintainer: 'Keeps a mature system safe: security patrol, dependency care, and refresh loops.',
+  grower: 'Sweeps issues and errors into work: a listen specialist you point at your feedback.',
+  prototyper: 'Churns out throwaway explorations: spike first, keep only what survives.',
+}
+
 const STATUS_TONE: Record<LoopStatus, Tone> = {
   pending: 'idle',
   running: 'running',
@@ -44,7 +55,15 @@ function MemberCard({
     <div className="rounded-panel border border-border bg-panel p-3">
       <div className="flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <span className="text-[length:var(--ui-text-body)] font-medium capitalize text-primary">{member.archetype}</span>
+          <span className="flex min-w-0 flex-col">
+            <span className="text-[length:var(--ui-text-body)] font-medium capitalize text-primary">{member.archetype}</span>
+            {/* What this member IS — the roster listed five file paths and
+                nothing else, which reads as noise to anyone who does not live
+                in .alc/. */}
+            <span className="text-[length:var(--ui-text-label)] leading-snug text-faint">
+              {ARCHETYPE_DESCRIPTION[member.archetype as (typeof ARCHETYPES)[number]] ?? ''}
+            </span>
+          </span>
           <span className="text-[length:var(--ui-text-label)] text-faint">
             {member.files.length} file{member.files.length === 1 ? '' : 's'}
           </span>
@@ -249,16 +268,20 @@ export function Team() {
           <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Hire</h2>
           <div className="flex flex-wrap gap-2">
             {available.map((a) => (
-              <ActionButton
-                key={a}
-                tone="accent"
-                onClick={() => doHire(a)}
-                disabled={hire.isPending && hiring === a}
-                className="capitalize"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                Hire {a}
-              </ActionButton>
+              <div key={a} className="flex min-w-0 flex-col gap-1">
+                <ActionButton
+                  tone="accent"
+                  onClick={() => doHire(a)}
+                  disabled={hire.isPending && hiring === a}
+                  className="self-start capitalize"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Hire {a}
+                </ActionButton>
+                <p className="text-[length:var(--ui-text-label)] leading-snug text-faint">
+                  {ARCHETYPE_DESCRIPTION[a]}
+                </p>
+              </div>
             ))}
           </div>
           {hire.isError && <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{apiMessage(hire.error)}</p>}

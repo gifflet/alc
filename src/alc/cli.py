@@ -1596,7 +1596,7 @@ def _team_hire(args: argparse.Namespace) -> int:
     partially-present archetype as hired.
     """
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
-    from alc.packs import PACKS, pack_files, split_pack_files
+    from alc.packs import PACK_NEXT_STEP, PACKS, pack_files, split_pack_files
     from alc.policy import (
         lint_provision_coverage,
         has_errors,
@@ -1675,6 +1675,12 @@ def _team_hire(args: argparse.Namespace) -> int:
             tag = "[ERROR]" if v.severity == "error" else "[WARN] "
             print(f"{tag} [{v.rule}] {v.message}")
 
+    # One concrete next action, pack-specific and last — the same golden-path
+    # rule init follows. After a hire the roster printed five file paths and
+    # stopped; "now what?" was the operator's own problem (dogfood finding 24).
+    next_step = PACK_NEXT_STEP.get(args.archetype)
+    if next_step:
+        print(f"Next: {next_step}")
     return 1 if has_errors(violations) else 0
 
 
@@ -1740,7 +1746,7 @@ def _team_roster(args: argparse.Namespace) -> int:
     """
     from alc.intake import load_manifest
     from alc.loop import load_loop_state, loops_dir, state_path
-    from alc.packs import PACKS, pack_files
+    from alc.packs import PACK_DESCRIPTIONS, PACKS, pack_files
     from alc.scaffold import detect_stacks
 
     operator_layer = _find_operator_layer()
@@ -1810,7 +1816,14 @@ def _team_roster(args: argparse.Namespace) -> int:
         return 0
 
     if not roster:
-        print("No members hired yet. Run: alc team hire <archetype>")
+        # init promises "prebuilt agent teams" behind this exact command, and
+        # this used to answer with neither names nor descriptions — choosing an
+        # archetype was guesswork (dogfood finding 22).
+        print("No members hired yet. Available packs:")
+        width = max(len(name) for name in PACKS)
+        for name in sorted(PACKS):
+            print(f"  {name.ljust(width)}  {PACK_DESCRIPTIONS.get(name, '')}")
+        print('Hire one with: alc team hire <name>')
     else:
         print("Hired members:")
         for member in roster:

@@ -167,6 +167,9 @@ archetype: sweeper
    `cargo-udeps` (Rust) — whichever matches this project.
 2. Simplify or remove ONE finding (the one named in the task, when given)
    without changing observable behavior — no new features, no API changes.
+   Preserve the author's comments unless they became factually wrong: a
+   cleanup that deletes someone's notes removes something they wrote on
+   purpose, and the diff reviewer may not be a diff reader.
 3. Run the checks — including the stack's full check_set, when declared — to
    confirm nothing broke.
 4. Output a JSON report matching the schema:
@@ -574,6 +577,28 @@ def _prototyper_files(
 # Archetype name -> file-generator. `grower` is still partial on automated
 # signal intake (see _grower_files), but now ships an archetype-declaring
 # Blueprint like every other pack.
+# What each pack IS and what to do right after hiring it — one line each, for
+# the two moments a person needs them: choosing (`alc team list`, the Team
+# view's Hire buttons) and starting (`alc team hire`'s closing line). Wording
+# matches docs/concepts/archetypes so three surfaces cannot drift. Dogfood
+# round 5: choosing was guesswork on BOTH surfaces — five bare "Hire X"
+# buttons, and a memberless `team list` that printed no archetypes at all.
+PACK_DESCRIPTIONS: dict[str, str] = {
+    "builder": "Turns prototypes into production-quality work: test authoring, live QA, and a hardened ship flow.",
+    "sweeper": "Cleans up: simplifies code, removes dead weight, and unships features safely.",
+    "maintainer": "Keeps a mature system safe: security patrol, dependency care, and refresh loops.",
+    "grower": "Sweeps issues and errors into work: a listen specialist you point at your feedback.",
+    "prototyper": "Churns out throwaway explorations: spike first, keep only what survives.",
+}
+
+PACK_NEXT_STEP: dict[str, str] = {
+    "builder": 'alc run test "<an area that deserves tests>"',
+    "sweeper": 'alc run refactor "<the file or area to clean up>"',
+    "maintainer": "alc flow patrol \"security pass\"",
+    "grower": 'alc specialist listen "<where your feedback lives>"',
+    "prototyper": 'alc spike "<the idea to try>"',
+}
+
 PACKS: dict[
     str, Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]]], dict[str, str]]
 ] = {

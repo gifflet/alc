@@ -17,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from alc.intake import load_manifest
+from alc.intake import is_smoke_only, load_all_blueprints, load_manifest
 from alc.loop import load_loop_state, loops_dir, state_path
 from alc.models import QueueTask
 from alc.queue import outstanding_failures
@@ -89,6 +89,13 @@ def _branches(root: Path) -> list[dict]:
     listing = service.list_branches(root)
     if not listing["available"]:
         return []  # not a git repo / no git binary: nothing to decide here
+    # `verified: True` on a project whose every check is the scaffold's
+    # placeholder is technically true and materially misleading — "the check
+    # that cannot fail passed" is not what the word promises, least of all to
+    # the operator who trusts it MOST (dogfood finding 26, from the junior
+    # persona's inbox). Rule 16 already knows how to tell; ask the same
+    # question here and qualify the reason.
+    smoke_only_project = _all_execution_blueprints_smoke_only(root)
     items = []
     for branch in listing["branches"]:
         if branch["merged"]:
@@ -97,11 +104,15 @@ def _branches(root: Path) -> list[dict]:
         # checks failed or it was interrupted, and it committed anyway. Saying
         # "ready to land" about that is the one thing this product must not do.
         verified = branch.get("verified")
-        reason = (
-            f"{branch['label']} work — checks did not pass, review before landing"
-            if verified is False
-            else f"{branch['label']} work ready to land"
-        )
+        if verified is False:
+            reason = f"{branch['label']} work — checks did not pass, review before landing"
+        elif verified is True and smoke_only_project:
+            reason = (
+                f"{branch['label']} work — only the placeholder check ran "
+                "(it cannot fail); read the diff before landing"
+            )
+        else:
+            reason = f"{branch['label']} work ready to land"
         items.append(
             {
                 "kind": "branch",
@@ -155,6 +166,23 @@ def _loops(root: Path) -> list[dict]:
             }
         )
     return items
+
+
+def _all_execution_blueprints_smoke_only(root: Path) -> bool:
+    """True when every execution Blueprint resolves to the smoke placeholder.
+
+    Best-effort and conservative: any load failure answers False (no claim),
+    and `plan` is exempt inside is_smoke_only itself.
+    """
+    try:
+        operator_layer = service.operator_layer(root)
+        manifest = load_manifest(operator_layer)
+        blueprints = [
+            bp for bp in load_all_blueprints(manifest, operator_layer) if bp.name != "plan"
+        ]
+        return bool(blueprints) and all(is_smoke_only(manifest, bp) for bp in blueprints)
+    except Exception:  # noqa: BLE001 — an unreadable layer must not break the inbox
+        return False
 
 
 def build_inbox(root: Path) -> dict:

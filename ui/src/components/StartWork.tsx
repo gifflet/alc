@@ -17,6 +17,7 @@ import { AlertTriangle, ArrowRight, FolderGit2, Loader2, ShieldCheck } from 'luc
 import { ApiError } from '../api/client'
 import { useChecksAudit, useEngines } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
+import { useCollection } from '../api/hooks'
 import { useStartExec } from '../app/useStartExec'
 import { ActionButton } from './ActionButton'
 
@@ -58,6 +59,13 @@ function useGuarantee(): { tone: 'ok' | 'warn'; text: string } {
 
 export function StartWork({ compact = false }: { compact?: boolean }) {
   const [goal, setGoal] = useState('')
+  // Which Blueprint runs. chore stays the default for all the reasons below,
+  // but hardcoding it made every HIRED blueprint unreachable from the phone's
+  // main entry point — the junior operator hired a sweeper and had no way to
+  // run its refactor from here (dogfood finding 25).
+  const [blueprint, setBlueprint] = useState('chore')
+  const projectId = useProjectId()
+  const blueprints = useCollection(projectId, 'blueprints').data ?? []
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const start = useStartExec()
@@ -81,7 +89,7 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
       //     start at the top". Shipping Conducted as move one inverted it.
       //
       // Engine and tier are still unasked: the manifest has them.
-      await start('run', { blueprint: 'chore', task: trimmed, isolate: true })
+      await start('run', { blueprint, task: trimmed, isolate: true })
       setGoal('')
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not start.')
@@ -99,6 +107,21 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
       )}
 
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        {blueprints.length > 1 && (
+          <select
+            value={blueprint}
+            onChange={(e) => setBlueprint(e.target.value)}
+            aria-label="Blueprint to run"
+            disabled={busy}
+            className="min-h-[var(--ui-control-h)] shrink-0 rounded-panel border border-border bg-base px-2 text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent sm:w-32"
+          >
+            {blueprints.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           value={goal}
           onChange={(e) => setGoal(e.target.value)}
