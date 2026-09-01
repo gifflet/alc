@@ -358,3 +358,49 @@ the disabled button's explanatory tooltip is unreachable on a phone. The
 states ARE different, but a control that can never fire is noise: a pack
 with no loops now shows no archive control at all, and the pill appears only
 where there is a state to report.
+
+## Round 7 — the released artifact (2026-09-01, v0.46.0 from PyPI)
+
+Minutes after cutting 0.46.0, the round every release deserves: install it the
+way a stranger would (`uv tool install`), on a fresh throwaway project
+(`gamelog`, three files of hand-rolled HTML/JS), and walk the golden path with
+the wheel's own binary and UI — never the checkout. Desktop Chrome at 1440px,
+the connected Android at 411px.
+
+### What held (the point of the round)
+
+- The wheel is whole: `ui/static` shipped (the release workflow's own gate
+  checks this) and `alc ui` served the Team screen from
+  `…/site-packages/alc/ui/static` on both screens.
+- `alc init` auto-detected `claude-code` and ended on the one next action;
+  obeying it ran a real chore ($0.35, 1 attempt, footer landed correctly).
+- The 0.46.0 team surface, end to end on the released bits: memberless
+  `team list` with descriptions; hire's `Next:` line; the refactor run
+  modernised `var`→`const` and PRESERVED the author's comment (round 5's
+  finding 27, proven in the wheel); retire → `loops retired: sweep
+  (.alc/loops/retired/)` in the roster; the UI's archived pill; Remove from
+  the phone — dialog, "Removed sweeper (5 files). Hire again anytime.",
+  sweeper back under Available packs, disk clean.
+- `alc ui` without the extra fails with the exact fix in the error
+  (`uv tool install "alc-runtime[ui]"`), and the docs already teach both
+  install variants side by side. Self-healing, not friction.
+
+### 30. [papercut] The legacy `alc` package still owns a tool slot
+
+`uv tool list` on this machine: `alc v0.37.0` AND `alc-runtime v0.46.0`,
+both claiming the `alc` executable. The new install overwrote the shim, but
+the stale tool remains; a future `uv tool upgrade --all` could re-claim the
+name with a year-old binary. Anyone who installed under the old package name
+and follows today's docs ends up here, and the installation page says nothing.
+One migration line fixes it: "previously installed as `alc`? Run
+`uv tool uninstall alc` first."
+
+### 31. [papercut] Rule 16 warns in a wall, one paragraph per Blueprint
+
+On a no-stack project, `alc team hire sweeper` prints the same three-line
+smoke-only warning FIVE times (bug, chore, feature, map, refactor) before its
+own output — the hire's "Hired 'sweeper':" and `Next:` drown in a wall the
+operator has already stopped reading. The rule is right (each Blueprint IS
+unverified); the rendering repeats a sentence that names no per-case fact
+except the Blueprint's name. Same-rule violations should aggregate: one
+paragraph, five names.
