@@ -180,7 +180,9 @@ describe('Team Mix Health', () => {
     renderWithProviders(<Team />)
 
     expect(await screen.findByText(/no stage declared/i)).toBeInTheDocument()
-    expect(screen.getByText('builder')).toBeInTheDocument()
+    // 'builder' now also names the Hire row (the hire list shares the roster's
+    // row anatomy), so the bare-name query legitimately matches twice.
+    expect(screen.getAllByText('builder').length).toBeGreaterThan(0)
     // Unjudged: no core/secondary/off-mix labels.
     expect(screen.queryByText('[core]')).not.toBeInTheDocument()
     expect(screen.queryByText('[off-mix]')).not.toBeInTheDocument()

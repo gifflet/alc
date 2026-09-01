@@ -267,20 +267,38 @@ export function Team() {
         <section>
           <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Hire</h2>
           <div className="flex flex-wrap gap-2">
+            {/* The same row anatomy the roster establishes one section above —
+                name leading, description under it, a compact action on the
+                right — because an available archetype is the SAME object as a
+                hired one, in a different state. The first pass rendered five
+                accent CTAs with orphaned captions floating between them: all
+                the visual weight on the action, none on the information a
+                chooser actually reads, and only reading order said which
+                caption belonged to which button. */}
             {available.map((a) => (
-              <div key={a} className="flex min-w-0 flex-col gap-1">
+              <div
+                key={a}
+                className="flex items-center gap-3 rounded-panel border border-border bg-panel p-3"
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-[length:var(--ui-text-body)] font-medium capitalize text-primary">
+                    {a}
+                  </span>
+                  <span className="text-[length:var(--ui-text-label)] leading-snug text-faint">
+                    {ARCHETYPE_DESCRIPTION[a]}
+                  </span>
+                </span>
                 <ActionButton
+                  aria-label={`Hire ${a}`}
                   tone="accent"
+                  size="sm"
                   onClick={() => doHire(a)}
                   disabled={hire.isPending && hiring === a}
-                  className="self-start capitalize"
+                  className="shrink-0"
                 >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Hire {a}
+                  <UserPlus className="h-3 w-3" />
+                  Hire
                 </ActionButton>
-                <p className="text-[length:var(--ui-text-label)] leading-snug text-faint">
-                  {ARCHETYPE_DESCRIPTION[a]}
-                </p>
               </div>
             ))}
           </div>
