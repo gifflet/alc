@@ -12,9 +12,12 @@ alc team hire builder      # write the pack's missing files, then lint
 alc team list              # what is hired, and the state of any loops it brought
 alc team status            # …plus Mix Health
 alc team retire builder    # archive that member's loop definitions
+alc team remove builder    # delete the pack's unmodified files (customised ones stay)
 ```
 
 Hiring is **additive**: it writes only the pack's missing files and refuses to overwrite one you already have. `--force` overwrites all of them, replacing local edits. A Specialist's Knowledge File is not a pack file and is never touched by hiring.
+
+Retiring is **not** un-hiring: it archives the member's loop definitions into `loops/retired/` and the member stays on the roster — a member counts as hired while any of its pack files is on disk. `remove` is the exit: it deletes only files still byte-identical to what the pack would write today, keeps (and lists) anything you customised, and is reversible — `hire` rewrites exactly what it removed.
 
 A bare `alc team` is the same as `alc team status`, so the command family opens on observation rather than a usage error.
 

@@ -35,6 +35,7 @@ import type {
   Queue,
   QueueTask,
   RawParsed,
+  RemoveResult,
   RetireResult,
   RunArtifacts,
   RunConfig,
@@ -286,6 +287,11 @@ export const api = {
     }),
   retireMember: (id: string, archetype: string) =>
     request<RetireResult>(`${proj(id)}/team/retire`, {
+      method: 'POST',
+      body: JSON.stringify({ archetype }),
+    }),
+  removeMember: (id: string, archetype: string) =>
+    request<RemoveResult>(`${proj(id)}/team/remove`, {
       method: 'POST',
       body: JSON.stringify({ archetype }),
     }),

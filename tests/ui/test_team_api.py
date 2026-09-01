@@ -263,3 +263,79 @@ class TestMixHealth:
         idle = {e["archetype"]: e for e in body["mix_health"]["idle_core"]}
         assert idle["maintainer"]["hired"] is True
         assert idle["maintainer"]["hint"] == "run its loop (alc loop deps-refresh)"
+
+
+class TestRemove:
+    def test_remove_unknown_archetype_is_404(self, client, registered: str) -> None:
+        resp = client.post(
+            f"/api/projects/{registered}/team/remove", json={"archetype": "nosuchpack"}
+        )
+        assert resp.status_code == 404
+        assert "nosuchpack" in resp.json()["detail"]
+
+    def test_remove_a_fresh_pack_takes_it_off_the_roster(
+        self, client, registered: str, project: Path
+    ) -> None:
+        client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "sweeper"})
+
+        resp = client.post(
+            f"/api/projects/{registered}/team/remove", json={"archetype": "sweeper"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["kept"] == []
+        assert ".alc/loops/sweep.yaml" in body["removed"]
+
+        roster = client.get(f"/api/projects/{registered}/team").json()
+        assert all(m["archetype"] != "sweeper" for m in roster["members"])
+        assert not (project / ".alc" / "blueprints" / "map.md").exists()
+
+    def test_remove_keeps_a_customised_file_and_the_member(
+        self, client, registered: str, project: Path
+    ) -> None:
+        client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "sweeper"})
+        blueprint = project / ".alc" / "blueprints" / "map.md"
+        blueprint.write_text(blueprint.read_text() + "\ncustom\n")
+
+        resp = client.post(
+            f"/api/projects/{registered}/team/remove", json={"archetype": "sweeper"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["kept"] == [".alc/blueprints/map.md"]
+        assert blueprint.exists()
+
+        roster = client.get(f"/api/projects/{registered}/team").json()
+        sweeper = next(m for m in roster["members"] if m["archetype"] == "sweeper")
+        assert sweeper["files"] == [".alc/blueprints/map.md"]
+
+    def test_roster_reports_a_retired_loop(self, client, registered: str) -> None:
+        client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "sweeper"})
+        client.post(f"/api/projects/{registered}/team/retire", json={"archetype": "sweeper"}
+        )
+
+        roster = client.get(f"/api/projects/{registered}/team").json()
+        sweeper = next(m for m in roster["members"] if m["archetype"] == "sweeper")
+        assert sweeper["loops"] == []
+        assert sweeper["retired_loops"] == ["sweep"]
+
+    def test_remove_publishes_the_same_ws_events_a_hire_does(
+        self, client, registered: str
+    ) -> None:
+        client.post(f"/api/projects/{registered}/team/hire", json={"archetype": "builder"})
+
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "subscribe", "project_id": registered})
+            assert ws.receive_json()["type"] == "subscribed"
+
+            resp = client.post(
+                f"/api/projects/{registered}/team/remove", json={"archetype": "builder"}
+            )
+            assert resp.status_code == 200
+
+            # Same classifier, same file set as the hire that wrote them —
+            # so the roster and project tree refresh through the events they
+            # already know.
+            messages = [ws.receive_json() for _ in range(2)]
+            kinds = {(m["type"], m.get("resource")) for m in messages}
+            assert ("config_changed", "blueprints") in kinds
+            assert ("config_changed", "flows") in kinds

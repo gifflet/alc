@@ -1565,13 +1565,14 @@ def cmd_new(args: argparse.Namespace) -> int:
 
 
 def cmd_team(args: argparse.Namespace) -> int:
-    """Run `alc team hire|list|retire|status`: the operator verb over Archetype Packs.
+    """Run `alc team hire|list|retire|remove|status`: the operator verb over Archetype Packs.
 
     Packs (``alc.packs``) are the implementation; ``team`` is the only verb an
     operator sees — ``hire`` scaffolds a pack's files then lints, ``list``/
     ``status`` show the hired roster (and the state of any loops a member
     brought), ``retire`` archives a member's loop definition(s) instead of
-    deleting them.
+    deleting them, ``remove`` deletes a member's UNMODIFIED pack files (keeping
+    anything the operator customised).
     """
     # Bare `alc team` = the read view: default to `status` (roster + Mix Health)
     # so the command family opens on observation, never a usage error.
@@ -1581,6 +1582,8 @@ def cmd_team(args: argparse.Namespace) -> int:
         return _team_hire(args)
     if args.team_action == "retire":
         return _team_retire(args)
+    if args.team_action == "remove":
+        return _team_remove(args)
     return _team_roster(args)  # 'list' and 'status' share the same roster output
 
 
@@ -1746,7 +1749,7 @@ def _team_roster(args: argparse.Namespace) -> int:
     """
     from alc.intake import load_manifest
     from alc.loop import load_loop_state, loops_dir, state_path
-    from alc.packs import PACK_DESCRIPTIONS, PACKS, pack_files
+    from alc.packs import PACK_DESCRIPTIONS, PACKS, pack_files, retired_pack_loops
     from alc.scaffold import detect_stacks
 
     operator_layer = _find_operator_layer()
@@ -1780,7 +1783,20 @@ def _team_roster(args: argparse.Namespace) -> int:
                         "stopped_reason": state.stopped_reason,
                     }
                 )
-        roster.append({"archetype": archetype, "files": present, "loops": member_loops})
+        roster.append(
+            {
+                "archetype": archetype,
+                "files": present,
+                "loops": member_loops,
+                # Loops a retire archived: the live file is gone, so
+                # `member_loops` cannot see them — but the operator who just
+                # clicked/typed retire needs the roster to SAY what happened,
+                # not show a member that silently lost its loop line.
+                "retired_loops": retired_pack_loops(
+                    archetype, stacks, project_root, manifest.loops_dir
+                ),
+            }
+        )
 
     health = None
     if args.team_action == "status":
@@ -1836,7 +1852,10 @@ def _team_roster(args: argparse.Namespace) -> int:
                     if loop["status"] == "stopped":
                         line += f", stopped_reason={loop['stopped_reason']}"
                     print(line)
-            else:
+            if member["retired_loops"]:
+                names = ", ".join(member["retired_loops"])
+                print(f"    loops retired: {names} ({manifest.loops_dir}/retired/)")
+            if not member["loops"] and not member["retired_loops"]:
                 print("    loops: (none)")
 
     if health is not None:
@@ -1882,12 +1901,76 @@ def _team_retire(args: argparse.Namespace) -> int:
         moved.append(str(dest.relative_to(project_root)))
 
     if not moved:
-        print(f"'{args.member}' has no loop(s) on disk to retire.")
+        # "Nothing to retire" has two very different causes; a member whose
+        # loops were ALREADY archived reads a bare "no loop(s) on disk" as the
+        # command being broken (dogfood: the UI's disabled button read the
+        # same way). Name the state.
+        from alc.packs import retired_pack_loops
+
+        already = retired_pack_loops(args.member, detect_stacks(project_root), project_root, manifest.loops_dir)
+        if already:
+            names = ", ".join(already)
+            print(
+                f"'{args.member}' has no live loop(s) to retire — already "
+                f"archived in {manifest.loops_dir}/retired/: {names}"
+            )
+        else:
+            print(f"'{args.member}' has no loop(s) on disk to retire.")
         return 0
 
     print(f"Retired '{args.member}':")
     for rel_path in moved:
         print(f"  {rel_path}")
+    return 0
+
+
+def _team_remove(args: argparse.Namespace) -> int:
+    """`alc team remove <member>`: delete the member's UNMODIFIED pack files.
+
+    The missing exit `retire` is not: retire archives loops and the member
+    stays hired (membership is "any pack file on disk"), so an operator who
+    tried a pack and wants it gone had no path on either surface. Removal is
+    scoped so it cannot destroy work: only files byte-identical to what the
+    pack would write today are deleted (including a retired loop's archived
+    copy); anything customised is kept, listed, and keeps the member on the
+    roster. `alc team hire` rewrites exactly what was removed, so the
+    operation is reversible.
+    """
+    from alc.intake import load_manifest
+    from alc.packs import PACKS, remove_pack
+    from alc.scaffold import detect_stacks
+
+    if args.member not in PACKS:
+        available = ", ".join(sorted(PACKS)) or "none yet"
+        print(
+            f"[ERROR] no pack named '{args.member}' yet (available: {available})",
+            file=sys.stderr,
+        )
+        return 1
+
+    operator_layer = _find_operator_layer()
+    project_root = operator_layer.parent
+    manifest = load_manifest(operator_layer)
+
+    removed, kept = remove_pack(
+        args.member, detect_stacks(project_root), project_root, manifest.loops_dir
+    )
+
+    if not removed and not kept:
+        print(f"'{args.member}' has no pack files on disk — nothing to remove.")
+        return 0
+
+    if removed:
+        print(f"Removed '{args.member}' ({len(removed)} file(s) matched the pack defaults):")
+        for rel_path in removed:
+            print(f"  {rel_path}")
+    if kept:
+        print(f"Kept {len(kept)} customised file(s) — delete by hand if you want them gone:")
+        for rel_path in kept:
+            print(f"  {rel_path}")
+        print(f"'{args.member}' stays on the roster because of the kept file(s).")
+    else:
+        print(f"'{args.member}' left the roster. Re-hire anytime with: alc team hire {args.member}")
     return 0
 
 
@@ -4540,6 +4623,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Archive a hired member's loop definition(s) into loops/retired/.",
     )
     team_retire_parser.add_argument("member", help="Archetype name to retire, e.g. 'builder'.")
+
+    team_remove_parser = team_subparsers.add_parser(
+        "remove",
+        help=(
+            "Delete a member's UNMODIFIED pack files (customised ones are kept "
+            "and listed). Reversible via `alc team hire`."
+        ),
+    )
+    team_remove_parser.add_argument("member", help="Archetype name to remove, e.g. 'sweeper'.")
 
     # alc prompts <action> [name] [--force]
     prompts_parser = subparsers.add_parser(

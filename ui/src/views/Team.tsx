@@ -7,9 +7,9 @@
 // endpoint for them, so hard-coding the same five names here is the direct,
 // boring option instead of a new endpoint just to list them.
 import { useState } from 'react'
-import { UserMinus, UserPlus, Users } from 'lucide-react'
+import { Archive, UserMinus, UserPlus, Users } from 'lucide-react'
 import { ApiError } from '../api/client'
-import { useHireArchetype, useRetireMember, useTeam } from '../api/hooks'
+import { useHireArchetype, useRemoveMember, useRetireMember, useTeam } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { formatCost } from '../lib/format'
 import { formatNetLines } from '../lib/scorecard'
@@ -47,10 +47,13 @@ function apiMessage(error: unknown): string | null {
 function MemberCard({
   member,
   onRetire,
+  onRemove,
 }: {
   member: TeamMember
   onRetire: (archetype: string) => void
+  onRemove: (archetype: string) => void
 }) {
+  const archived = member.retired_loops.length > 0
   return (
     <div className="rounded-panel border border-border bg-panel p-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -68,26 +71,45 @@ function MemberCard({
             {member.files.length} file{member.files.length === 1 ? '' : 's'}
           </span>
         </div>
-        {/* Retire archives a member's LOOPS and nothing else. Three of the five
-            packs ship no loop at all, so for them the button could never do
-            anything — it returned 200 with an empty result and the operator was
-            left to conclude the app was broken. Say why instead. */}
-        <ActionButton
-          aria-label={`Retire ${member.archetype}`}
-          onClick={() => onRetire(member.archetype)}
-          tone="ghost"
-          size="sm"
-          className="shrink-0"
-          disabled={member.loops.length === 0}
-          title={
-            member.loops.length === 0
-              ? `${member.archetype} has no loops on disk — retiring archives loops, and there are none`
-              : undefined
-          }
-        >
-          <UserMinus className="h-3 w-3" />
-          Retire
-        </ActionButton>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* "Archive loops", not "Retire": the action archives a member's
+              LOOPS and nothing else — the member stays hired. The old verb
+              promised a departure it never performed, and an operator who
+              archived a loop then read the disabled "Retire" + unchanged
+              roster as the app being broken (dogfood: the retire question).
+              Post-archive the button gives way to a state, not a dead
+              control. A pack with no loops (live or archived) shows NOTHING
+              here: its earlier disabled-button form sat next to the badge as
+              two different renderings of what read as one state, and a
+              control that can never fire is noise, not information. */}
+          {member.loops.length > 0 ? (
+            <ActionButton
+              aria-label={`Archive ${member.archetype} loops`}
+              onClick={() => onRetire(member.archetype)}
+              tone="ghost"
+              size="sm"
+            >
+              <Archive className="h-3 w-3" />
+              Archive loops
+            </ActionButton>
+          ) : archived ? (
+            <Pill tone="idle">loops archived</Pill>
+          ) : null}
+          {/* The exit "Archive loops" is not: membership is "any pack file on
+              disk", so an operator who tried a pack had no way off the roster
+              from either surface. Removal deletes only files still identical
+              to the pack defaults (customised ones are kept and reported), so
+              it cannot destroy work — and hire rewrites what it removed. */}
+          <ActionButton
+            aria-label={`Remove ${member.archetype}`}
+            onClick={() => onRemove(member.archetype)}
+            tone="error"
+            size="sm"
+          >
+            <UserMinus className="h-3 w-3" />
+            Remove
+          </ActionButton>
+        </div>
       </div>
       <ul className="mt-1.5 flex flex-col gap-0.5">
         {member.files.map((f) => (
@@ -96,7 +118,7 @@ function MemberCard({
           </li>
         ))}
       </ul>
-      {member.loops.length > 0 && (
+      {(member.loops.length > 0 || archived) && (
         <div className="mt-2 flex flex-col gap-1 border-t border-border/15 pt-2">
           {member.loops.map((l) => (
             <div key={l.name} className="flex items-center gap-2 text-[length:var(--ui-text-body)]">
@@ -104,6 +126,14 @@ function MemberCard({
               <span className="text-muted">{l.name}</span>
               <Pill tone={STATUS_TONE[l.status]}>{l.status}</Pill>
               <span className="tabular text-[length:var(--ui-text-label)] text-faint">cycle {l.cycle}</span>
+            </div>
+          ))}
+          {member.retired_loops.map((name) => (
+            <div key={name} className="flex items-center gap-2 text-[length:var(--ui-text-body)]">
+              <StatusDot tone="idle" />
+              <span className="text-muted">{name}</span>
+              <Pill tone="idle">archived</Pill>
+              <span className="text-[length:var(--ui-text-label)] text-faint">in loops/retired/</span>
             </div>
           ))}
         </div>
@@ -199,9 +229,13 @@ export function Team() {
   const { data, isLoading } = useTeam(id)
   const hire = useHireArchetype(id)
   const retire = useRetireMember(id)
+  const remove = useRemoveMember(id)
   const [hiring, setHiring] = useState<string | null>(null)
   const [retiring, setRetiring] = useState<string | null>(null)
-  const [retired, setRetired] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
+  // One outcome line for archive AND remove: both end in "the dialog closed,
+  // now what happened?" — a single slot keeps the answers from stacking.
+  const [notice, setNotice] = useState<string | null>(null)
 
   if (isLoading) return <Loading />
 
@@ -225,11 +259,32 @@ export function Team() {
         // retire." The UI said nothing at all — the dialog closed, the roster
         // was unchanged, and a 200 looked like a broken app. Say the same thing.
         const n = result.moved.length
-        setRetired(
+        setNotice(
           n === 0
             ? `${who} had no loops on disk — nothing to archive.`
             : `Archived ${n === 1 ? "1 loop" : `${n} loops`} from ${who} into loops/retired/. ` +
               `${who} stays on the roster: its blueprints, flows and specialists are untouched.`,
+        )
+      },
+    })
+  }
+
+  const confirmRemove = () => {
+    if (!removing) return
+    const who = removing
+    remove.mutate(who, {
+      onSuccess: (result) => {
+        setRemoving(null)
+        // Same contract as the CLI's `alc team remove` output: what was
+        // deleted, what was kept, and the roster consequence of the kept half.
+        const n = result.removed.length
+        const k = result.kept.length
+        setNotice(
+          n === 0 && k === 0
+            ? `${who} had no pack files on disk — nothing to remove.`
+            : k > 0
+              ? `Removed ${n} file${n === 1 ? '' : 's'} from ${who}. Kept ${k} customised file${k === 1 ? '' : 's'} (${result.kept.join(', ')}) — ${who} stays on the roster because of ${k === 1 ? 'it' : 'them'}.`
+              : `Removed ${who} (${n} file${n === 1 ? '' : 's'}). Hire again anytime.`,
         )
       },
     })
@@ -249,16 +304,18 @@ export function Team() {
         ) : (
           <div className="flex flex-col gap-2">
             {members.map((m) => (
-              <MemberCard key={m.archetype} member={m} onRetire={setRetiring} />
+              <MemberCard key={m.archetype} member={m} onRetire={setRetiring} onRemove={setRemoving} />
             ))}
           </div>
         )}
-        {apiMessage(retire.error) && (
-          <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{apiMessage(retire.error)}</p>
+        {apiMessage(retire.error ?? remove.error) && (
+          <p className="mt-2 text-[length:var(--ui-text-label)] text-error">
+            {apiMessage(retire.error ?? remove.error)}
+          </p>
         )}
-        {retired && !retire.error && (
+        {notice && !retire.error && !remove.error && (
           <p className="mt-2 text-[length:var(--ui-text-label)] text-muted" role="status">
-            {retired}
+            {notice}
           </p>
         )}
       </section>
@@ -324,11 +381,21 @@ export function Team() {
 
       {retiring && (
         <ConfirmDialog
-          title={`Retire ${retiring}?`}
-          message={`This archives ${retiring}'s loop(s) into loops/retired/. Nothing is deleted, and ${retiring} STAYS on the roster — its blueprints, flows and specialists are left alone.`}
-          confirmLabel="Retire"
+          title={`Archive ${retiring}'s loops?`}
+          message={`This archives ${retiring}'s loop(s) into loops/retired/. Nothing is deleted, and ${retiring} stays on the roster — its blueprints, flows and specialists are left alone.`}
+          confirmLabel="Archive loops"
+          tone="accent"
           onConfirm={confirmRetire}
           onCancel={() => setRetiring(null)}
+        />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove ${removing}?`}
+          message={`This deletes ${removing}'s pack files that still match the pack defaults — anything you customised is kept and listed. You can hire ${removing} again at any time.`}
+          confirmLabel="Remove"
+          onConfirm={confirmRemove}
+          onCancel={() => setRemoving(null)}
         />
       )}
     </div>
