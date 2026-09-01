@@ -385,7 +385,7 @@ the connected Android at 411px.
   (`uv tool install "alc-runtime[ui]"`), and the docs already teach both
   install variants side by side. Self-healing, not friction.
 
-### 30. [papercut] The legacy `alc` package still owns a tool slot
+### 30. [papercut — FIXED] The legacy `alc` package still owns a tool slot
 
 `uv tool list` on this machine: `alc v0.37.0` AND `alc-runtime v0.46.0`,
 both claiming the `alc` executable. The new install overwrote the shim, but
@@ -395,7 +395,7 @@ and follows today's docs ends up here, and the installation page says nothing.
 One migration line fixes it: "previously installed as `alc`? Run
 `uv tool uninstall alc` first."
 
-### 31. [papercut] Rule 16 warns in a wall, one paragraph per Blueprint
+### 31. [papercut — FIXED] Rule 16 warns in a wall, one paragraph per Blueprint
 
 On a no-stack project, `alc team hire sweeper` prints the same three-line
 smoke-only warning FIVE times (bug, chore, feature, map, refactor) before its
@@ -404,3 +404,18 @@ operator has already stopped reading. The rule is right (each Blueprint IS
 unverified); the rendering repeats a sentence that names no per-case fact
 except the Blueprint's name. Same-rule violations should aggregate: one
 paragraph, five names.
+
+## Round 7 resolution — both papercuts acted on
+
+- **30**: both installer scripts (`install.sh`, `install.ps1`) now retire the
+  legacy `alc` tool before installing (`^alc v` anchors past `alc-runtime`),
+  and the installation page carries the one-line migration note for hand
+  installers. Proven live on the machine that exhibited it: the script removed
+  `alc v0.37.0` and left a single `alc-runtime v0.46.0` owning the executable.
+- **31**: rules 16 and 11 now accumulate per lint pass and emit grouped — one
+  paragraph naming all placeholder-only Blueprints, and one per empty
+  check_set naming everyone pointing at it. A single Blueprint keeps the
+  original wording. Fixed in `policy.lint` itself, so every consumer (CLI
+  lint, team hire, the UI's Problems panel, JSON) improved at once; the hire
+  that printed five identical paragraphs now prints one, with "Hired
+  'sweeper'" and its `Next:` legible above and below it.
