@@ -1,0 +1,134 @@
+<!doctype html>
+<!-- og.html — the SOURCE of public/og.png (1200×630 social card).
+
+     Regenerate after editing (from docs-site/):
+       1. Open this file in a Chromium with viewport forced to 1200×630
+          (CDP Emulation.setDeviceMetricsOverride), then capture a PNG.
+       2. Save over public/og.png.
+     The palette, type and mark are the site's own tokens (globals.css,
+     components/Logo.tsx) — this card must never drift from the product. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: 'IBM Plex Sans Variable';
+    src: url('../../node_modules/@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 100 700;
+  }
+  @font-face {
+    font-family: 'JetBrains Mono Variable';
+    src: url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+    font-weight: 100 800;
+  }
+  :root {
+    --base: #1b1d1f; --panel: #212427; --raised: #26292c; --border: #35393d;
+    --primary: #d5d8dc; --muted: #8b9096; --faint: #7d848b;
+    --accent: #5794e6; --live: #5cc975;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: var(--base);
+    font-family: 'IBM Plex Sans Variable', system-ui, sans-serif;
+    position: relative;
+    color: var(--primary);
+  }
+  /* The site's quiet grid, plus one soft accent glow behind the terminal so
+     the right half reads as lit by the product, not empty. */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(213,216,220,0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(213,216,220,0.035) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+  .glow {
+    position: absolute; right: -180px; top: -140px; width: 760px; height: 640px;
+    background: radial-gradient(closest-side, rgba(87,148,230,0.16), transparent 70%);
+  }
+  .card { position: absolute; inset: 0; padding: 64px 72px; display: flex; flex-direction: column; }
+
+  .lockup { display: flex; align-items: center; gap: 18px; }
+  .lockup svg { width: 56px; height: 56px; }
+  .lockup .name { font-size: 34px; font-weight: 650; letter-spacing: 0.06em; }
+
+  /* Three short lines, none wider than ~640px: the terminal column starts at
+     x=728, and the headline must never run under it. */
+  .headline {
+    margin-top: 46px;
+    font-size: 74px; line-height: 1.09; font-weight: 640; letter-spacing: -0.022em;
+  }
+  .sub {
+    margin-top: 26px;
+    font-size: 30px; line-height: 1.4; color: var(--muted); font-weight: 420;
+    max-width: 620px;
+  }
+  .footer {
+    margin-top: auto; padding-bottom: 4px;
+    display: flex; align-items: baseline; gap: 32px;
+    font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
+    font-size: 24px;
+  }
+  .loop { color: var(--primary); font-weight: 560; }
+  .loop .arrow { color: var(--live); }
+  .domain { color: var(--faint); font-size: 23px; }
+
+  /* Terminal panel — the product's own motif filling the right half. */
+  .term {
+    position: absolute; right: 72px; top: 172px; width: 400px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+  .term .bar {
+    height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px;
+    background: var(--raised); border-bottom: 1px solid var(--border);
+  }
+  .term .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--border); }
+  .term .body {
+    padding: 22px 24px 26px;
+    font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
+    font-size: 19.5px; line-height: 1.75; white-space: pre;
+  }
+  .p { color: var(--faint); }
+  .cmd { color: var(--primary); font-weight: 540; }
+  .step { color: var(--muted); }
+  .ok { color: var(--live); font-weight: 600; }
+  .accent { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+  <div class="card">
+    <div class="lockup">
+      <!-- Same geometry as components/Logo.tsx / brand/favicon.svg. -->
+      <svg viewBox="0 0 32 32" role="img" aria-label="ALC mark">
+        <path d="M27 19V23a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4h14a4 4 0 0 1 4 4v4"
+              fill="none" stroke="#d5d8dc" stroke-width="4"/>
+        <rect x="13" y="11" width="6" height="10" rx="1" fill="#5794e6"/>
+      </svg>
+      <span class="name">ALC</span>
+    </div>
+
+    <div class="headline">Declare how<br>your agents<br>should work once.</div>
+    <div class="sub">A control plane for agentic coding — the guardrails live outside the model.</div>
+
+    <div class="footer">
+      <span class="loop">Act <span class="arrow">→</span> Verify <span class="arrow">→</span> Repair</span>
+      <span class="domain">alc-runtime.vercel.app</span>
+    </div>
+  </div>
+
+  <div class="term">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="body"><span class="p">$</span> <span class="cmd">alc run chore "…"</span>
+<span class="step">→ Act</span>       <span class="accent">claude-code</span>
+<span class="step">→ Verify</span>    <span class="ok">✓ 3 checks</span>
+<span class="step">→ Status</span>    <span class="ok">SUCCESS</span></div>
+  </div>
+</body>
+</html>
