@@ -316,10 +316,10 @@ substring the scaffold also contains; never trust `$?` after a pipe; a content
 file is not the page; a rebuilt bundle is not the tab. One lesson, four
 costumes.
 
-Owed: the final on-device screenshot of the described Hire buttons — the
-device dropped to wifi adb mid-round and its CDP socket stopped answering.
-Every change is pinned by tests (2584 backend, 635 frontend) and the CLI
-halves were proven live before the link fell.
+Owed: ~~the final on-device screenshot of the described Hire buttons~~ —
+settled in round 6, whose device pass exercised this same screen end to end
+(hire, archive, remove) at 411px with screenshots. Every change is pinned by
+tests and the CLI halves were proven live before the link fell.
 
 ## Round 6 — the retire question (2026-09-01)
 
