@@ -49,6 +49,8 @@ uv tool install "alc-runtime[ui]"    # …with the web UI (dashboard, live runs)
 
 `uv tool install` puts the binary in `~/.local/bin`. If `alc --version` reports "command not found", that directory is not on your PATH — which is the step the script above exists to handle.
 
+**Upgrading from the old package name?** Early releases shipped as `alc` rather than `alc-runtime`. If `uv tool list` shows both, run `uv tool uninstall alc`: the stale tool competes for the `alc` executable, and a later `uv tool upgrade --all` could hand the name back to an old binary. The install script above does this for you.
+
 ## Pick an engine
 
 ALC does not ship a model. It drives one you already have installed:

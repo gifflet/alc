@@ -70,6 +70,15 @@ fi
 ALC_WAS_INSTALLED=0
 command -v alc >/dev/null 2>&1 && ALC_WAS_INSTALLED=1 || true
 
+# The project once shipped under the package name `alc`. That stale tool keeps
+# claiming the `alc` executable, and a later `uv tool upgrade --all` could hand
+# the name back to a year-old binary — retire it before installing the real one.
+# `^alc v` cannot match `alc-runtime`, whose line starts `alc-runtime v`.
+if uv tool list 2>/dev/null | grep -q '^alc v'; then
+    step "Removing the legacy ${BOLD}alc${RESET} package (superseded by alc-runtime)"
+    uv tool uninstall alc || true
+fi
+
 step "Installing ${BOLD}$PACKAGE${RESET}"
 uv tool install --upgrade "$PACKAGE" || die 'uv tool install failed.'
 

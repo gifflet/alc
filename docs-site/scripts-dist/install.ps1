@@ -48,6 +48,16 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
 # ---------------------------------------------------------------------------
 # 2. alc
 # ---------------------------------------------------------------------------
+# The project once shipped under the package name `alc`. That stale tool keeps
+# claiming the `alc` executable, and a later `uv tool upgrade --all` could hand
+# the name back to a year-old binary - retire it before installing the real one.
+# The match anchors on 'alc v' so it cannot hit alc-runtime's own line.
+$legacy = uv tool list 2>$null | Select-String -Pattern '^alc v'
+if ($legacy) {
+    Write-Step 'Removing the legacy alc package (superseded by alc-runtime)'
+    uv tool uninstall alc
+}
+
 Write-Step "Installing $package"
 uv tool install --upgrade $package
 if ($LASTEXITCODE -ne 0) { Write-Fail 'uv tool install failed.' }
