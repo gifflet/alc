@@ -14,11 +14,23 @@ def test_lists_directories_for_a_path(client, tmp_path):
 
 
 def test_flags_alc_projects(client, tmp_path):
+    # The MANIFEST is the test, matching what the registry enforces — a bare
+    # `.alc/` directory made ~/.alc (the tool's own global state) read as a
+    # project and the browser offered $HOME for registration.
     (tmp_path / "proj" / ".alc").mkdir(parents=True)
+    (tmp_path / "proj" / ".alc" / "manifest.yaml").write_text("version: 1\n")
 
     body = client.get("/api/fs/browse", params={"path": str(tmp_path)}).json()
 
     assert body["entries"][0]["is_alc_project"] is True
+
+
+def test_a_bare_dot_alc_directory_is_not_a_project(client, tmp_path):
+    (tmp_path / "home" / ".alc" / "ui").mkdir(parents=True)
+
+    body = client.get("/api/fs/browse", params={"path": str(tmp_path / "home")}).json()
+
+    assert body["is_alc_project"] is False
 
 
 def test_hidden_directories_require_opting_in(client, tmp_path):

@@ -200,3 +200,80 @@ The mis-written task's failure (the `flow: chore` writer bug) still sits in
 the Inbox offering Retry — which would re-enqueue the broken file. True
 history, stale advice. Acting on it honestly means deleting the done record in
 the Queue view; nothing suggests that.
+
+## Round 5 — team hire, whole journey, as a junior enthusiast who does not program
+
+Persona: builds with AI, does not read code, judges by what the screen says.
+Her project: a vibe-coded recipe page (three files, git, no tests). Everything
+driven from the connected Android phone; the CLI only started the server.
+
+The journey completed — register her folder, hire the Sweeper, run its
+refactor blueprint on her messy app.js through the queue, land the modernized
+code from the Inbox (`165b566` in her repo) — but every leg surfaced friction,
+and four defects were fixed mid-round because the journey could not continue
+past them.
+
+### Fixed in this round
+
+15. [BLOCKER] The phone had NO door to the ProjectSelector: `Shell` always
+    passed `onOpenProjects`, and OperatorShell silently dropped it — no
+    register, no clone, no new project from a phone at all. Same disease the
+    Spike row once cured, same cure: a "Projects" row in More.
+16. [BUG] Seven ghost projects (`alc-wt-*`, dead temp dirs) polluted every
+    project list. Cause found: `tests/test_ui_lan.py` and `tests/ui/
+    test_static.py` invoke cmd_ui without isolating the registry or cwd, so
+    every `pytest` run inside every isolated WORKTREE registered that worktree
+    into the real ~/.alc/ui/projects.json — one ghost per drained task. Both
+    fixtures now pin registry and cwd to tmp_path; sealed by diffing the real
+    registry across a test run.
+17. [BUG] The directory browser called any directory containing `.alc/` an ALC
+    project — including $HOME, thanks to `~/.alc/` (the tool's own global
+    state). It said "Ready to register — this is an ALC project" at her home
+    folder, and tapping the offered button would run into the registry's
+    refusal. The classify test is now the manifest, the same test the registry
+    enforces — one truth, two surfaces.
+18. [BUG] "Set up ALC here" scaffolds and then auto-registers on the exec's
+    finish message — but a small scaffold exits in milliseconds, so
+    exec_finished published BEFORE the listener subscribed and the completion
+    was lost: `.alc/` appeared on disk and the screen never finished. The
+    listener now also asks once for the exec's current state; whichever side
+    answers first wins.
+
+### Recorded, for the next round
+
+19. [stumble] The Register-existing error — "no .alc/manifest.yaml under … —
+    not an ALC project" — is true and a dead end. The door that solves it
+    ("Set up ALC here", with the excellent "A git repository. Set ALC up here
+    to start using it." hint) exists ONLY inside Browse. The error should
+    offer it.
+20. [papercut] The primary register affordance is a typed absolute path — on a
+    phone keyboard, for a persona who does not know what an absolute path is.
+    Browse exists; it should lead.
+21. [papercut] `/` lands inside the first registered project. A newcomer
+    arrives inside someone else's dashboard.
+22. [BLOCKER-class, both surfaces] Choosing an archetype is guesswork. The
+    phone's Team screen shows five bare "Hire X" buttons with zero
+    descriptions. The CLI's `alc team list` with no members prints ONLY "Run:
+    alc team hire <archetype>" — no names, no descriptions — despite init
+    promising "prebuilt agent teams" behind that exact command. The one-line
+    descriptions exist in the docs table; neither surface carries them.
+23. [papercut] `alc team hire <bad-name>` prints [ERROR] and exits 0.
+24. [stumble] After a hire, no next step anywhere: the roster lists five FILE
+    PATHS (honest, meaningless to her) and nothing says "run your new
+    refactor with …".
+25. [stumble] StartWork hardcodes `chore`: the blueprint she just hired is
+    unreachable from the phone's main entry point. The only phone path is
+    Queue → Enqueue → kind "blueprint" (round 3's feature) → Drain — which
+    worked, and which she would never find.
+26. [sharp] Her Inbox said `verified: True` about the sweeper's branch — and
+    her only check is the scaffold placeholder that always passes. Technically
+    true, materially misleading for exactly the person who trusts the word.
+    A1 one level deeper: `verified` earned by smoke-only checks deserves a
+    qualifier (rule 16 already knows the project is smoke-only).
+27. [note] The sweeper deleted her personal comment ("made with AI help!")
+    while modernizing — charter-consistent, harmless, and exactly the kind of
+    loss "read the diff" exists for and this persona never will.
+28. [good] The Retire dialog is exemplary: "Nothing is deleted, and sweeper
+    STAYS on the roster — its blueprints, flows and specialists are left
+    alone." Calming, precise, honest. The hire mechanics (5 files, additive,
+    idempotent) behaved perfectly throughout.

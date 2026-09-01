@@ -17,7 +17,7 @@ afterEach(() => clearMatchMedia())
 function renderShell() {
   return renderWithProviders(
     <WsProvider projectId="demo">
-      <OperatorShell projectName="demo" onSwitchProject={() => {}} />
+      <OperatorShell projectName="demo" onSwitchProject={() => {}} onOpenProjects={() => {}} />
     </WsProvider>,
   )
 }

@@ -64,9 +64,15 @@ export function canGoBackFrom(activeTabId: string | null, moreOpen: boolean): bo
 export function OperatorShell({
   projectName,
   onSwitchProject,
+  onOpenProjects,
 }: {
   projectName: string
   onSwitchProject: () => void
+  // Shell has always passed this; the phone silently dropped it — which meant
+  // a phone had NO path to the ProjectSelector at all: no register, no clone,
+  // no new project. The junior operator who lives on the phone could not even
+  // begin. Same disease the Spike row cured, same cure: a More entry.
+  onOpenProjects: () => void
 }) {
   const ui = useUiState()
   const projectId = useProjectId()
@@ -198,7 +204,7 @@ export function OperatorShell({
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden bg-base">
-        {moreOpen ? <More onOpenSpike={() => setSpikeOpen(true)} /> : <TabContent />}
+        {moreOpen ? <More onOpenSpike={() => setSpikeOpen(true)} onOpenProjects={onOpenProjects} /> : <TabContent />}
       </main>
 
       <BottomTabBar
