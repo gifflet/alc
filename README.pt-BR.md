@@ -21,6 +21,8 @@
 
 ### [Comece em dois minutos →](https://alc-runtime.vercel.app/docs/getting-started/installation)
 
+<img src="assets/readme-hero.png" alt="A web UI do ALC: dashboard do projeto com a caixa de prompt do agente, Scorecard ao vivo, engines e runs recentes no desktop — e o mesmo control plane rodando no celular" width="960">
+
 </div>
 
 ---
