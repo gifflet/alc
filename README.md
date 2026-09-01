@@ -10,11 +10,16 @@
 
 **Declare how your agents should work once. Run it on any coding engine — with the guardrails built in.**
 
-![python](https://img.shields.io/badge/python-3.12+-blue)
-![status](https://img.shields.io/badge/status-experimental-orange)
-![engines](https://img.shields.io/badge/engines-claude%20code%20·%20gemini%20·%20mock-8A2BE2)
+[![PyPI](https://img.shields.io/pypi/v/alc-runtime?label=PyPI&color=08C)](https://pypi.org/project/alc-runtime/)
+[![CI](https://img.shields.io/github/actions/workflow/status/gifflet/alc/ci.yml?branch=main&label=CI)](https://github.com/gifflet/alc/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/alc-runtime?label=python)](https://pypi.org/project/alc-runtime/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-08C)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/gifflet/alc?style=flat&label=%E2%98%85&color=08C)](https://github.com/gifflet/alc/stargazers)
+![Platforms](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-4493F8)
 
 **English** | [Português](README.pt-BR.md)
+
+### [Get started in two minutes →](https://alc-runtime.vercel.app/docs/getting-started/installation)
 
 </div>
 
@@ -26,13 +31,26 @@ The point: best practices stop being discipline you have to remember, and become
 
 ## ✨ Highlights
 
-- 🛡️ **Guarantees outside the model** — the Assurance Loop runs your checks and repairs until they pass. Nothing is reported done until it actually is.
-- 🔌 **Engine-agnostic** — Claude Code or Gemini. Switch with a flag; the control plane doesn't change.
-- 🎯 **One agent, one purpose** — every task is a focused Single Mandate. No context pollution.
-- 🧩 **Composable** — Blueprints → Flows → a Conductor that turns a goal into the right Flows.
-- 🌙 **Unattended** — drop tasks in a queue; cron's `alc tick` drains them, isolated, while you're away.
-- 🧠 **Specialists** — agents that keep a Knowledge File and get better at an area over time.
-- 🔒 **Isolated** — `--isolate` runs the work in a throwaway git-worktree branch, so your working tree stays clean.
+- 🛡️ **Guarantees outside the model** — the [Assurance Loop](https://alc-runtime.vercel.app/docs/concepts/assurance-loop) runs your checks and repairs until they pass. Nothing is reported done until it actually is.
+- 🔌 **Engine-agnostic** — Claude Code or Gemini. Switch with a flag; the [control plane](https://alc-runtime.vercel.app/docs/concepts/control-plane) doesn't change.
+- 🎯 **One agent, one purpose** — every task is a focused [Single Mandate](https://alc-runtime.vercel.app/docs/concepts/single-mandate). No context pollution.
+- 🧩 **Composable** — [Blueprints](https://alc-runtime.vercel.app/docs/reference/blueprint) → [Flows](https://alc-runtime.vercel.app/docs/guides/flows) → a [Conductor](https://alc-runtime.vercel.app/docs/guides/conducting) that turns a goal into the right Flows.
+- 🌙 **Unattended** — drop tasks in a queue; cron's `alc tick` [drains them](https://alc-runtime.vercel.app/docs/guides/unattended), isolated, while you're away.
+- 🧠 **Specialists** — agents that keep a Knowledge File and [get better at an area](https://alc-runtime.vercel.app/docs/guides/running-units) over time.
+- 🔒 **Isolated** — `--isolate` runs the work in a [throwaway git-worktree branch](https://alc-runtime.vercel.app/docs/guides/isolation), so your working tree stays clean.
+
+## 🔌 Supported engines
+
+ALC ships no model. It drives a coding CLI you already have — and anything that speaks the [engine contract](https://alc-runtime.vercel.app/docs/reference/engine-contract) can plug in:
+
+<p>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><kbd>Claude Code</kbd></a>&nbsp;
+  <a href="https://github.com/google-gemini/gemini-cli"><kbd>Gemini CLI</kbd></a>&nbsp;
+  <kbd>Mock (free, hermetic)</kbd>&nbsp;
+  <a href="https://alc-runtime.vercel.app/docs/reference/engine-contract"><kbd>+ bring your own</kbd></a>
+</p>
+
+`alc init` probes your PATH and picks one for you; switch any time with a flag.
 
 ## 🚀 Quick Start
 
@@ -210,6 +228,12 @@ concepts, guides, and the CLI reference.
 ## 🧪 Status
 
 Experimental, but real: every feature is covered by a hermetic test suite and validated live against Claude Code and Gemini. Python 3.12 + uv, no heavy dependencies.
+
+## 💬 Community & Support
+
+- **Questions & ideas:** [GitHub Discussions](https://github.com/gifflet/alc/discussions) — or [open an issue](https://github.com/gifflet/alc/issues) for bugs and feature requests.
+- **What's new:** the [changelog](https://alc-runtime.vercel.app/changelog) tracks every release; [GitHub Releases](https://github.com/gifflet/alc/releases) carries the same list.
+- **Show support:** [star the repo](https://github.com/gifflet/alc) to follow along — releases ship often.
 
 ## 📄 License
 

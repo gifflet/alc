@@ -10,11 +10,16 @@
 
 **Declare uma vez como seus agentes devem trabalhar. Rode em qualquer coding engine — com as garantias embutidas.**
 
-![python](https://img.shields.io/badge/python-3.12+-blue)
-![status](https://img.shields.io/badge/status-experimental-orange)
-![engines](https://img.shields.io/badge/engines-claude%20code%20·%20gemini%20·%20mock-8A2BE2)
+[![PyPI](https://img.shields.io/pypi/v/alc-runtime?label=PyPI&color=08C)](https://pypi.org/project/alc-runtime/)
+[![CI](https://img.shields.io/github/actions/workflow/status/gifflet/alc/ci.yml?branch=main&label=CI)](https://github.com/gifflet/alc/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/alc-runtime?label=python)](https://pypi.org/project/alc-runtime/)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-08C)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/gifflet/alc?style=flat&label=%E2%98%85&color=08C)](https://github.com/gifflet/alc/stargazers)
+![Plataformas](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-4493F8)
 
 [English](README.md) | **Português**
+
+### [Comece em dois minutos →](https://alc-runtime.vercel.app/docs/getting-started/installation)
 
 </div>
 
@@ -33,6 +38,19 @@ A ideia central: boas práticas deixam de ser disciplina que você precisa lembr
 - 🌙 **Não-assistido** — largue tarefas numa fila; o `alc tick` (via cron) as drena, isoladas, enquanto você está fora.
 - 🧠 **Specialists** — agentes que mantêm um Knowledge File e ficam melhores numa área com o tempo.
 - 🔒 **Isolado** — `--isolate` roda o trabalho numa branch descartável de git-worktree, mantendo sua working tree limpa.
+
+## 🔌 Engines suportadas
+
+O ALC não traz modelo nenhum. Ele dirige um coding CLI que você já tem — e qualquer coisa que fale o [contrato de engine](https://alc-runtime.vercel.app/docs/reference/engine-contract) pode se plugar:
+
+<p>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><kbd>Claude Code</kbd></a>&nbsp;
+  <a href="https://github.com/google-gemini/gemini-cli"><kbd>Gemini CLI</kbd></a>&nbsp;
+  <kbd>Mock (grátis, hermético)</kbd>&nbsp;
+  <a href="https://alc-runtime.vercel.app/docs/reference/engine-contract"><kbd>+ traga o seu</kbd></a>
+</p>
+
+O `alc init` sonda seu PATH e escolhe um por você; troque a qualquer momento com uma flag.
 
 ## 🚀 Início Rápido
 
@@ -179,6 +197,12 @@ primeiros passos, conceitos, guias e a referência da CLI.
 ## 🧪 Status
 
 Experimental, mas de verdade: cada feature tem cobertura de testes herméticos e foi validada ao vivo contra Claude Code e Gemini. Python 3.12 + uv, sem dependências pesadas.
+
+## 💬 Comunidade & Suporte
+
+- **Dúvidas e ideias:** [GitHub Discussions](https://github.com/gifflet/alc/discussions) — ou [abra uma issue](https://github.com/gifflet/alc/issues) para bugs e pedidos de feature.
+- **Novidades:** o [changelog](https://alc-runtime.vercel.app/changelog) acompanha cada release; [GitHub Releases](https://github.com/gifflet/alc/releases) traz a mesma lista.
+- **Apoie:** [dê uma estrela no repo](https://github.com/gifflet/alc) para acompanhar — as releases saem com frequência.
 
 ## 📄 Licença
 
