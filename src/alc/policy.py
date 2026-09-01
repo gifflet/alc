@@ -165,6 +165,14 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                 )
             )
 
+    # Rules 16/11 accumulate here and emit AFTER the loop, grouped: on a fresh
+    # no-stack project every scaffold and pack Blueprint fires the same
+    # smoke-only warning, and printing the identical paragraph once per
+    # Blueprint buried the output of whichever command ran the lint under a
+    # wall the operator had stopped reading (dogfood round 7, finding 31).
+    smoke_only_plain: list[str] = []
+    smoke_only_by_set: dict[str, list[str]] = {}
+
     for bp in blueprints:
         # Rule 7: check_set, when set, must name a set declared in the Manifest.
         if bp.check_set is not None and bp.check_set not in manifest.check_sets:
@@ -287,19 +295,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
         # have. `plan` is exempt via is_smoke_only (a planning stage produces no
         # executable code); `mode: spike` is not, matching rule 1's treatment.
         if bp.check_set is None and is_smoke_only(manifest, bp):
-            violations.append(
-                Violation(
-                    rule="blueprint-checks-smoke-only",
-                    severity="warn",
-                    message=(
-                        f"Blueprint '{bp.name}' has only the scaffold's placeholder check "
-                        "(`smoke: [\"true\"]`), which always passes — so a SUCCESS from "
-                        "this Blueprint verifies nothing. Replace it with your real test/"
-                        "lint commands, or run `alc onboard` to adopt the ones this "
-                        "project already declares."
-                    ),
-                )
-            )
+            smoke_only_plain.append(bp.name)
 
         # Rule 11: an execution Blueprint (not `plan`) that opts into a check_set
         # but resolves to nothing but the smoke placeholder — its check_set is
@@ -308,40 +304,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
             bp.check_set is not None
             and is_smoke_only(manifest, bp)
         ):
-            # When the referenced set is empty, a DIFFERENT check_set may already be
-            # populated — e.g. the `project` set `alc onboard` harvests when the
-            # stack tooling is off PATH. A pack Blueprint hired later still points at
-            # the stack-default set, re-introducing the divergence onboard resolved;
-            # naming the populated set makes the remedy ACTIONABLE instead of the
-            # dead-end `alc checks audit` (which only reports the same off-PATH gap).
-            populated = sorted(
-                name
-                for name, checks in manifest.check_sets.items()
-                if checks and name != bp.check_set
-            )
-            if populated:
-                names = ", ".join(f"'{n}'" for n in populated)
-                remedy = (
-                    f"A populated check_set already exists ({names}) — point this "
-                    f"Blueprint at one (e.g. `check_set: {populated[0]}`), or run "
-                    "`alc checks audit`."
-                )
-            else:
-                remedy = (
-                    "Run `alc checks audit` to see what would become available."
-                )
-            violations.append(
-                Violation(
-                    rule="blueprint-checks-smoke-only",
-                    severity="warn",
-                    message=(
-                        f"Blueprint '{bp.name}' declares check_set '{bp.check_set}' but "
-                        "resolves to nothing but the smoke placeholder — check_set "
-                        f"'{bp.check_set}' is currently empty (no matching tool binary "
-                        f"on PATH). {remedy}"
-                    ),
-                )
-            )
+            smoke_only_by_set.setdefault(bp.check_set, []).append(bp.name)
 
         # Rule 14: a metric check without a direction cannot be judged — the
         # Verifier would have no way to know whether a bigger or a smaller
@@ -404,6 +367,88 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                     ),
                 )
             )
+
+    # Rule 16 emission: no check_set, and the inline checks are nothing but the
+    # scaffold's smoke placeholder. A single Blueprint keeps the original
+    # wording (tests and operators pin it); several share ONE paragraph naming
+    # them all — the fact is the same fact five times, and only the names vary.
+    if len(smoke_only_plain) == 1:
+        violations.append(
+            Violation(
+                rule="blueprint-checks-smoke-only",
+                severity="warn",
+                message=(
+                    f"Blueprint '{smoke_only_plain[0]}' has only the scaffold's placeholder check "
+                    "(`smoke: [\"true\"]`), which always passes — so a SUCCESS from "
+                    "this Blueprint verifies nothing. Replace it with your real test/"
+                    "lint commands, or run `alc onboard` to adopt the ones this "
+                    "project already declares."
+                ),
+            )
+        )
+    elif smoke_only_plain:
+        names = ", ".join(f"'{n}'" for n in smoke_only_plain)
+        violations.append(
+            Violation(
+                rule="blueprint-checks-smoke-only",
+                severity="warn",
+                message=(
+                    f"{len(smoke_only_plain)} Blueprints ({names}) have only the "
+                    "scaffold's placeholder check (`smoke: [\"true\"]`), which always "
+                    "passes — a SUCCESS from any of them verifies nothing. Replace the "
+                    "placeholders with your real test/lint commands, or run `alc "
+                    "onboard` to adopt the ones this project already declares."
+                ),
+            )
+        )
+
+    # Rule 11 emission, one violation per empty check_set: every Blueprint
+    # pointing at the same empty set shares the same cause and the same remedy.
+    # When the referenced set is empty, a DIFFERENT check_set may already be
+    # populated — e.g. the `project` set `alc onboard` harvests when the stack
+    # tooling is off PATH. A pack Blueprint hired later still points at the
+    # stack-default set, re-introducing the divergence onboard resolved; naming
+    # the populated set makes the remedy ACTIONABLE instead of the dead-end
+    # `alc checks audit` (which only reports the same off-PATH gap).
+    for set_name, bp_names in smoke_only_by_set.items():
+        populated = sorted(
+            name
+            for name, checks in manifest.check_sets.items()
+            if checks and name != set_name
+        )
+        if populated:
+            names = ", ".join(f"'{n}'" for n in populated)
+            point_target = "this Blueprint" if len(bp_names) == 1 else "them"
+            remedy = (
+                f"A populated check_set already exists ({names}) — point {point_target} "
+                f"at one (e.g. `check_set: {populated[0]}`), or run "
+                "`alc checks audit`."
+            )
+        else:
+            remedy = (
+                "Run `alc checks audit` to see what would become available."
+            )
+        if len(bp_names) == 1:
+            subject = f"Blueprint '{bp_names[0]}' declares check_set '{set_name}' but "
+        else:
+            listed = ", ".join(f"'{n}'" for n in bp_names)
+            subject = (
+                f"{len(bp_names)} Blueprints ({listed}) declare check_set "
+                f"'{set_name}' but "
+            )
+        violations.append(
+            Violation(
+                rule="blueprint-checks-smoke-only",
+                severity="warn",
+                message=(
+                    subject
+                    + "resolve" + ("s" if len(bp_names) == 1 else "")
+                    + " to nothing but the smoke placeholder — check_set "
+                    f"'{set_name}' is currently empty (no matching tool binary "
+                    f"on PATH). {remedy}"
+                ),
+            )
+        )
 
     return violations
 
