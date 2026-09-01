@@ -513,6 +513,38 @@ class TestSmokeOnlyPolicyRule:
         assert "check_set: project" in warn.message
         assert "alc checks audit" in warn.message  # kept as a secondary pointer
 
+    def test_many_smoke_only_blueprints_share_one_violation(self) -> None:
+        # Dogfood round 7, finding 31: a fresh no-stack hire printed the same
+        # three-line paragraph five times — the fact is one fact; only the
+        # names vary.
+        bps = [_blueprint(n, check_set=None) for n in ["bug", "chore", "feature", "map", "refactor"]]
+        hits = [v for v in lint(_manifest(), bps) if v.rule == "blueprint-checks-smoke-only"]
+        assert len(hits) == 1
+        assert "5 Blueprints" in hits[0].message
+        for name in ["'bug'", "'chore'", "'feature'", "'map'", "'refactor'"]:
+            assert name in hits[0].message
+        assert "alc onboard" in hits[0].message
+
+    def test_many_blueprints_on_one_empty_set_share_one_violation(self) -> None:
+        bps = [_blueprint(n, check_set="python") for n in ["chore", "test"]]
+        hits = [
+            v
+            for v in lint(self._manifest_with_empty_set(), bps)
+            if v.rule == "blueprint-checks-smoke-only"
+        ]
+        assert len(hits) == 1
+        assert "2 Blueprints" in hits[0].message
+        assert "'chore'" in hits[0].message and "'test'" in hits[0].message
+        assert "check_set 'python'" in hits[0].message
+
+    def test_two_empty_sets_emit_one_violation_each(self) -> None:
+        # Different sets are different causes with possibly different remedies —
+        # they must not collapse into one line.
+        manifest = _manifest(check_sets={"python": [], "node": []})
+        bps = [_blueprint("chore", check_set="python"), _blueprint("test", check_set="node")]
+        hits = [v for v in lint(manifest, bps) if v.rule == "blueprint-checks-smoke-only"]
+        assert len(hits) == 2
+
     def test_hint_falls_back_to_audit_when_no_populated_alternative(self) -> None:
         # With no other populated set, the actionable pointer has nothing to name,
         # so the original `alc checks audit` remedy is preserved unchanged.
