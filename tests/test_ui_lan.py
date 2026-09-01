@@ -21,8 +21,16 @@ def _args(**over) -> argparse.Namespace:
 
 
 @pytest.fixture
-def served(monkeypatch):
-    """Run cmd_ui without actually serving; capture what uvicorn was asked to bind."""
+def served(monkeypatch, tmp_path):
+    """Run cmd_ui without actually serving; capture what uvicorn was asked to bind.
+
+    The registry path AND the cwd are both isolated here, because cmd_ui
+    registers the project it finds above the cwd into the SHARED
+    ~/.alc/ui/projects.json. Without this, every `pytest` run inside an
+    isolated worktree registered that worktree as a project — the operator's
+    switcher grew one dead temp-dir ghost per drained task (seven of them, in
+    the dogfood round that caught it).
+    """
     seen: dict = {}
 
     def fake_run(app, host, port):
@@ -31,6 +39,10 @@ def served(monkeypatch):
 
     monkeypatch.setattr("uvicorn.run", fake_run)
     monkeypatch.setattr("alc.ui.server.create_app", lambda *a, **k: object())
+    registry = tmp_path / "projects.json"
+    monkeypatch.setattr("alc.ui.registry.default_registry_path", lambda: registry)
+    monkeypatch.setattr("alc.cli.default_registry_path", lambda: registry, raising=False)
+    monkeypatch.chdir(tmp_path)
     return seen
 
 

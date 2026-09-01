@@ -58,9 +58,17 @@ def default_root() -> Path:
 
 
 def _classify(directory: Path) -> tuple[bool, bool]:
-    """Whether the directory is an ALC project and/or a git repository."""
+    """Whether the directory is an ALC project and/or a git repository.
+
+    The project test is the MANIFEST, not the bare `.alc` directory — the same
+    test the registry enforces on register. With the directory test alone,
+    `~/.alc/` (the tool's own global state) made $HOME read as "Ready to
+    register — this is an ALC project", and tapping the offered button ran
+    straight into the registry's refusal. The browser must not promise what
+    the registry will reject.
+    """
     try:
-        return (directory / ".alc").is_dir(), (directory / ".git").exists()
+        return (directory / ".alc" / "manifest.yaml").is_file(), (directory / ".git").exists()
     except OSError:
         # A directory we cannot stat is simply neither, rather than a failure.
         return False, False

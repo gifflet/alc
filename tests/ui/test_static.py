@@ -142,8 +142,14 @@ def _ui_args(**overrides) -> argparse.Namespace:
 
 
 @pytest.fixture
-def stub_uvicorn(monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Prevent cmd_ui from actually blocking on a real server."""
+def stub_uvicorn(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
+    """Prevent cmd_ui from actually blocking on a real server.
+
+    Registry and cwd isolated for the same reason as test_ui_lan's fixture:
+    cmd_ui writes the project above the cwd into the shared registry, and a
+    pytest run inside a worktree was registering that worktree as a ghost
+    project.
+    """
     calls: dict = {}
     import uvicorn
 
@@ -152,6 +158,10 @@ def stub_uvicorn(monkeypatch: pytest.MonkeyPatch) -> dict:
         calls["port"] = port
 
     monkeypatch.setattr(uvicorn, "run", _fake_run)
+    registry = tmp_path / "projects.json"
+    monkeypatch.setattr("alc.ui.registry.default_registry_path", lambda: registry)
+    monkeypatch.setattr("alc.cli.default_registry_path", lambda: registry, raising=False)
+    monkeypatch.chdir(tmp_path)
     return calls
 
 

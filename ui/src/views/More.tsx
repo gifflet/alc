@@ -3,7 +3,7 @@
 // The phone keeps five resident destinations; the rest stay reachable here
 // rather than being cut. Config is included because reading a Blueprint is a
 // legitimate phone task — editing it is not (SourceEditor is read-only there).
-import { ChevronRight, SunMoon, Zap } from 'lucide-react'
+import { ChevronRight, SunMoon, Zap, FolderOpen } from 'lucide-react'
 import {
   FileCog,
   GitCompare,
@@ -49,7 +49,7 @@ const VIEW_TITLE: Record<string, string> = {
   'run-configs': 'Run Configurations',
 }
 
-export function More({ onOpenSpike }: { onOpenSpike?: () => void }) {
+export function More({ onOpenSpike, onOpenProjects }: { onOpenSpike?: () => void; onOpenProjects?: () => void }) {
   const theme = useTheme()
   return (
     <div className="h-full overflow-auto">
@@ -72,6 +72,28 @@ export function More({ onOpenSpike }: { onOpenSpike?: () => void }) {
             </button>
           </li>
         ))}
+        {/* Projects is a DOOR, not a view inside this project — the selector
+            can register, clone or create a project. Desktop has always had it
+            on the rail; without this row a phone could not add a project at
+            all. */}
+        {onOpenProjects && (
+          <li>
+            <button
+              type="button"
+              onClick={onOpenProjects}
+              className="flex min-h-[var(--ui-rail-btn)] w-full items-center gap-3 border-b border-border/15 px-[var(--ui-pad-x)] py-2 text-left hover:bg-hover"
+            >
+              <FolderOpen className="h-5 w-5 shrink-0 text-faint" strokeWidth={1.75} />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[length:var(--ui-text-body)] text-primary">Projects</span>
+                <span className="truncate text-[length:var(--ui-text-label)] text-faint">
+                  Switch, register or create a project
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+            </button>
+          </li>
+        )}
         {/* Spike is an action, not a destination, so it has no bottom tab and
             no view to open. Without this row the phone simply cannot start one —
             a capability the desktop rail has always had. */}

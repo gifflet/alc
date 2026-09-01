@@ -63,20 +63,31 @@ export function ProjectSelector({
   // clean, or the operator registers a directory that has no manifest yet.
   useEffect(() => {
     if (!adoptExec || !client) return
-    return client.on((msg) => {
-      if (msg.type === 'exec_finished' && msg.exec_id === adoptExec) {
-        setAdoptExec(null)
-        if (msg.exit_code === 0 && adoptPath) {
-          setPath(adoptPath)
-          // Asking to set ALC up here IS asking for the project. Filling the
-          // field and stopping makes the operator hunt for a second button to
-          // finish something they already asked for.
-          add.mutate()
-        } else {
-          setAdoptError(`alc init exited with code ${msg.exit_code}`)
-        }
+    const finish = (exitCode: number | null) => {
+      setAdoptExec(null)
+      if (exitCode === 0 && adoptPath) {
+        setPath(adoptPath)
+        // Asking to set ALC up here IS asking for the project. Filling the
+        // field and stopping makes the operator hunt for a second button to
+        // finish something they already asked for.
+        add.mutate()
+      } else {
+        setAdoptError(`alc init exited with code ${exitCode}`)
       }
+    }
+    const off = client.on((msg) => {
+      if (msg.type === 'exec_finished' && msg.exec_id === adoptExec) finish(msg.exit_code)
     })
+    // The subscribe races the subprocess: a small scaffold exits in
+    // milliseconds, so exec_finished can publish BEFORE this effect runs and
+    // the completion is lost — the operator taps "Set up ALC here", the .alc/
+    // appears on disk, and nothing on screen ever finishes. Ask once for the
+    // current state; whichever side answers first wins, the loser no-ops on
+    // the cleared adoptExec.
+    void api.getExec(adoptExec).then((ex) => {
+      if (ex.status !== 'running') finish(ex.exit_code ?? null)
+    }).catch(() => {})
+    return off
   }, [adoptExec, client, adoptPath, add])
 
   const remove = useMutation({

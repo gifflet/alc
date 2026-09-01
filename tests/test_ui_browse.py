@@ -35,7 +35,10 @@ def test_hides_dot_directories_unless_asked(tmp_path):
 
 def test_marks_alc_projects_and_git_repos(tmp_path):
     project = tmp_path / "a-project"
+    # The manifest is the project test — a bare .alc/ made ~/.alc (global
+    # state) read as a project and the browser offered $HOME for registration.
     (project / ".alc").mkdir(parents=True)
+    (project / ".alc" / "manifest.yaml").write_text("version: 1\n")
     repo = tmp_path / "a-repo"
     (repo / ".git").mkdir(parents=True)
     plain = tmp_path / "plain"

@@ -342,6 +342,7 @@ export const api = {
 
   // Execs
   listExecs: () => request<ExecView[]>('/api/execs'),
+  getExec: (execId: string) => request<ExecView>(`/api/execs/${encodeURIComponent(execId)}`),
   startExec: (id: string, command: string, args: Record<string, unknown> = {}) =>
     request<{ exec_id: string }>(`${proj(id)}/exec`, {
       method: 'POST',
