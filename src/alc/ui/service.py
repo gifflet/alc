@@ -38,7 +38,14 @@ from alc.loop import ledger_path, load_loop_state, loops_dir, state_path
 from alc.manifestedit import validate_manifest_text
 from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
-from alc.packs import PACKS, hired_archetypes, pack_files, split_pack_files
+from alc.packs import (
+    PACKS,
+    hired_archetypes,
+    pack_files,
+    remove_pack,
+    retired_pack_loops,
+    split_pack_files,
+)
 from alc.policy import lint as _lint
 from alc.policy import (
     coverage_report,
@@ -893,7 +900,20 @@ def team_roster(root: Path) -> dict:
                         "stopped_reason": state.stopped_reason,
                     }
                 )
-        members.append({"archetype": archetype, "files": present, "loops": member_loops})
+        members.append(
+            {
+                "archetype": archetype,
+                "files": present,
+                "loops": member_loops,
+                # Loops a retire archived: absent from `present`, so the loop
+                # list above cannot see them — but the member card needs to
+                # show "loops archived" instead of a dead Archive button.
+                # Same helper `_team_roster` reads, so the two rosters agree.
+                "retired_loops": retired_pack_loops(
+                    archetype, stacks, root, manifest.loops_dir
+                ),
+            }
+        )
 
     done_dir = root / manifest.queue_dir / "done"
     # Same roster mapping the CLI passes (hired archetype -> its loop names), so
@@ -983,6 +1003,27 @@ def team_retire(root: Path, member: str) -> dict:
         moved.append(str(dest.relative_to(root)))
 
     return {"moved": moved}
+
+
+def team_remove(root: Path, member: str) -> dict:
+    """Delete *member*'s UNMODIFIED pack files; return {removed, kept}.
+
+    Mirrors `_team_remove`'s contract exactly, via the same `packs.remove_pack`
+    computation: only files byte-identical to what the pack would write today
+    are deleted (including a retired loop's archived copy under
+    `loops/retired/`); customised files are KEPT and returned in ``kept`` — a
+    non-empty ``kept`` means the member stays on the roster. Both lists empty
+    means nothing of the pack was on disk (a no-op, never an error). An
+    unknown archetype is ApiError(404), naming the valid ones (`PACKS`'s keys).
+    """
+    if member not in PACKS:
+        available = ", ".join(sorted(PACKS)) or "none yet"
+        raise ApiError(f"no pack named '{member}' yet (available: {available})", status=404)
+
+    ol = operator_layer(root)
+    manifest = load_manifest(ol)
+    removed, kept = remove_pack(member, detect_stacks(root), root, manifest.loops_dir)
+    return {"removed": removed, "kept": kept}
 
 
 # ---------------------------------------------------------------------------

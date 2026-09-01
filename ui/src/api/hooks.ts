@@ -530,3 +530,14 @@ export function useRetireMember(id: string) {
     },
   })
 }
+
+export function useRemoveMember(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (archetype: string) => api.removeMember(id, archetype),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.team(id) })
+      qc.invalidateQueries({ queryKey: keys.collections(id) })
+    },
+  })
+}

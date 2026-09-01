@@ -187,8 +187,10 @@ for one of the five roles a codebase moves through over its life. `alc team hire
 <archetype>` writes a pack's files (refusing to overwrite existing ones without
 `--force`) and lints the result; `alc team list`/`status` rosters what is hired and
 the state of any Loops a member brought; `alc team retire <member>` archives — never
-deletes — a member's Loop definitions. Packs are the implementation; `team` is the
-only verb an operator sees.
+deletes — a member's Loop definitions (the member stays hired); `alc team remove
+<member>` deletes the pack files that still match the pack defaults, keeping anything
+you customised. Packs are the implementation; `team` is the only verb an operator
+sees.
 
 | Archetype | Role | What the pack ships |
 |---|---|---|

@@ -320,3 +320,41 @@ Owed: the final on-device screenshot of the described Hire buttons — the
 device dropped to wifi adb mid-round and its CDP socket stopped answering.
 Every change is pinned by tests (2584 backend, 635 frontend) and the CLI
 halves were proven live before the link fell.
+
+## Round 6 — the retire question (2026-09-01)
+
+The operator retired the sweeper from the phone and then asked the right
+question: "the button went disabled, but sweeper did not go back to Available
+packs — should that happen?" It did exactly what was designed, which is how
+the design was caught being wrong.
+
+### 28. [stumble — FIXED] Retire is not un-hire, and nothing said so
+
+Membership is "any pack file on disk", so retiring (which only archives
+loops) can never take a member off the roster. Post-retire the card showed a
+permanently disabled Retire button and an unchanged roster: a dead end that
+read as a broken app. Three fixes, both surfaces:
+
+- **The verb now tells the truth.** The button says "Archive loops"; the
+  dialog matches. `alc team retire` on an already-archived member answers
+  "already archived in .alc/loops/retired/: sweep" instead of a bare no-op.
+- **The state replaced the dead control.** After archiving, the card shows a
+  "loops archived" pill and the loop row reads "sweep — archived — in
+  loops/retired/". Both rosters (`alc team list` and GET /team) carry
+  `retired_loops`, computed by one shared helper.
+- **The exit now exists.** `alc team remove <member>` / the card's Remove
+  button delete only files byte-identical to what the pack would write today
+  — customised files are kept, listed, and keep the member on the roster —
+  so the operation cannot destroy work and `hire` reverses it exactly.
+  Validated live on the recipes project, where remove correctly KEPT a
+  drifted refactor.md and said why.
+
+### 29. [papercut — FIXED] One no-loops idea, two costumes
+
+Follow-up question mid-fix: builder (never had loops) showed a disabled
+"Archive loops" button while sweeper (loops archived) showed the pill — two
+different renderings sitting one card apart for what reads as one state, and
+the disabled button's explanatory tooltip is unreachable on a phone. The
+states ARE different, but a control that can never fire is noise: a pack
+with no loops now shows no archive control at all, and the pill appears only
+where there is a state to report.

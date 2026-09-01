@@ -28,6 +28,16 @@ class RetireBody(BaseModel):
     archetype: str
 
 
+class RemoveBody(BaseModel):
+    """Body for POST /team/remove: the archetype (member) to remove.
+
+    Named `archetype` like `HireBody`/`RetireBody` — remove is hire's inverse,
+    so their bodies stay consistent.
+    """
+
+    archetype: str
+
+
 @router.get("/team")
 def get_team(ctx: ProjectContext = Depends(get_project)) -> dict:
     return service.team_roster(ctx.root)
@@ -48,6 +58,15 @@ def retire(
 ) -> dict:
     result = service.team_retire(ctx.root, body.archetype)
     _notify_files_changed(request, ctx, result["moved"])
+    return result
+
+
+@router.post("/team/remove")
+def remove(
+    body: RemoveBody, request: Request, ctx: ProjectContext = Depends(get_project)
+) -> dict:
+    result = service.team_remove(ctx.root, body.archetype)
+    _notify_files_changed(request, ctx, result["removed"])
     return result
 
 

@@ -447,6 +447,9 @@ export interface TeamMember {
   archetype: string
   files: string[]
   loops: TeamMemberLoop[]
+  /** Loop names a retire archived into `loops/retired/` — absent from `loops`
+   * (the live file is gone), but the card must say so, not go silent. */
+  retired_loops: string[]
 }
 
 /** One archetype's aggregate spend across archived reports. `archetype` is
@@ -498,6 +501,14 @@ export interface HireResult {
 /** POST /team/retire's response: the loop file(s) archived into `loops/retired/`. */
 export interface RetireResult {
   moved: string[]
+}
+
+/** POST /team/remove's response: pack files deleted (byte-identical to the
+ * pack defaults) vs kept (customised — a non-empty `kept` means the member
+ * stays on the roster). */
+export interface RemoveResult {
+  removed: string[]
+  kept: string[]
 }
 
 // ---------------------------------------------------------------------------

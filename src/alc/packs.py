@@ -689,3 +689,109 @@ def hired_archetypes(project_root: Path) -> list[str]:
         if any((project_root / rel).exists() for rel in files):
             hired.append(archetype)
     return hired
+
+
+def _retired_twin(rel: str, loops_dir_rel: str) -> str | None:
+    """The `loops/retired/` path a retire would move *rel* to, or None.
+
+    Only loop definitions are ever archived (`alc team retire` moves
+    `<loops_dir>/<name>.yaml` to `<loops_dir>/retired/<name>.yaml`), so every
+    other pack file has no twin.
+    """
+    prefix = f"{loops_dir_rel}/"
+    if rel.startswith(prefix) and rel.endswith(".yaml"):
+        return f"{loops_dir_rel}/retired/{Path(rel).name}"
+    return None
+
+
+def retired_pack_loops(
+    archetype: str,
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path,
+    loops_dir_rel: str,
+) -> list[str]:
+    """Names of *archetype*'s loops archived in `<loops_dir>/retired/`, sorted.
+
+    A loop counts as retired when its pack path is ABSENT at the live location
+    but present at the retired twin — exactly the state `alc team retire`
+    leaves behind. Both rosters (CLI `_team_roster` and `ui.service.team_roster`)
+    read this so the member card can say "loops archived" instead of showing a
+    dead Archive button, and so neither surface invents its own definition.
+
+    Args:
+        archetype: Pack name — must be a key of PACKS.
+        stacks: detect_stacks() output, threaded through to `pack_files`.
+        project_root: The project directory the rel-paths resolve against.
+        loops_dir_rel: The manifest's `loops_dir` (project-relative, no slash).
+    """
+    retired: list[str] = []
+    for rel in pack_files(archetype, stacks):
+        twin = _retired_twin(rel, loops_dir_rel)
+        if twin is None:
+            continue
+        if not (project_root / rel).exists() and (project_root / twin).exists():
+            retired.append(Path(rel).stem)
+    return sorted(retired)
+
+
+def remove_pack(
+    archetype: str,
+    stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    project_root: Path,
+    loops_dir_rel: str,
+) -> tuple[list[str], list[str]]:
+    """Delete *archetype*'s UNMODIFIED pack files; return (removed, kept).
+
+    The inverse of `alc team hire`, with the same respect for the operator's
+    edits that hire's additive default shows: a file is deleted only when its
+    on-disk content is byte-identical to what the pack would write today —
+    anything the operator customised is KEPT and reported, never destroyed.
+    Deleting only pack-identical content makes the operation reversible: `alc
+    team hire` rewrites exactly what was removed.
+
+    Loop definitions are checked at BOTH locations — the live path and the
+    `loops/retired/` twin a retire leaves behind — so removing a retired member
+    does not orphan its archived loop. Loop state/ledger files are run history,
+    not pack content, and are never touched.
+
+    Args:
+        archetype: Pack name — must be a key of PACKS.
+        stacks: detect_stacks() output, threaded through to `pack_files`.
+        project_root: The project directory the rel-paths resolve against.
+        loops_dir_rel: The manifest's `loops_dir` (project-relative, no slash).
+
+    Returns:
+        (removed rel-paths, kept rel-paths), both sorted. Kept lists only files
+        that EXIST and differ from the pack default; absent files appear in
+        neither. Both empty means there was nothing of the pack on disk.
+
+    Raises:
+        KeyError: If *archetype* is not (yet) a registered pack.
+    """
+    removed: list[str] = []
+    kept: list[str] = []
+    for rel, content in pack_files(archetype, stacks).items():
+        candidates = [rel]
+        twin = _retired_twin(rel, loops_dir_rel)
+        if twin is not None:
+            candidates.append(twin)
+        for candidate in candidates:
+            path = project_root / candidate
+            if not path.exists():
+                continue
+            try:
+                unmodified = path.read_text(encoding="utf-8") == content
+            except OSError:
+                unmodified = False  # unreadable -> never delete
+            if unmodified:
+                path.unlink()
+                removed.append(candidate)
+            else:
+                kept.append(candidate)
+    # A retire creates loops/retired/ on demand; removing its last file may
+    # leave the empty shell behind. Best-effort rmdir, never an error.
+    try:
+        (project_root / loops_dir_rel / "retired").rmdir()
+    except OSError:
+        pass
+    return sorted(removed), sorted(kept)
