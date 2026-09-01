@@ -27,7 +27,15 @@ export function ProjectSelector({
   const { client } = useWs()
   const { data: projects, isLoading } = useProjects()
   const [path, setPath] = useState('')
-  const [browsing, setBrowsing] = useState(false)
+  // Browse leads on a touch screen: the typed absolute path was the primary
+  // affordance, on a phone keyboard, for people who may not know what an
+  // absolute path is (dogfood finding 20). Desktop keeps the typed field first.
+  const [browsing, setBrowsing] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches,
+  )
   const [removing, setRemoving] = useState<string | null>(null)
   const [mode, setMode] = useState<'register' | 'clone' | 'new'>('register')
   const [adoptExec, setAdoptExec] = useState<string | null>(null)
@@ -258,7 +266,24 @@ export function ProjectSelector({
             {adoptError && (
               <p className="text-[length:var(--ui-text-label)] text-error">{adoptError}</p>
             )}
-            {addError && <p className="text-[length:var(--ui-text-label)] text-error">{addError}</p>}
+            {addError && (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[length:var(--ui-text-label)] text-error">{addError}</p>
+                {/* "not an ALC project" is true and a dead end — the door that
+                    solves it lived only inside Browse (dogfood finding 19).
+                    Offer it where the wall is. */}
+                {/not an ALC project/.test(addError) && (
+                  <ActionButton
+                    onClick={() => adopt.mutate(path.trim())}
+                    tone="accent"
+                    size="sm"
+                    className="self-start"
+                  >
+                    Set up ALC here instead
+                  </ActionButton>
+                )}
+              </div>
+            )}
           </div>
         </form>
         )}

@@ -241,39 +241,82 @@ past them.
 
 ### Recorded, for the next round
 
-19. [stumble] The Register-existing error — "no .alc/manifest.yaml under … —
+19. [stumble — FIXED] The Register-existing error — "no .alc/manifest.yaml under … —
     not an ALC project" — is true and a dead end. The door that solves it
     ("Set up ALC here", with the excellent "A git repository. Set ALC up here
     to start using it." hint) exists ONLY inside Browse. The error should
     offer it.
-20. [papercut] The primary register affordance is a typed absolute path — on a
+20. [papercut — FIXED] The primary register affordance is a typed absolute path — on a
     phone keyboard, for a persona who does not know what an absolute path is.
     Browse exists; it should lead.
-21. [papercut] `/` lands inside the first registered project. A newcomer
+21. [papercut — FIXED] `/` lands inside the first registered project. A newcomer
     arrives inside someone else's dashboard.
-22. [BLOCKER-class, both surfaces] Choosing an archetype is guesswork. The
+22. [BLOCKER-class — FIXED on both surfaces] Choosing an archetype is guesswork. The
     phone's Team screen shows five bare "Hire X" buttons with zero
     descriptions. The CLI's `alc team list` with no members prints ONLY "Run:
     alc team hire <archetype>" — no names, no descriptions — despite init
     promising "prebuilt agent teams" behind that exact command. The one-line
     descriptions exist in the docs table; neither surface carries them.
-23. [papercut] `alc team hire <bad-name>` prints [ERROR] and exits 0.
-24. [stumble] After a hire, no next step anywhere: the roster lists five FILE
+23. [RETRACTED] `alc team hire <bad-name>` prints [ERROR] and exits 0.
+24. [stumble — FIXED] After a hire, no next step anywhere: the roster lists five FILE
     PATHS (honest, meaningless to her) and nothing says "run your new
     refactor with …".
-25. [stumble] StartWork hardcodes `chore`: the blueprint she just hired is
+25. [stumble — FIXED] StartWork hardcodes `chore`: the blueprint she just hired is
     unreachable from the phone's main entry point. The only phone path is
     Queue → Enqueue → kind "blueprint" (round 3's feature) → Drain — which
     worked, and which she would never find.
-26. [sharp] Her Inbox said `verified: True` about the sweeper's branch — and
+26. [sharp — FIXED] Her Inbox said `verified: True` about the sweeper's branch — and
     her only check is the scaffold placeholder that always passes. Technically
     true, materially misleading for exactly the person who trusts the word.
     A1 one level deeper: `verified` earned by smoke-only checks deserves a
     qualifier (rule 16 already knows the project is smoke-only).
-27. [note] The sweeper deleted her personal comment ("made with AI help!")
+27. [note — FIXED in the pack] The sweeper deleted her personal comment ("made with AI help!")
     while modernizing — charter-consistent, harmless, and exactly the kind of
     loss "read the diff" exists for and this persona never will.
 28. [good] The Retire dialog is exemplary: "Nothing is deleted, and sweeper
     STAYS on the roster — its blueprints, flows and specialists are left
     alone." Calming, precise, honest. The hire mechanics (5 files, additive,
     idempotent) behaved perfectly throughout.
+
+## Round 5 resolution — every finding acted on
+
+- **19**: the "not an ALC project" error now offers "Set up ALC here instead"
+  right where the wall is.
+- **20**: Browse opens by default on coarse pointers; desktop keeps the typed
+  field first.
+- **21**: `/` auto-forwards only when there is exactly ONE project; with
+  several, the selector is the front door.
+- **22**: descriptions on both surfaces, one wording (packs.py's
+  PACK_DESCRIPTIONS, statically mirrored in Team.tsx per that file's declared
+  pattern): a memberless `alc team list` now lists all five packs described,
+  and every Hire button carries its line. Roster members show what they ARE,
+  not just their file paths.
+- **23**: RETRACTED — the exit code was 1 all along; my probe measured
+  `head`'s exit at the end of a pipeline. The lesson is structural: never read
+  `$?` after a pipe.
+- **24**: `alc team hire` ends with one pack-specific next action
+  ("Next: alc run refactor …"), the same golden-path rule init follows.
+- **25**: StartWork gained a Blueprint selector (chore default, hidden when
+  only one exists) — a hired blueprint is now reachable from the phone's main
+  entry point.
+- **26**: an Inbox item whose project's every execution Blueprint is
+  smoke-only now reads "only the placeholder check ran (it cannot fail); read
+  the diff before landing" instead of the unqualified "ready to land".
+  Projects with real checks keep the original wording, pinned by tests both
+  ways.
+- **27**: the sweeper's refactor workflow now instructs the engine to preserve
+  the author's comments unless factually wrong.
+
+Chasing 26's test earned the study its best meta-lesson twice over: the
+fixture's `alc init` COMMITS the scaffold, so the test's uncommitted blueprint
+edits were silently reverted by the branch-helper's checkout — and two
+substring probes ("pytest" in the file) matched the scaffold's own comment
+text, insisting the edits were live when they were gone. Never probe with a
+substring the scaffold also contains; never trust `$?` after a pipe; a content
+file is not the page; a rebuilt bundle is not the tab. One lesson, four
+costumes.
+
+Owed: the final on-device screenshot of the described Hire buttons — the
+device dropped to wifi adb mid-round and its CDP socket stopped answering.
+Every change is pinned by tests (2584 backend, 635 frontend) and the CLI
+halves were proven live before the link fell.

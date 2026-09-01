@@ -110,8 +110,35 @@ def test_the_inbox_reason_says_the_checks_did_not_pass(tmp_path, monkeypatch) ->
     assert "ready to land" not in item["reason"]
 
 
-def test_a_verified_branch_keeps_the_original_wording(tmp_path, monkeypatch) -> None:
+def test_a_verified_branch_on_a_smoke_only_project_is_qualified(tmp_path, monkeypatch) -> None:
+    # This fixture is a fresh `alc init` with no stack: every check is the
+    # placeholder that cannot fail. "verified" earned that way is technically
+    # true and materially misleading — the junior operator's finding (dogfood
+    # 26) — so the reason now says what actually ran.
     root = _project(tmp_path, monkeypatch)
+    _branch(root, "alc/run-7777aaaa")
+    (root / ".alc" / "runs").mkdir(parents=True, exist_ok=True)
+    (root / ".alc" / "runs" / "alc-run-7777aaaa.report.json").write_text("{}")
+
+    item = next(i for i in inbox_mod._branches(root) if i["branch"].endswith("7777aaaa"))
+    assert item["verified"] is True
+    assert "only the placeholder check ran" in item["reason"]
+    assert "read the diff" in item["reason"]
+
+
+def test_a_verified_branch_with_real_checks_keeps_the_original_wording(
+    tmp_path, monkeypatch
+) -> None:
+    root = _project(tmp_path, monkeypatch)
+    for name in ("chore", "bug", "feature"):
+        bp = root / ".alc" / "blueprints" / f"{name}.md"
+        bp.write_text(bp.read_text().replace('command: ["true"]', 'command: ["pytest", "-q"]'))
+    # Commit the edits: `alc init` commits the scaffold on the default branch,
+    # and _branch's checkout back to it silently reverts uncommitted blueprint
+    # edits — this test's first draft asserted against the scaffold while
+    # believing it had real checks.
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "real checks"], cwd=root, check=True, capture_output=True)
     _branch(root, "alc/run-7777aaaa")
     (root / ".alc" / "runs").mkdir(parents=True, exist_ok=True)
     (root / ".alc" / "runs" / "alc-run-7777aaaa.report.json").write_text("{}")
