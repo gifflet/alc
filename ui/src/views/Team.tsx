@@ -265,8 +265,19 @@ export function Team() {
 
       {available.length > 0 && (
         <section>
-          <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Hire</h2>
-          <div className="flex flex-wrap gap-2">
+          {/* Named for the CONTENT, not the verb: each row carries its own
+              Hire button now, so a section called "Hire" labelled nothing —
+              and the CLI already says "Available packs:", so both surfaces
+              use one word for one thing. */}
+          <h2 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+            Available packs
+          </h2>
+          {/* A grid, not the button era's flex-wrap it replaced: wrap made each
+              row size to its content, so on a desktop the cards sat side by
+              side at five different widths. The Dashboard's responsive-grid
+              idiom keeps them equal — one column on a phone, two on a desktop
+              panel, three when the window is wide. */}
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {/* The same row anatomy the roster establishes one section above —
                 name leading, description under it, a compact action on the
                 right — because an available archetype is the SAME object as a
