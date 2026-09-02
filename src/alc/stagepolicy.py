@@ -1,4 +1,4 @@
-# stagepolicy.py — the product stage as control-plane data (roadmap-phase-4.md T5/T6/T7).
+# stagepolicy.py — the product stage as control-plane data.
 #
 # `Manifest.stage` declares which growth stage the product is in (the essay this
 # roadmap comes from: pre-pmf / growth / strong-pmf). STAGE_MIX below is the
@@ -9,7 +9,7 @@
 # Every rule `lint_stage` reports is ADVISORY (warn, or error only for a
 # malformed `stage_mix` override itself) — the stage never changes how a
 # mandate executes; its authority is limited to warns, reports (`mix_health`,
-# T6; `validate_stage_mix`, T7) and scaffolding. A Blueprint with no
+# `validate_stage_mix`) and scaffolding. A Blueprint with no
 # `archetype` — and a Conductor `PlannedUnit` with no determinable one — is
 # NEVER penalised by any rule here; that is what keeps the taxonomy from
 # turning into paperwork.
@@ -161,7 +161,7 @@ def lint_stage(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violatio
 
 
 # ---------------------------------------------------------------------------
-# Mix Health (roadmap-phase-4.md T6) — `RunReport.archetype` aggregated over
+# Mix Health — `RunReport.archetype` aggregated over
 # the archived reports and compared with the stage's target mix.
 # ---------------------------------------------------------------------------
 
@@ -203,8 +203,7 @@ class IdleCoreArchetype:
 @dataclass
 class MixHealthReport:
     """`alc team status`'s answer to "is the autonomous work the right work
-    for this product's stage?" (roadmap-phase-4.md T6, the essay's central
-    question). `stage`/`core`/`secondary` are None/[] when no stage is
+    for this product's stage?". `stage`/`core`/`secondary` are None/[] when no stage is
     declared: the breakdown is still built, just never judged against a mix.
     `total_runs == 0` means no archived report exists yet — render that as
     "no data yet", never a division by zero or a misleading all-zero table.
@@ -316,7 +315,7 @@ def mix_health(
 
 
 # ---------------------------------------------------------------------------
-# Conductor stage-awareness (roadmap-phase-4.md T7) — TWO parts with DIFFERENT
+# Conductor stage-awareness — TWO parts with DIFFERENT
 # guarantees:
 #   (a) `stage_briefing` — a PROSE nudge folded into the Conductor's planning
 #       directive. Probabilistic: the planning model may weigh it, may ignore
@@ -332,7 +331,7 @@ def mix_health(
 
 
 def stage_briefing(manifest: Manifest) -> str | None:
-    """Return prose describing `manifest.stage`'s target mix, or None (T7a).
+    """Return prose describing `manifest.stage`'s target mix, or None.
 
     Appended to the Conductor's planning directive (see ``conduct.plan_flows``)
     so a planning model WITH the stage in view can weigh it — but this is a
@@ -427,7 +426,7 @@ def validate_stage_mix(
     specialists: dict[str, Specialist],
     blueprints: dict[str, Blueprint],
 ) -> list[Violation]:
-    """The DETERMINISTIC guarantee behind Conductor stage-awareness (T7b).
+    """The DETERMINISTIC guarantee behind Conductor stage-awareness.
 
     Unlike `stage_briefing` (a prose nudge the planner may ignore), this runs
     in plain code AFTER the plan has already come back — and it is what the

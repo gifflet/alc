@@ -175,7 +175,7 @@ class TestPackFilesBuilder:
 
 # ---------------------------------------------------------------------------
 # Every scaffolded pack must pass `alc lint` first time — a contract
-# (roadmap-phase-2.md invariant). Parametrized over every registered pack, every
+#. Parametrized over every registered pack, every
 # detectable stack (plus none), and BOTH binary-availability scenarios: the trap
 # found while verifying Wave 1 is that with no scanner (or ANY) binary on PATH, a
 # check_set can resolve to an empty list, so a pack Blueprint must never depend
@@ -217,7 +217,7 @@ def _lint_errors(tmp_path: Path) -> list:
 
 
 class TestEveryPackLintsClean:
-    """Every scaffolded pack must pass `alc lint` first time (roadmap-phase-2.md)."""
+    """Every scaffolded pack must pass `alc lint` first time."""
 
     @pytest.mark.parametrize("archetype", sorted(PACKS))
     @pytest.mark.parametrize("stack_key", sorted(_STACK_MARKERS))

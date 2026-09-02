@@ -1,4 +1,4 @@
-# test_flaky.py — Hermetic tests for roadmap-phase-3.md T11: `flaky: N` per
+# test_flaky.py — Hermetic tests for `flaky: N` per
 # check (the Verifier reruns a failing check before an engine repair turn is
 # spent) plus declarative quarantine (`manifest.quarantined_checks`: a check
 # still runs but can never fail the run, and the Policy Gate warns forever).

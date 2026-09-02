@@ -197,7 +197,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(task),
     }),
-  /** Batch enqueue (ui-phase-5.md T9): each entry has the same shape as a single
+  /** Batch enqueue: each entry has the same shape as a single
    * task, sharing no write path with `enqueueTask` beyond the backend's own
    * per-item `enqueue`. */
   enqueueBatch: (id: string, tasks: Partial<QueueTask>[]) =>

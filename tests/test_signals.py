@@ -1,4 +1,4 @@
-# test_signals.py — Hermetic tests for roadmap-phase-5.md T1 (signal intake):
+# test_signals.py — Hermetic tests for signal intake:
 # (a) Manifest.signals_dir.
 # (b) Signal — the typed pydantic model.
 # (c) ingest — writes one typed JSON file under signals_dir, returns its path.

@@ -1,4 +1,4 @@
-# test_replenish_regression.py — Hermetic tests for roadmap-phase-5.md T5: the
+# test_replenish_regression.py — Hermetic tests for the
 # `regression` replenish kind (models.Replenish + loop.run_replenish) — the
 # mechanism that closes the Grower's loop over a measured regression.
 #

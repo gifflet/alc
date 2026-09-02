@@ -1,4 +1,4 @@
-# signals.py — Signal intake (roadmap-phase-5.md T1): the typed JSON files a
+# signals.py — Signal intake: the typed JSON files a
 # real-usage source (an error tracker, user feedback, an issue tracker, a code
 # review) drops into `manifest.signals_dir`, and the read/archive functions
 # the `signals` replenish kind (loop.py) and `alc signal` (cli.py) both build on.

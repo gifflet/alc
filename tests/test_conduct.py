@@ -139,7 +139,7 @@ class TestParsePlanTouches:
 
 
 class TestParsePlanImpact:
-    """Optional evidence-based `impact` field (roadmap-phase-2.md T12) — ZERO
+    """Optional evidence-based `impact` field — ZERO
     runtime effect, same reporting-only contract as Blueprint.archetype."""
 
     def test_reads_impact_score_and_rationale(self) -> None:

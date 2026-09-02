@@ -348,7 +348,7 @@ class FlowRunner:
                 upstream_report: RunReport | None = None
                 if stage.derive_checks is not None:
                     # Materialize checks from an upstream stage's report instead
-                    # of the Blueprint's static ones (roadmap-phase-4.md T9).
+                    # of the Blueprint's static ones.
                     stage_reports_by_name = {
                         s.name: r for s, r in zip(flow.stages, stage_reports)
                     }

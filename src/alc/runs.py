@@ -111,7 +111,7 @@ def _run_headline(path: Path) -> tuple[str, str]:
 
 def _net_lines(path: Path) -> int | None:
     """Return net lines (adds - dels) summed across every `mandate_finished`
-    event's diffstat in *path*'s run log (roadmap-phase-4.md T4).
+    event's diffstat in *path*'s run log.
 
     Sums across ALL such events, not just one — a flow/task run's log holds one
     `mandate_finished` per stage, so this reflects the whole run, not just its

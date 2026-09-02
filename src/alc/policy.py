@@ -27,7 +27,7 @@ _VALID_PERMISSION_MODES: frozenset[str] = frozenset(
 )
 
 # Public (not underscore-prefixed): also imported by stagepolicy.py, whose
-# stage-mix rules (roadmap-phase-4.md T5) validate against the same set.
+# stage-mix rules validate against the same set.
 VALID_ARCHETYPES: frozenset[str] = frozenset(
     {"prototyper", "builder", "sweeper", "grower", "maintainer"}
 )
@@ -69,13 +69,12 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           -file path, silently
                                                           protecting nothing.
     13. manifest.quarantined_checks, for each name listed  (warn) — PERMANENT for
-                                                          as long as it is listed
-                                                          (roadmap-phase-3.md T11):
+                                                          as long as it is listed:
                                                           a quarantine that the
                                                           lint stays silent about
                                                           would be invisible debt.
     14. A resolved check that declares 'metric' must also declare 'direction'
-                                                 (error) — roadmap-phase-4.md T1:
+                                                 (error) —
                                                           the Verifier cannot judge
                                                           a number without knowing
                                                           which way is better. Kept
@@ -105,7 +104,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                                                           covers the inline
                                                           default.
 
-    Rule 1 is the ONE relaxation in the whole gate (roadmap-phase-3.md T1): a
+    Rule 1 is the ONE relaxation in the whole gate: a
     Blueprint declaring `mode: spike` still gets flagged for having no checks,
     but only as a warn — the exception is fenced everywhere else (the runner
     forces isolation/zero-repairs/no-commit; see runner.py and rule 4 of
@@ -190,7 +189,7 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
 
         # Rule 1: blueprint must resolve to at least one check (own checks + check_set).
         # `mode: spike` is the ONE relaxation of this gate: still flagged, but only
-        # as a warn, never blocking the run (roadmap-phase-3.md T1).
+        # as a warn, never blocking the run.
         if not resolve_checks(manifest, bp):
             violations.append(
                 Violation(
@@ -472,20 +471,18 @@ def lint_flow(
     3. Every specialist stage's specialist must exist    (error) — resolvable execution.
     4. A stage whose effective Blueprint declares mode: spike, combined with an
        enabled commit block                              (error) — the spike
-       exception must never become a delivery path (roadmap-phase-3.md T1).
+       exception must never become a delivery path.
        Only checked when *stage_blueprints* is supplied; omitting it (existing
        call sites) skips rule 4 entirely, byte-identical to before it existed.
     5. A stage's derive_checks.shell_template must contain the literal
        '{value}' placeholder                             (error) — otherwise
                                                             nothing is ever
-                                                            interpolated
-                                                            (roadmap-phase-4.md T9).
+                                                            interpolated.
     6. A stage's derive_checks.from_stage must name a stage that appears
        EARLIER in the same Flow                           (error) — a forward
                                                             or self reference
                                                             can never have a
-                                                            report to read
-                                                            (roadmap-phase-4.md T9).
+                                                            report to read.
 
     The exactly-one-of blueprint/specialist rule (and verify_only requiring a
     blueprint) is already enforced by the FlowStage pydantic validator at intake.

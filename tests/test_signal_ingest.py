@@ -1,4 +1,4 @@
-# test_signal_ingest.py — Hermetic tests for roadmap-phase-5.md T2:
+# test_signal_ingest.py — Hermetic tests for
 # `alc signal ingest --kind K --source S --title T [--body B] [--from-file PATH] [--json]`
 # and `alc signal list [--json]`. Uses the conftest `operator_layer` fixture.
 from __future__ import annotations

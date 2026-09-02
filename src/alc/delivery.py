@@ -1,4 +1,4 @@
-# delivery.py — The remote last mile after `alc land`'s local merge (roadmap-phase-4.md T8).
+# delivery.py — The remote last mile after `alc land`'s local merge.
 #
 # `alc land` (merge.py) already integrates alc/* branches into the current branch
 # entirely LOCALLY — that IS the work landing successfully. `DeliverySpec` (models.py)
@@ -81,7 +81,7 @@ def changed_files(repo_root: Path, base: str, head: str) -> list[str]:
 def build_pr_body(report: MergeReport, files: list[str]) -> str:
     """Compose a PR body from *report* (the land's own MergeReport) and *files*.
 
-    "The report" a PR body is built from (roadmap-phase-4.md T8) is `alc land`'s
+    "The report" a PR body is built from is `alc land`'s
     OWN MergeReport — the only report the command actually holds. No archived
     per-branch RunReport/FlowReport is attributable back to a specific `alc/*`
     branch anywhere in the control plane today (a `TickResult.branch` is never

@@ -3,11 +3,11 @@
 #
 # `audit` re-detects the project's stack(s), compares against the Manifest's
 # current check_sets and each Blueprint's resolved checks, and PROPOSES
-# upgrades (roadmap-phase-2.md T13).
+# upgrades.
 #
-# `history` aggregates the run logs' `check_finished` events (roadmap-phase-3.md
-# T10) into per-check pass-rate, mean duration, and a flake score — the data
-# `flaky: N` (T11) and a quarantine decision are read against.
+# `history` aggregates the run logs' `check_finished` events into per-check
+# pass-rate, mean duration, and a flake score — the data `flaky: N` and a
+# quarantine decision are read against.
 #
 # Both are pure/read-only: neither ever writes — proposing/reporting is the
 # whole job. The CLI (`alc checks <action>`) prints what these return; applying
@@ -192,7 +192,7 @@ def audit_checks(
 
 
 # ---------------------------------------------------------------------------
-# `alc checks history` (roadmap-phase-3.md T10)
+# `alc checks history`
 # ---------------------------------------------------------------------------
 
 
@@ -252,7 +252,7 @@ def _iter_check_finished(runs_dir: Path):
 def check_history(runs_dir: Path) -> list[CheckHistory]:
     """Aggregate every ``check_finished`` event under *runs_dir*, per check name.
 
-    ``duration_s`` is additive (roadmap-phase-3.md T9): an event from an OLDER
+    ``duration_s`` is additive: an event from an OLDER
     run log that lacks it is still counted for pass-rate/flake-score, just
     excluded from the mean-duration average.
 

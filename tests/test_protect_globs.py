@@ -1,4 +1,4 @@
-# test_protect_globs.py — Hermetic tests for `protect: [globs]` (roadmap-phase-3.md T4):
+# test_protect_globs.py — Hermetic tests for `protect: [globs]`:
 # a deterministic, engine-agnostic guard that turns a protected-path edit into a
 # synthetic failed check feeding the existing repair addendum.
 #

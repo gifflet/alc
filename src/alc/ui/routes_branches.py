@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/projects/{id}", tags=["branches"])
 class LandBody(BaseModel):
     """Body for POST /branches/land: branches to integrate (or every unmerged
     one), plus the optional delivery override for the push/PR last mile
-    (DeliverySpec, roadmap-phase-4.md T8). Omitted `mode`/`remote`/`base`
+    (DeliverySpec). Omitted `mode`/`remote`/`base`
     fall back to the project manifest's own `delivery` block, then to
     `local` — same precedence as CLI `_resolve_delivery`."""
 

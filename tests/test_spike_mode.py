@@ -1,5 +1,5 @@
 # test_spike_mode.py — Hermetic tests for `mode: spike`: the ONE relaxation of the
-# checks gate (roadmap-phase-3.md T1), and the five non-negotiable fences around it:
+# checks gate, and the five non-negotiable fences around it:
 # (a) Policy Gate rule 1 drops from error to warn, only in this mode;
 # (b) the runner forces max_repairs = 0, ignoring any Blueprint-declared budget;
 # (c) cmd_run forces isolation and forbids the exit-commit, regardless of --isolate;

@@ -361,7 +361,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
 # Pack combo `alc init --stage NAME` hires — sugar over `alc team hire`, not a
 # new install path. `stage` itself has ZERO runtime effect; it only selects
-# which packs get hired at init time (see roadmap-phase-2.md's scope decisions).
+# which packs get hired at init time.
 _STAGE_PACKS: dict[str, list[str]] = {
     "pre-pmf": ["prototyper", "builder", "sweeper"],
     "growth": ["builder", "sweeper", "grower", "maintainer"],
@@ -979,7 +979,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     use_isolate = args.isolate
     if blueprint.mode == "spike":
-        # T1: the ONE relaxation of the checks gate comes fenced — force
+        # The ONE relaxation of the checks gate comes fenced — force
         # isolation regardless of --isolate so a spike's edits are never made
         # directly against the operator's working tree.
         use_isolate = True
@@ -1688,7 +1688,7 @@ def _team_hire(args: argparse.Namespace) -> int:
 
 
 def _print_mix_health(health) -> None:
-    """Print `alc team status`'s Mix Health section (roadmap-phase-4.md T6).
+    """Print `alc team status`'s Mix Health section.
 
     `total_runs == 0` renders as "no data yet" — never a division by zero or a
     misleading all-zero table. With no `stage` declared, the breakdown is
@@ -1743,7 +1743,7 @@ def _print_mix_health(health) -> None:
 
 def _team_roster(args: argparse.Namespace) -> int:
     """`alc team list|status`: the hired roster and the state of loops each member
-    brought. `status` additionally reports Mix Health (roadmap-phase-4.md T6):
+    brought. `status` additionally reports Mix Health:
     archived reports' real archetype spend against the declared stage's target
     mix — `list` stays roster-only.
     """
@@ -2461,7 +2461,7 @@ def _signal_ingest(args: argparse.Namespace) -> int:
     Writes one typed signal JSON file into ``manifest.signals_dir`` via
     ``alc.signals.ingest``. This only records the signal — it never enqueues
     anything itself; a signal becomes a demand once the ``signals`` replenish
-    kind consumes it (roadmap-phase-5.md T3).
+    kind consumes it.
 
     ``--from-file`` reads an already-formed JSON object instead of the
     ``--kind``/``--source``/``--title``/``--body`` flags — the path the
@@ -2593,7 +2593,7 @@ def _resolve_delivery(args: argparse.Namespace):
 
 
 def _deliver(repo_root: Path, delivery, report) -> None:
-    """The last mile (roadmap-phase-4.md T8): push the landed branch, optionally
+    """The last mile: push the landed branch, optionally
     open a PR. No-op for ``mode: "local"``. NEVER raises and NEVER changes
     `alc land`'s exit code — a push/PR failure is warned about, not fatal,
     because the local land this runs after already succeeded.
@@ -2618,7 +2618,7 @@ def _deliver(repo_root: Path, delivery, report) -> None:
 
 def cmd_land(args: argparse.Namespace) -> int:
     """Run `alc land [branch...] [--all] [--json] [--push|--pr]`: thin shell over
-    auto_merge_branches, plus the optional remote last mile (DeliverySpec, T8).
+    auto_merge_branches, plus the optional remote last mile (DeliverySpec).
 
     - No branch names and no ``--all``: LIST the unmerged ``alc/*`` branches,
       same listing convention as ``alc retry`` with no stem.
@@ -2945,7 +2945,7 @@ def cmd_explore(args: argparse.Namespace) -> int:
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
-    """Run `alc compare [<branch|stem>...]`: variants side by side (T6's columns).
+    """Run `alc compare [<branch|stem>...]`: variants side by side.
 
     With explicit refs, reads each ref's archive from ``manifest.variants_dir``
     (written by `alc explore`) — either the full ``alc/variant-…`` branch name or
@@ -3338,7 +3338,7 @@ def _checks_history(args: argparse.Namespace) -> int:
     """`alc checks history [--json]`: pass-rate, mean duration and a flake score
     per check, aggregated from the run logs' `check_finished` events.
 
-    Sibling action to `audit` (roadmap-phase-3.md T10) — never writes.
+    Sibling action to `audit` — never writes.
     """
     from dataclasses import asdict
 
@@ -3372,7 +3372,7 @@ def _checks_history(args: argparse.Namespace) -> int:
 
 def cmd_metrics(args: argparse.Namespace) -> int:
     """Run `alc metrics [--check NAME] [--json]`: the metric-check time series
-    recorded in the project's ledger (roadmap-phase-4.md T3).
+    recorded in the project's ledger.
 
     Read-only — a metric's baseline is only ever recorded by the Verifier while
     running a Blueprint's checks (`alc run`/`alc flow`/`alc tick`/…).
@@ -3427,8 +3427,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
 
 
 def cmd_artifacts(args: argparse.Namespace) -> int:
-    """Run `alc artifacts [<stem>] [--json]`: list a run's captured e2e evidence
-    (roadmap-phase-5.md T7) — screenshots, curled responses, the health-poll log,
+    """Run `alc artifacts [<stem>] [--json]`: list a run's captured e2e evidence — screenshots, curled responses, the health-poll log,
     or whatever else a `needs_service` Blueprint's `capture:` command produced.
 
     With no `<stem>`, shows the most recent run that captured any artifact.
@@ -3486,7 +3485,7 @@ def cmd_schedule(args: argparse.Namespace) -> int:
     """Run `alc schedule install|list|remove <tick|cycle NAME> --every 15m`.
 
     Generates and manages the crontab entry that fires `alc tick` or
-    `alc cycle NAME` on a cadence (roadmap-phase-3.md T13) — the first cron
+    `alc cycle NAME` on a cadence — the first cron
     line an operator would otherwise have to compose by hand.
     """
     if args.schedule_action == "install":
@@ -3800,7 +3799,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run `alc serve --webhook [--host H] [--port P] [--token T]`: a minimal HTTP
-    door in front of signal intake and the enqueue path (roadmap-phase-5.md T4).
+    door in front of signal intake and the enqueue path.
 
     `--webhook` is required — the only mode `alc serve` offers today — so the
     command reads as an explicit choice rather than an accidental default. It

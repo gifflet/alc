@@ -54,7 +54,7 @@ class TestPackFilesSweeper:
         assert "compute_tier: standard" in files[".alc/blueprints/refactor.md"]
 
     def test_refactor_blueprint_protects_tests_from_edits(self) -> None:
-        # roadmap-phase-3.md T4: the behavior-preserving guarantee stops being
+        # The behavior-preserving guarantee stops being
         # prose in the workflow and becomes enforcement.
         content = pack_files("sweeper", stacks=[])[".alc/blueprints/refactor.md"]
         assert 'protect: ["tests/**", "test/**"]' in content
@@ -117,7 +117,7 @@ class TestPackFilesSweeper:
     def test_unship_keeps_the_derive_checks_recipe_as_a_commented_opt_in(self) -> None:
         # The grep-based prove-absence strategy is retained as DOCUMENTATION: every
         # line that names it is a comment, so the loaded flow never activates it.
-        # roadmap-phase-4.md T9's recipe (map + derive_checks) stays well-formed.
+        # The derived-checks recipe (map + derive_checks) stays well-formed.
         content = pack_files("sweeper", stacks=[])[".alc/flows/unship.yaml"]
         for token in ("derive_checks", "from_stage: map", "field: symbols", "{value}"):
             lines = [ln for ln in content.splitlines() if token in ln]
@@ -152,7 +152,7 @@ class TestPackFilesSweeper:
 
 # ---------------------------------------------------------------------------
 # Loading is strict: flows, specialists, and loops are pydantic-validated
-# YAML — a pack file that fails its loader is a defect (roadmap-phase-2.md).
+# YAML — a pack file that fails its loader is a defect.
 # ---------------------------------------------------------------------------
 
 

@@ -69,7 +69,7 @@ def auto_merge_branches(
     EXCLUDE ``.alc/`` (Part C), so uncommitted ``.alc/`` queue state on the current branch does
     NOT block the cherry-pick. This helper adds no dirty-tree guard — the drain owns the context.
 
-    ``notify`` (roadmap-phase-3.md T12) is the Manifest's ``notify.on_merge_conflict``
+    ``notify`` is the Manifest's ``notify.on_merge_conflict``
     target, fired ONCE with every conflicted branch name when this pass leaves at
     least one behind — including the "git not found" case, which is a conflict from
     the operator's point of view (nothing got integrated). None (default) -> no-op,

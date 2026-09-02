@@ -1,5 +1,5 @@
 # test_check_history.py — Hermetic tests for `alc checks history [--json]`
-# (roadmap-phase-3.md T10): a sibling action to `audit` that aggregates the run
+#: a sibling action to `audit` that aggregates the run
 # logs' `check_finished` events into per-check pass-rate, mean duration, and a
 # flake score. Pure/read-only — writes JSONL fixtures directly rather than
 # running real mandates, mirroring how `alc audit` (test_audit.py) is tested.

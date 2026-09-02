@@ -128,8 +128,8 @@ function apiMessage(error: unknown): string | null {
   return error ? 'Request failed.' : null
 }
 
-/** The delivery mode for Land's push/PR last mile (DeliverySpec, ui-phase-5.md
- * T4): a single select for the whole section rather than one per row — a land
+/** The delivery mode for Land's push/PR last mile (DeliverySpec):
+ * a single select for the whole section rather than one per row — a land
  * always pushes the CURRENT branch (never a per-row target), so the choice is
  * one decision for the panel, not one per unmerged branch. */
 const LAND_MODE_OPTIONS = [

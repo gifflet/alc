@@ -1,7 +1,6 @@
 # test_pack_prototyper.py — Hermetic tests for the Prototyper Archetype Pack
 # (packs.py's `prototyper` entry): a single throwaway `spike` Blueprint that
-# declares `mode: spike` — the ONE relaxation of the checks gate (roadmap-phase-3.md
-# T1), fenced by forced isolation, zero repairs, and no commit/auto-merge. This
+# declares `mode: spike` — the ONE relaxation of the checks gate, fenced by forced isolation, zero repairs, and no commit/auto-merge. This
 # completes the five packs promised by `alc init --stage pre-pmf`.
 from __future__ import annotations
 
@@ -49,7 +48,7 @@ class TestPackFilesPrototyper:
 
 # ---------------------------------------------------------------------------
 # Loading is strict: Blueprints are parsed via load_blueprint — a pack file
-# that fails its loader is a defect (roadmap-phase-2.md).
+# that fails its loader is a defect.
 # ---------------------------------------------------------------------------
 
 

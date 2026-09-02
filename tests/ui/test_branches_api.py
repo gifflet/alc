@@ -199,7 +199,7 @@ class TestLandBranches:
 
 
 class TestLandBranchesDelivery:
-    """`mode: push|pr` (ui-phase-5.md T3/T4.1): the remote last mile wrapped
+    """`mode: push|pr`: the remote last mile wrapped
     over `alc.delivery`, never a real push and never the real `gh`."""
 
     def test_mode_push_pushes_the_landed_branch(

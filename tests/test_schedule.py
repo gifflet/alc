@@ -1,4 +1,4 @@
-# test_schedule.py — roadmap-phase-3.md T13: `alc schedule install|list|remove`.
+# test_schedule.py — `alc schedule install|list|remove`.
 #
 # Coverage:
 #   (1) Pure helpers in alc.schedule: parse_every, marker, build_line,

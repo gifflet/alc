@@ -5,7 +5,7 @@
 # warning like every other archetype. Metric checks and the `regression`
 # replenish kind now exist, so `grow` ships a commented metric-check example
 # (uncomment to track a number and fail on regression); automated signal intake
-# (issue trackers, APM, crash reports) is the remaining partial piece (T12).
+# (issue trackers, APM, crash reports) is the remaining partial piece.
 from __future__ import annotations
 
 from pathlib import Path
@@ -94,7 +94,7 @@ class TestPackFilesGrower:
 
 # ---------------------------------------------------------------------------
 # Loading is strict: Specialists are pydantic-validated YAML — a pack file
-# that fails its loader is a defect (roadmap-phase-2.md).
+# that fails its loader is a defect.
 # ---------------------------------------------------------------------------
 
 

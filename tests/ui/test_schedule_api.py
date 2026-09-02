@@ -1,5 +1,5 @@
 # test_schedule_api.py — GET /api/schedule: a thin, read-only route over
-# schedule.list_entries/has_crontab/read_crontab (ui-phase-5.md Wave 6, T12).
+# schedule.list_entries/has_crontab/read_crontab.
 #
 # Project-independent (the crontab is host-level, not per-project) so these
 # tests never register a project. The crontab itself is FAKE/INJECTED via

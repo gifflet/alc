@@ -21,7 +21,7 @@ class Check(BaseModel):
         ``command``/``shell``) that prints a SINGLE NUMBER on stdout. The engine
         never judges this number — the Verifier compares it against the most
         recent measurement recorded in the project's metric ledger (see
-        ``alc.metrics``, roadmap-phase-4.md T2) and decides pass/fail itself.
+        ``alc.metrics``) and decides pass/fail itself.
         ``direction`` says which way is better; ``tolerance_pct`` absorbs
         benchmark noise. A metric check with no recorded history yet always
         PASSES (its value is simply recorded as the first baseline).
@@ -33,15 +33,14 @@ class Check(BaseModel):
     metric: list[str] | str | None = None  # e.g. ["scripts/bench.py"] or "cat size.txt"
     # Which way is "better" for `metric`'s printed number. Required whenever
     # `metric` is set — enforced as a Policy Gate ERROR (policy.py), not here:
-    # see roadmap-phase-4.md T1 for why this stays a lint-time diagnostic
-    # (Blueprint context in the message) rather than a pydantic crash at intake.
+    # a lint-time diagnostic carries the Blueprint context in its message,
+    # where a pydantic crash at intake could not.
     direction: Literal["lower_is_better", "higher_is_better"] | None = None
     # Percent slack around the baseline before a metric regression fails the
     # run — benchmarks are noisy; 0.0 (default) means "no slack at all".
     tolerance_pct: float = 0.0
     # How many times the Verifier re-runs THIS check after a FAILING attempt,
-    # before the control plane spends a repair engine turn on it (roadmap-phase-3.md
-    # T11) — seconds against a model call. 0 (default) = no rerun, byte-identical.
+    # before the control plane spends a repair engine turn on it — seconds against a model call. 0 (default) = no rerun, byte-identical.
     flaky: int = 0
 
     @model_validator(mode="after")
@@ -112,10 +111,9 @@ class Blueprint(BaseModel):
     # Descriptive team-metaphor label (prototyper/builder/sweeper/grower/maintainer).
     # ZERO runtime effect — reporting only (copied to RunReport.archetype) and input
     # to the Mix Health work of a later phase. Behavior always lives in a named field,
-    # never behind this string (see roadmap-phase-2.md's scope decisions).
+    # never behind this string.
     archetype: str | None = None
-    # `mode: spike` is the ONE relaxation of the checks gate (roadmap-phase-3.md
-    # T1) — a fenced exception, never a second policy language: Policy Gate rule 1
+    # `mode: spike` is the ONE relaxation of the checks gate — a fenced exception, never a second policy language: Policy Gate rule 1
     # drops from error to warn ONLY in this mode; the runner forces isolation,
     # zero repair turns, and forbids commit/auto-merge; RunReport.spike is True and
     # the run is excluded from the Scorecard streak. None (default) -> today's
@@ -128,14 +126,14 @@ class Blueprint(BaseModel):
     # Empty (default) -> no-op, byte-identical.
     protect: list[str] = []
     # Advisory-only signal that this mandate is expected to REDUCE the codebase
-    # (roadmap-phase-4.md T4) — the first consumer of `RunReport.diffstat`
+    # — the first consumer of `RunReport.diffstat`
     # (Phase 2), alongside the net-lines column on `alc runs list`. When set and
     # the run's diffstat nets positive (the codebase grew instead of shrank),
     # the control plane records a warn on `RunReport.warnings` and the run log —
     # it NEVER fails the run: simplifying sometimes means growing before
     # shrinking. None (default) -> no-op, byte-identical.
     expect: Literal["shrink"] | None = None
-    # e2e evidence capture (roadmap-phase-5.md T6): a shell command run AFTER
+    # e2e evidence capture: a shell command run AFTER
     # the health poll has already proven the app reachable — only meaningful
     # alongside `needs_service: true` and a Manifest `service` (inert
     # otherwise). `$ALC_ARTIFACTS_DIR` is injected pointing at this run's
@@ -259,7 +257,7 @@ class ProvisionSpec(BaseModel):
 
 
 class NotifyConfig(BaseModel):
-    """Push channel for unattended failure (roadmap-phase-3.md T12).
+    """Push channel for unattended failure.
 
     Each field is either a command (argv list, run with the JSON payload on its
     stdin) or a webhook URL (a str, POSTed the JSON payload) — no per-service
@@ -276,7 +274,7 @@ class NotifyConfig(BaseModel):
 
 
 class DeliverySpec(BaseModel):
-    """How `alc land` hands an already-landed branch to the remote (roadmap-phase-4.md T8).
+    """How `alc land` hands an already-landed branch to the remote.
 
     The local cherry-pick merge (``merge.py``) is the actual work landing —
     entirely local, and already the whole guarantee `alc land` gave before this
@@ -355,11 +353,10 @@ class Manifest(BaseModel):
     loops_dir: str = ".alc/loops"       # Autonomous Loop definitions/state/ledgers
     runs_dir: str = ".alc/runs"         # Structured per-run event logs (observability)
     variants_dir: str = ".alc/variants"  # Archived `alc explore` variant reports (`compare`/`adopt`)
-    # Per-project JSONL ledger of metric-check measurements (roadmap-phase-4.md
-    # T2) — one MetricRecord per line, appended by the Verifier. `alc metrics`
+    # Per-project JSONL ledger of metric-check measurements — one MetricRecord per line, appended by the Verifier. `alc metrics`
     # reads it back into a time series.
     metrics_dir: str = ".alc/metrics"
-    # Per-project directory of typed signal files (roadmap-phase-5.md T1) — the
+    # Per-project directory of typed signal files — the
     # Source for the `signals` replenish kind (loop.py): an error tracker, user
     # feedback, an issue tracker, or a code review drops a JSON file here via
     # `alc signal ingest` / `alc.signals.ingest`; a consumed signal moves to
@@ -367,25 +364,25 @@ class Manifest(BaseModel):
     # directory is a no-op — opt-in, byte-identical to today.
     signals_dir: str = ".alc/signals"
     # Per-project directory of e2e evidence a `needs_service` run's `capture:`
-    # command produces (roadmap-phase-5.md T6) — one subdirectory per run
+    # command produces — one subdirectory per run
     # (named after that run's own run-log stem), holding whatever the capture
     # command wrote plus the persisted health-poll log. `alc artifacts` reads
     # the paths back out of `RunReport.artifacts` (via the run log); the
     # directory itself is never scanned blind. Unused when no Blueprint
     # declares `capture:` — opt-in, byte-identical to today.
     artifacts_dir: str = ".alc/artifacts"
-    # Declarative quarantine (roadmap-phase-3.md T11): a check named here still RUNS
+    # Declarative quarantine: a check named here still RUNS
     # every attempt, but a failure of it can never fail the run — the AssuranceLoop
     # excludes it from the checks that block success/trigger repair. It stays fully
     # VISIBLE (recorded as failed in the run log and the report) so quarantine is
     # never invisible debt, and the Policy Gate emits a PERMANENT warn for as long
     # as it is listed. Empty (default) -> no-op, byte-identical.
     quarantined_checks: list[str] = []
-    # Push notifications for unattended failure (roadmap-phase-3.md T12): a command
+    # Push notifications for unattended failure: a command
     # or webhook fired where the control plane already detects the failure. None
     # (default) -> notify off, byte-identical to today.
     notify: NotifyConfig | None = None
-    # Declares which growth stage the product is in (roadmap-phase-4.md T5) — the
+    # Declares which growth stage the product is in — the
     # essay's mix of archetypes made control-plane data. `alc.stagepolicy` compares
     # the archetypes actually hired/run against the target mix for this stage.
     # Every rule this enables is advisory (warn only — see
@@ -401,7 +398,7 @@ class Manifest(BaseModel):
     # time. None (default) -> the built-in default mix for `stage`.
     stage_mix: dict[str, list[str]] | None = None
     # How `alc land` hands an already-landed branch to the remote
-    # (roadmap-phase-4.md T8) — see DeliverySpec. None (default) -> DeliverySpec's
+    # — see DeliverySpec. None (default) -> DeliverySpec's
     # own default (mode: local), so `alc land` with no `--push`/`--pr` flag stays
     # byte-identical to before this field existed.
     delivery: DeliverySpec | None = None
@@ -410,8 +407,7 @@ class Manifest(BaseModel):
 class MetricRecord(BaseModel):
     """One line of the per-project metric ledger (``manifest.metrics_dir``).
 
-    Written by the Verifier every time it runs a ``metric`` check (roadmap-phase-4.md
-    T2), following the shape of ``loop.CycleRecord``/``loop.append_ledger``: one
+    Written by the Verifier every time it runs a ``metric`` check, following the shape of ``loop.CycleRecord``/``loop.append_ledger``: one
     JSON object per line, appended best-effort. ``run`` is the label the caller
     supplied to the Verifier (the Blueprint name in every production call site)
     — free-text context for tracing a measurement back to what produced it, not
@@ -433,7 +429,7 @@ class MetricRecord(BaseModel):
 
 
 class CheckOutcome(BaseModel):
-    """Full per-check record within one AttemptRecord (roadmap-phase-3.md T9).
+    """Full per-check record within one AttemptRecord.
 
     Additive alongside ``AttemptRecord.failed_checks`` (kept working exactly as
     before, for its existing readers): EVERY check run in the attempt appears
@@ -458,7 +454,7 @@ class AttemptRecord(BaseModel):
     index: int
     engine_ok: bool
     failed_checks: list[str]
-    # Every check's full outcome for this attempt (roadmap-phase-3.md T9) — additive,
+    # Every check's full outcome for this attempt — additive,
     # default [] so an old report (with no `checks` key) still parses. `failed_checks`
     # above is unchanged and keeps working exactly as it does today.
     checks: list[CheckOutcome] = []
@@ -506,7 +502,7 @@ class RunReport(BaseModel):
     # Copied from Blueprint.archetype — reporting only, same zero-runtime-effect
     # contract as the field it mirrors.
     archetype: str | None = None
-    # True when Blueprint.mode == "spike" (roadmap-phase-3.md T1) — the fenced
+    # True when Blueprint.mode == "spike" — the fenced
     # exception to the checks gate. Marks the run so downstream aggregation
     # (Scorecard streak, `alc audit`, …) can tell a spike apart from a real demand.
     spike: bool = False
@@ -517,13 +513,13 @@ class RunReport(BaseModel):
     # implies success=False. Default False keeps every existing consumer identical.
     inconclusive: bool = False
     # Advisory notes the control plane found about this run — human-readable,
-    # NEVER a reason to fail it (roadmap-phase-4.md T4). Currently populated
+    # NEVER a reason to fail it. Currently populated
     # only by `Blueprint.expect == "shrink"` finishing net-positive; a plain
     # list (rather than one field per rule) so a later advisory rule has
     # somewhere to land without a new RunReport field each time. Empty
     # (default) -> byte-identical to before this field existed.
     warnings: list[str] = []
-    # e2e evidence this run captured (roadmap-phase-5.md T6) — project-root-
+    # e2e evidence this run captured — project-root-
     # relative paths under `manifest.artifacts_dir`, populated only when the
     # Blueprint declares `capture:` on a `needs_service` run (see
     # `alc.evidence.capture_evidence`). Empty (default) -> byte-identical to
@@ -545,7 +541,7 @@ class RunReport(BaseModel):
 
 class DeriveChecksSpec(BaseModel):
     """Materializes a ``verify_only`` stage's checks from an EARLIER stage's report,
-    instead of a Blueprint's statically declared ones (roadmap-phase-4.md T9).
+    instead of a Blueprint's statically declared ones.
 
     Reads ``field`` out of ``from_stage``'s ``RunReport.output_text`` (parsed as a
     JSON object) and turns each list item into one Check, substituting it for the
@@ -739,7 +735,7 @@ class TickResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Signal intake (roadmap-phase-5.md T1) — real-usage input that seeds a demand
+# Signal intake — real-usage input that seeds a demand
 # ---------------------------------------------------------------------------
 
 
@@ -822,8 +818,7 @@ class Impact(BaseModel):
     "12 issue reports this week reference this flow"). Populated by a planner
     with real signal to draw on (e.g. the Grower pack's `listen` Specialist,
     once wired to a `kind: plan` replenish — Phases 4-5); ZERO runtime effect
-    today, the same reporting-only contract as ``Blueprint.archetype``
-    (roadmap-phase-2.md T12).
+    today, the same reporting-only contract as ``Blueprint.archetype``.
     """
 
     score: float
@@ -853,7 +848,7 @@ class PlannedUnit(BaseModel):
     # touches OVERLAP (serializing demands that share files) so interdependency safety
     # does NOT rely on the planner declaring depends_on. Empty = not declared.
     touches: list[str] = []
-    # Optional evidence-based justification (roadmap-phase-2.md T12) — see Impact.
+    # Optional evidence-based justification — see Impact.
     # ZERO runtime effect; not persisted onto the QueueTask (see conduct.py).
     impact: Impact | None = None
 
@@ -899,7 +894,7 @@ class ConductReport(BaseModel):
     success: bool | None = None          # overall run outcome (None in enqueue mode)
     merged: list[str] = []               # parallel run: branches integrated into HEAD
     left: list[str] = []                 # parallel run: branches left for manual resolution
-    # Advisory stage-mix findings (roadmap-phase-4.md T7b) — populated only when
+    # Advisory stage-mix findings — populated only when
     # manifest.stage is declared; NEVER a reason to fail this report on its own
     # (--strict-stage instead refuses before dispatch — see conduct.py). Empty
     # (default) -> byte-identical to before this field existed, same contract as
@@ -958,7 +953,7 @@ class Replenish(BaseModel):
       ``ref`` is the specialist name and is required.
     - ``signals``: read every pending signal from ``manifest.signals_dir`` and
       turn each into a demand via ``conduct.dispatch_enqueue`` — no planning
-      turn, the same direct write ``alc enqueue`` uses (roadmap-phase-5.md T3).
+      turn, the same direct write ``alc enqueue`` uses.
       ``ref`` is the Flow name every signal-derived demand dispatches to, and
       is required; ``task`` is a shared preamble prepended to each signal's
       title/body.
@@ -966,7 +961,7 @@ class Replenish(BaseModel):
       check whose newest not-yet-seen measurement was REJECTED
       (``MetricRecord.passed`` False — the Verifier's own tolerance judgment,
       not re-derived here) and auto-enqueue ONE fix demand per regressed check
-      via ``conduct.dispatch_enqueue`` (roadmap-phase-5.md T5). ``ref`` is the
+      via ``conduct.dispatch_enqueue``. ``ref`` is the
       Flow name every regression-fix demand dispatches to, and is required;
       ``task`` is a shared preamble, same contract as ``signals``.
     """
@@ -1073,7 +1068,7 @@ class LoopState(BaseModel):
     # Cumulative usage per unit; keys among engine_calls / usd / tokens.
     budget_used: dict[str, float] = {}
     stopped_reason: str | None = None
-    # Per-check cursor for the `regression` replenish (roadmap-phase-5.md T5):
+    # Per-check cursor for the `regression` replenish:
     # how many metric-ledger records for this check name had already been
     # considered as of the end of the last cycle. Advances past EVERY record
     # seen (regressed or not), so a regression whose fix has already been
