@@ -212,6 +212,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ stem }),
     }),
+  archiveSignal: (id: string, name: string) =>
+    request<{ archived: string }>(`${proj(id)}/queue/signals/archive`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   retryQueue: (id: string, body: { stem?: string; all?: boolean }) =>
     request<{ enqueued: string[] }>(`${proj(id)}/queue/retry`, {
       method: 'POST',

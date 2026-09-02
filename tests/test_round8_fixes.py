@@ -358,3 +358,74 @@ class TestSignalsProvision:
             repo_root=tmp_path, label="t", provisions=runtime_provisions(manifest)
         ) as wt:
             assert not (wt / ".alc" / "signals").exists()
+
+
+# ---------------------------------------------------------------------------
+# 40 — a handled signal can be archived from either surface
+# ---------------------------------------------------------------------------
+
+
+class TestSignalArchive:
+    def _ingest(self, root: Path, title: str = "loud buttons") -> str:
+        from alc.models import Signal
+        from alc.signals import ingest
+
+        path = ingest(
+            root / ".alc" / "signals",
+            Signal(kind="feedback", source="operator", title=title, body="x"),
+        )
+        return path.name
+
+    def test_cli_archive_moves_into_done(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        scaffold(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        name = self._ingest(tmp_path)
+        from alc.cli import cmd_signal
+
+        ns = argparse.Namespace(signal_action="archive", name=name)
+        assert cmd_signal(ns) == 0
+        assert "Archived" in capsys.readouterr().out
+        assert (tmp_path / ".alc" / "signals" / "done" / name).exists()
+        assert not (tmp_path / ".alc" / "signals" / name).exists()
+
+    def test_cli_archive_unknown_name_errors(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        scaffold(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        from alc.cli import cmd_signal
+
+        ns = argparse.Namespace(signal_action="archive", name="nope.json")
+        assert cmd_signal(ns) == 1
+        assert "no pending signal" in capsys.readouterr().err
+
+    def test_cli_list_prints_the_addressable_name(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        scaffold(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        name = self._ingest(tmp_path)
+        from alc.cli import cmd_signal
+
+        ns = argparse.Namespace(signal_action="list", json=False)
+        assert cmd_signal(ns) == 0
+        assert name in capsys.readouterr().out
+
+    def test_service_archive_and_404_and_no_escape(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        from alc.ui import service
+        from alc.ui.errors import ApiError
+
+        name = self._ingest(tmp_path)
+        # A path-shaped name is reduced to its basename — never an escape.
+        assert service.archive_pending_signal(tmp_path, f"../../{name}") == {"archived": name}
+        with pytest.raises(ApiError):
+            service.archive_pending_signal(tmp_path, name)  # already archived -> 404
+
+    def test_regression_replenish_archive_untouched(self, tmp_path: Path) -> None:
+        # The loop replenish path calls signals.archive_signal directly; the
+        # new verb sits BESIDE it, not inside it.
+        from alc.models import Signal
+        from alc.signals import archive_signal, ingest, read_signals
+
+        signals_dir = tmp_path / "sig"
+        path = ingest(signals_dir, Signal(kind="issue", source="t", title="x", body=""))
+        archive_signal(signals_dir, path)
+        assert read_signals(signals_dir) == []
+        assert (signals_dir / "done" / path.name).exists()

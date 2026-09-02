@@ -1,7 +1,7 @@
 // Queue.tsx — Pending tasks + archived (done) tasks with enqueue/retry/delete,
 // plus the unmerged alc/* branches those drains produce (land/discard).
 import { Fragment, useState } from 'react'
-import {
+import { Check,
   ChevronDown,
   ChevronRight,
   GitMerge,
@@ -11,7 +11,7 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react'
-import {
+import { useArchiveSignal,
   useBranches,
   useDeletePending,
   useDiscardBranches,
@@ -314,6 +314,7 @@ function SignalsSection() {
   const id = useProjectId()
   const { data, isLoading } = useSignals(id)
   const ingest = useIngestSignal(id)
+  const archive = useArchiveSignal(id)
   const [ingesting, setIngesting] = useState(false)
 
   if (isLoading) return null
@@ -343,6 +344,27 @@ function SignalsSection() {
       header: 'Age',
       className: 'w-20',
       render: (s) => <RelativeTime value={s.ts} />,
+    },
+    {
+      key: 'archive',
+      priority: 2,
+      header: '',
+      className: 'w-10',
+      // A handled signal had no exit (finding 40): the library's archive move
+      // existed with no operator verb over it, so an addressed signal stayed
+      // "pending" and the next listen pass would re-plan finished work.
+      render: (s) => (
+        <button
+          type="button"
+          aria-label={`Archive signal ${s.title}`}
+          title="Mark handled (moves into signals/done/)"
+          disabled={archive.isPending}
+          onClick={() => archive.mutate(s.path.split('/').pop()!)}
+          className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint alc-reveal hover:text-primary"
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+      ),
     },
   ]
 
