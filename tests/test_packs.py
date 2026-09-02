@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from alc.intake import load_all_blueprints, load_manifest
-from alc.packs import PACKS, hired_archetypes, pack_files, split_pack_files
+from alc.packs import PACKS, hired_archetypes, pack_files, remove_pack, retired_pack_loops, split_pack_files
 from alc.policy import lint
 from alc.scaffold import detect_stacks, scaffold
 
@@ -239,3 +239,138 @@ class TestEveryPackLintsClean:
 
         errors = _lint_errors(tmp_path)
         assert not errors, f"{archetype}/{stack_key}/binaries={binaries_available}: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# remove_pack — the inverse of `alc team hire`: deletes only byte-identical
+# files, returns (removed, kept).  Also checks retired-twin locations for loop
+# definitions that `alc team retire` moved to loops/retired/.
+# ---------------------------------------------------------------------------
+
+class TestRemovePack:
+    """remove_pack() deletes only byte-identical pack files; returns (removed, kept)."""
+
+    LOOPS_DIR = ".alc/loops"
+
+    def test_nothing_on_disk_returns_empty_lists(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        removed, kept = remove_pack("builder", [], tmp_path, self.LOOPS_DIR)
+        assert removed == []
+        assert kept == []
+
+    def test_removes_all_unmodified_files(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        files = pack_files("builder", stacks)
+        for rel, content in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+
+        removed, kept = remove_pack("builder", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert set(removed) == set(files)
+        assert kept == []
+        for rel in files:
+            assert not (tmp_path / rel).exists()
+
+    def test_keeps_modified_file_removes_unmodified_ones(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        files = pack_files("builder", stacks)
+        modified_rel, *unmodified_rels = sorted(files)
+
+        for rel, content in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            body = content + "\n# operator customization\n" if rel == modified_rel else content
+            target.write_text(body)
+
+        removed, kept = remove_pack("builder", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert set(removed) == set(unmodified_rels)
+        assert kept == [modified_rel]
+        assert (tmp_path / modified_rel).exists()
+
+    def test_removes_unmodified_retired_loop_at_twin_location(self, tmp_path: Path) -> None:
+        # `alc team retire` moves loops/<name>.yaml to loops/retired/<name>.yaml.
+        # remove_pack must find and delete the file at the twin location when
+        # the live path is absent.
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        loop_content = pack_files("sweeper", stacks)[".alc/loops/sweep.yaml"]
+        twin = tmp_path / self.LOOPS_DIR / "retired" / "sweep.yaml"
+        twin.parent.mkdir(parents=True, exist_ok=True)
+        twin.write_text(loop_content)
+
+        removed, _kept = remove_pack("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert f"{self.LOOPS_DIR}/retired/sweep.yaml" in removed
+        assert not twin.exists()
+
+    def test_keeps_modified_retired_loop(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        loop_content = pack_files("sweeper", stacks)[".alc/loops/sweep.yaml"]
+        twin_rel = f"{self.LOOPS_DIR}/retired/sweep.yaml"
+        twin = tmp_path / twin_rel
+        twin.parent.mkdir(parents=True, exist_ok=True)
+        twin.write_text(loop_content + "\n# operator customization\n")
+
+        _removed, kept = remove_pack("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert twin_rel in kept
+        assert twin.exists()
+
+    def test_empty_retired_dir_is_cleaned_up(self, tmp_path: Path) -> None:
+        # After removing the last retired loop, loops/retired/ is rmdir'd.
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        loop_content = pack_files("sweeper", stacks)[".alc/loops/sweep.yaml"]
+        retired_dir = tmp_path / self.LOOPS_DIR / "retired"
+        retired_dir.mkdir(parents=True, exist_ok=True)
+        (retired_dir / "sweep.yaml").write_text(loop_content)
+
+        remove_pack("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert not retired_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# retired_pack_loops — names of a pack's loops archived under loops/retired/.
+# ---------------------------------------------------------------------------
+
+class TestRetiredPackLoops:
+    """retired_pack_loops() surfaces loops the operator has archived via `alc team retire`."""
+
+    LOOPS_DIR = ".alc/loops"
+
+    def test_no_loops_retired_when_neither_location_exists(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        result = retired_pack_loops("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+        assert result == []
+
+    def test_retired_loop_detected_when_live_absent_and_twin_present(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        loop_content = pack_files("sweeper", stacks)[".alc/loops/sweep.yaml"]
+        twin = tmp_path / self.LOOPS_DIR / "retired" / "sweep.yaml"
+        twin.parent.mkdir(parents=True, exist_ok=True)
+        twin.write_text(loop_content)
+
+        result = retired_pack_loops("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert result == ["sweep"]
+
+    def test_live_loop_not_counted_as_retired(self, tmp_path: Path) -> None:
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        loop_content = pack_files("sweeper", stacks)[".alc/loops/sweep.yaml"]
+        live = tmp_path / ".alc/loops/sweep.yaml"
+        live.parent.mkdir(parents=True, exist_ok=True)
+        live.write_text(loop_content)
+
+        result = retired_pack_loops("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert "sweep" not in result
