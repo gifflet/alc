@@ -1,0 +1,11 @@
+# listen — a DIY sweep of user-reported issues and error reports. ALC does
+# NOT ingest signal automatically yet: the operator feeds this Specialist raw
+# reports as the task text on each invocation (e.g. `alc specialist listen
+# "<pasted issue reports>"`), and its Knowledge File accumulates what users
+# keep hitting over time. This pack is DELIBERATELY PARTIAL — automated
+# signal intake, metric checks, and the `regression` replenish kind land in
+# Phases 4-5.
+name: listen
+area: user-reported issues and error reports — a durable map of what users keep hitting
+blueprint: plan
+knowledge_path: .alc/specialists/listen.knowledge.md

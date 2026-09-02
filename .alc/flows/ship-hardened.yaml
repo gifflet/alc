@@ -1,0 +1,12 @@
+name: ship-hardened
+description: Plan a change, build it, harden it with tests, then a pure verification gate.
+stages:
+  - name: plan
+    blueprint: plan
+  - name: build
+    blueprint: feature
+  - name: harden
+    blueprint: test
+  - name: gate
+    blueprint: test
+    verify_only: true

@@ -1,0 +1,4 @@
+name: janitor
+area: dead and unused code in the tracked, live source — the accumulated cruft map (nested git worktrees and the .alc/ operator layer are out of scope)
+blueprint: refactor
+knowledge_path: .alc/specialists/janitor.knowledge.md
