@@ -55,7 +55,7 @@ function MemberCard({
 }) {
   const archived = member.retired_loops.length > 0
   return (
-    <div className="rounded-panel border border-border bg-panel p-3">
+    <div className="group rounded-panel border border-border bg-panel p-3">
       <div className="flex items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <span className="flex min-w-0 flex-col">
@@ -100,14 +100,21 @@ function MemberCard({
               from either surface. Removal deletes only files still identical
               to the pack defaults (customised ones are kept and reported), so
               it cannot destroy work — and hire rewrites what it removed. */}
+          {/* Removal is destructive but rare: it no longer wears the red,
+              always-on styling that made it the loudest thing on the card.
+              The destructive intent now lives entirely in the confirm dialog.
+              Ghost + icon-only, revealed on hover/focus of the card
+              (.alc-reveal already stays visible on touch and keyboard focus),
+              so it is discoverable without shouting. */}
           <ActionButton
             aria-label={`Remove ${member.archetype}`}
+            title="Remove"
             onClick={() => onRemove(member.archetype)}
-            tone="error"
+            tone="ghost"
             size="sm"
+            className="alc-reveal"
           >
             <UserMinus className="h-3 w-3" />
-            Remove
           </ActionButton>
         </div>
       </div>
