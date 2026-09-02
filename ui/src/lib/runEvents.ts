@@ -29,11 +29,9 @@ export interface TimelineAttempt {
   checks: TimelineCheck[]
 }
 
-export type GroupKind = 'mandate' | 'stage'
-
 export interface TimelineGroup {
   label: string
-  kind: GroupKind
+  kind: 'mandate' | 'stage'
   /** Blueprint or specialist backing this group, when known. */
   ref?: string
   attempts: TimelineAttempt[]

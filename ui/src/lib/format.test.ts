@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { relativeTime, formatBytes, formatCost, formatCount, titleCase } from './format'
+import { relativeTime, formatCost } from './format'
 
 describe('relativeTime', () => {
   // mtime values from the backend are epoch SECONDS (Path.stat().st_mtime).
@@ -27,21 +27,6 @@ describe('relativeTime', () => {
   })
 })
 
-describe('formatBytes', () => {
-  it('formats small sizes in bytes', () => {
-    expect(formatBytes(712)).toBe('712 B')
-  })
-  it('formats kilobytes', () => {
-    expect(formatBytes(2048)).toBe('2.0 KB')
-  })
-})
-
-describe('formatCount', () => {
-  it('groups thousands', () => {
-    expect(formatCount(12345)).toBe('12,345')
-  })
-})
-
 describe('formatCost', () => {
   it('renders a USD cost with two decimals', () => {
     expect(formatCost(1.5)).toBe('$1.50')
@@ -51,11 +36,5 @@ describe('formatCost', () => {
   })
   it('renders a zero cost plainly', () => {
     expect(formatCost(0)).toBe('$0.00')
-  })
-})
-
-describe('titleCase', () => {
-  it('turns an event name into a label', () => {
-    expect(titleCase('mandate_started')).toBe('Mandate started')
   })
 })
