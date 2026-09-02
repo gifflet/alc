@@ -3,7 +3,8 @@
 // The card folds the unit's raw events with buildTimeline — the SAME pure model
 // RunDetail uses, so the two screens can never disagree about what phase a run
 // is in. Nothing about phase/attempt/check is computed in the backend.
-import { Radio } from 'lucide-react'
+import { Radio, Square } from 'lucide-react'
+import { ActionButton } from './ActionButton'
 import { buildTimeline } from '../lib/runEvents'
 import type { FleetUnit } from '../api/types'
 import { StatusDot } from './StatusDot'
@@ -85,19 +86,35 @@ function Field({ label, value }: { label: string; value: string }) {
   )
 }
 
-export function FleetCard({ unit, onOpen }: { unit: FleetUnit; onOpen: () => void }) {
+export function FleetCard({
+  unit,
+  onOpen,
+  onCancel,
+}: {
+  unit: FleetUnit
+  onOpen: () => void
+  /** Cancel THIS unit's running exec. Rendered as a footer INSIDE the card's
+   * frame — a sibling below the border read as "cancel one or all?"
+   * (dogfood round 10). Absent -> no footer at all. */
+  onCancel?: () => void
+}) {
   const state = cardState(unit)
   const running = state.phase !== 'done'
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      // 8px radius, elevation rather than a hard 1px cage, and room to
-      // breathe. Same information, same words — only the form changed.
-      className="flex w-full flex-col gap-3 rounded-[var(--radius-md)] bg-raised p-4 text-left shadow-[var(--elev-1)] ring-1 ring-border/40 transition-all duration-120 hover:ring-border hover:shadow-[var(--elev-2)]"
-    >
-      <div className="flex min-w-0 items-center gap-2.5">
+    // Stretched-overlay pattern: the card was ONE <button>, which made any
+    // inner control illegal HTML and exiled Cancel below the frame. The card
+    // is an <article> now; an invisible full-bleed button behind the content
+    // keeps tap-anywhere-to-open, and Cancel is a real sibling INSIDE the
+    // ring — scope readable from containment alone.
+    <article className="group relative flex w-full flex-col gap-3 rounded-[var(--radius-md)] bg-raised p-4 text-left shadow-[var(--elev-1)] ring-1 ring-border/40 transition-all duration-120 hover:ring-border hover:shadow-[var(--elev-2)] has-[:focus-visible]:ring-accent">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open run ${state.title}`}
+        className="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none"
+      />
+      <div className="pointer-events-none relative z-10 flex min-w-0 items-center gap-2.5">
         <StatusDot tone={running ? 'running' : 'idle'} pulse={running} />
         <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-primary">
           {state.title}
@@ -108,10 +125,10 @@ export function FleetCard({ unit, onOpen }: { unit: FleetUnit; onOpen: () => voi
       </div>
 
       {state.task && (
-        <p className="line-clamp-2 text-[length:var(--ui-text-title)] leading-[1.5] text-muted">{state.task}</p>
+        <p className="pointer-events-none relative z-10 line-clamp-2 text-[length:var(--ui-text-title)] leading-[1.5] text-muted">{state.task}</p>
       )}
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/40 pt-3">
+      <div className="pointer-events-none relative z-10 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/40 pt-3">
         <Field label="phase" value={`${PHASE_LABEL[state.phase]} · attempt ${state.attempt}`} />
         <Field label="unit" value={state.unit} />
         {state.runningCheck && <Field label="check" value={state.runningCheck} />}
@@ -121,9 +138,28 @@ export function FleetCard({ unit, onOpen }: { unit: FleetUnit; onOpen: () => voi
       </div>
 
       {unit.truncated && (
-        <span className="text-[length:var(--ui-text-body)] text-faint">log truncated — showing the newest events</span>
+        <span className="pointer-events-none relative z-10 text-[length:var(--ui-text-body)] text-faint">log truncated — showing the newest events</span>
       )}
-    </button>
+      {onCancel && (
+        <div className="relative z-10 -mx-4 -mb-4 flex items-center justify-between gap-3 rounded-b-[inherit] border-t border-border/40 bg-base/40 px-4 py-2">
+          {/* The stem printed beside the button is the second of three scope
+              signals (containment, name, singular label). */}
+          <span className="pointer-events-none truncate font-mono text-[length:var(--ui-text-label)] text-faint">
+            {unit.stem}
+          </span>
+          <ActionButton
+            aria-label={`Cancel run ${unit.stem}`}
+            tone="error"
+            size="sm"
+            onClick={onCancel}
+            className="shrink-0"
+          >
+            <Square className="h-3 w-3" />
+            Cancel run
+          </ActionButton>
+        </div>
+      )}
+    </article>
   )
 }
 

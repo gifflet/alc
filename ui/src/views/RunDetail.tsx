@@ -9,6 +9,7 @@ import { Radio, Square } from 'lucide-react'
 import { api, artifactFileUrl } from '../api/client'
 import { runningExecForStem, useExecState } from '../app/execStore'
 import { ActionButton } from '../components/ActionButton'
+import { ConfirmDialog } from '../components/Dialog'
 import { keys } from '../api/keys'
 import { useRunArtifacts } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
@@ -29,6 +30,7 @@ export function RunDetail({ stem }: { stem: string }) {
   // A live WS event proves a process is still writing this run — clears stale.
   const [live, setLive] = useState(false)
   const execState = useExecState()
+  const [cancelling, setCancelling] = useState<string | null>(null)
 
   const query = useQuery({
     queryKey: keys.run(id, stem),
@@ -99,18 +101,31 @@ export function RunDetail({ stem }: { stem: string }) {
             const exec = runningExecForStem(execState, id, stem)
             return exec ? (
               <ActionButton
-                aria-label={`Cancel ${stem}`}
+                aria-label={`Cancel run ${stem}`}
                 tone="error"
                 size="sm"
                 className={timeline.engine ? '' : 'ml-auto'}
-                onClick={() => void api.cancelExec(exec.id).catch(() => {})}
+                onClick={() => setCancelling(exec.id)}
               >
                 <Square className="h-3 w-3" />
-                Cancel
+                Cancel run
               </ActionButton>
             ) : null
           })()}
       </header>
+      {cancelling && (
+        <ConfirmDialog
+          title="Cancel this run?"
+          message={`${stem} — the engine stops; a 30s salvage grace keeps work already written.`}
+          confirmLabel="Cancel run"
+          cancelLabel="Keep running"
+          onConfirm={() => {
+            void api.cancelExec(cancelling).catch(() => {})
+            setCancelling(null)
+          }}
+          onCancel={() => setCancelling(null)}
+        />
+      )}
 
       {events.length === 0 ? (
         <EmptyState icon={Radio} message="No events yet." />

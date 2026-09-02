@@ -98,6 +98,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
   tone = 'error',
   onConfirm,
   onCancel,
@@ -105,6 +106,10 @@ export function ConfirmDialog({
   title: string
   message: ReactNode
   confirmLabel?: string
+  /** The dismiss action's label. Override when the title itself contains the
+   * word "cancel" — a dialog asking "Cancel this run?" must not answer with
+   * a button ALSO reading "Cancel". */
+  cancelLabel?: string
   tone?: 'accent' | 'error'
   onConfirm: () => void
   onCancel: () => void
@@ -116,7 +121,7 @@ export function ConfirmDialog({
       footer={
         <>
           <DialogButton tone="ghost" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </DialogButton>
           <DialogButton tone={tone} onClick={onConfirm}>
             {confirmLabel}
