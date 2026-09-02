@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 # DISTRIBUTION name (PyPI): the bare `alc` was rejected as too similar to an
 # existing project. The import package and the CLI command are still `alc`.
 name = "alc-runtime"
-version = "0.46.1"
+version = "0.47.0"
 description = "ALC — a control plane for agentic coding: automated checks and quality gates around your agents."
 readme = "README.md"
 license = "MIT"
