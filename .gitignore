@@ -34,3 +34,16 @@ Thumbs.db
 
 # Bundled frontend build (produced by the alc-ui frontend's `npm run build:alc`)
 src/alc/ui/static/
+
+# Working notes — dogfood logs, plans and analyses are session artifacts, not
+# product documentation. They stay on disk, out of the repo. Root-anchored so
+# real content (e.g. .alc/blueprints/plan.md) is never caught.
+docs/dogfood-friction-log.md
+docs/e2e-friction-log.md
+docs/e2e-proposals.md
+docs/site-friction-plan.md
+/*-log.md
+/*-plan.md
+/*-analysis.md
+/FRICTION_LOG_REPORT.md
+/plans/
