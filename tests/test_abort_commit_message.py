@@ -1,6 +1,6 @@
 # test_abort_commit_message.py — an aborted unwind must never wait on an engine.
 #
-# Dogfood finding 4 (docs/dogfood-friction-log.md): the UI's Cancel SIGKILLs
+# Dogfood finding 4: the UI's Cancel SIGKILLs
 # after a grace period, and the worktree's exit-commit generated its message
 # with an ENGINE call that takes longer than that — so the kill landed mid-
 # generation, leaking the worktree and orphaning the engine's work. That broke,
