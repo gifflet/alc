@@ -1,0 +1,33 @@
+name: unship
+description: Remove a feature behavior-preservingly, then verify the removal with the project's real checks.
+stages:
+  - name: remove
+    blueprint: refactor
+  - name: gate
+    blueprint: refactor
+    verify_only: true
+    require_real_checks: true
+# ---------------------------------------------------------------------------
+# OPT-IN: prove-absence by text search (map + derive_checks).
+#
+# The gate above verifies the removal with the project's REAL checks (checks
+# are law). Text search is only a heuristic — a name that is not unique can
+# never be proven absent — so real checks are preferred. To ALSO grep the repo
+# for every removed symbol, add a `map` stage BEFORE `remove` and give the gate
+# a `derive_checks` block instead of `require_real_checks`:
+#
+#   - name: map
+#     blueprint: map
+#   - name: remove
+#     blueprint: refactor
+#   - name: gate
+#     blueprint: refactor
+#     verify_only: true
+#     derive_checks:
+#       from_stage: map
+#       field: symbols
+#       shell_template: '! grep -rn {value} . --exclude-dir=.git --exclude-dir=.alc --exclude-dir=node_modules'
+#
+# The `map` stage lists only UNIQUE symbols and returns an EMPTY list when the
+# removal has none (routing the gate to inconclusive). See .alc/blueprints/map.md.
+# ---------------------------------------------------------------------------

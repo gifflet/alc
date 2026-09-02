@@ -1,0 +1,22 @@
+name: sweep
+replenish:
+  kind: plan
+  ref: janitor
+  task: >
+    Find dead or unused code in the TRACKED, LIVE source only. Enumerate the
+    candidate files with `git ls-files` rather than walking the directory tree,
+    and EXCLUDE nested git worktrees — for example `.claude/worktrees/`, and any
+    directory that is itself a separate git worktree (it carries its own `.git`)
+    — plus the `.alc/` operator layer; none of these are live product source, so
+    dead code there must not be touched. For every finding, emit one plan item
+    targeting the `unship` flow, with "touches" set to the file(s) it will edit
+    so overlapping findings serialize instead of racing.
+stop:
+  max_cycles: 10
+  # Cost ceiling for an out-of-box real-engine loop: stop once cumulative spend
+  # reaches $10 (checked between cycles; a running cycle always completes). Raise
+  # it once you trust the loop — max_cycles stays the hard backstop, and an engine
+  # that reports no cost (e.g. gemini) warns each cycle instead.
+  budget:
+    unit: usd
+    max: 10
