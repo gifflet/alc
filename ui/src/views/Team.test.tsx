@@ -404,3 +404,41 @@ describe('Team remove', () => {
     ).toBe(false)
   })
 })
+
+describe('Team hire — saying what happened', () => {
+  // Finding 33: the CLI prints what a hire wrote and one next action; the UI
+  // refreshed the roster in complete silence.
+  it('reports the files added, the retarget and the next step', async () => {
+    installFetch({
+      '/team/hire': {
+        written: ['.alc/blueprints/map.md', '.alc/blueprints/refactor.md'],
+        kept: [],
+        lint: { violations: [] },
+        next: 'alc run refactor "<the file or area to clean up>"',
+        retargeted: { '.alc/blueprints/refactor.md': 'project' },
+      },
+      '/team': oneHiredMember,
+    })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Hire sweeper' }))
+
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(/Hired sweeper \(2 files added\)/)
+    expect(status).toHaveTextContent(/'project' check set/)
+    expect(status).toHaveTextContent(/Next: alc run refactor/)
+  })
+
+  it('degrades cleanly when the backend omits the new fields', async () => {
+    installFetch({
+      '/team/hire': { written: ['.alc/specialists/janitor.yaml'], kept: [], lint: { violations: [] } },
+      '/team': oneHiredMember,
+    })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Hire sweeper' }))
+
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent(/Hired sweeper \(1 file added\)/)
+  })
+})

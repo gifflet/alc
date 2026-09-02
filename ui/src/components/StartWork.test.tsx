@@ -125,3 +125,33 @@ describe('the guarantee is read, not asserted', () => {
     )
   })
 })
+
+describe('StartWork receipt', () => {
+  const field = () => screen.getByLabelText('What should the agent work on?')
+
+  // Finding 36: the field clearing was the only feedback after Start — it read
+  // as a reset, not a receipt, and a double-submit happened in practice.
+  it('confirms the start where the finger was', async () => {
+    start.mockResolvedValueOnce(undefined)
+    render(<StartWork />)
+
+    fireEvent.change(field(), { target: { value: 'tidy the docs' } })
+    fireEvent.click(screen.getByRole('button', { name: /Start/ }))
+
+    const receipt = await screen.findByRole('status')
+    expect(receipt).toHaveTextContent(/Started chore/)
+    expect(receipt).toHaveTextContent(/Console or Fleet/)
+    expect(field()).toHaveValue('')
+  })
+
+  it('regression: an error still shows and suppresses the receipt', async () => {
+    start.mockRejectedValueOnce(new ApiError('boom', 500, null))
+    render(<StartWork />)
+
+    fireEvent.change(field(), { target: { value: 'tidy the docs' } })
+    fireEvent.click(screen.getByRole('button', { name: /Start/ }))
+
+    await waitFor(() => expect(screen.getByText('boom')).toBeInTheDocument())
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+})

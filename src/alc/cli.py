@@ -378,10 +378,19 @@ def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
     ALL of a pack's files. A pack not yet shipped (a later wave) is reported
     plainly and skipped rather than raising.
     """
-    from alc.packs import PACKS, pack_files, split_pack_files
+    from alc.intake import load_manifest
+    from alc.packs import PACKS, pack_files, retarget_pack_content, split_pack_files
     from alc.scaffold import detect_stacks
 
     stacks = detect_stacks(project_root)
+    # The scaffold this runs right after always writes a manifest, but this
+    # helper "never hard-fails" — a missing/unreadable one just skips the
+    # check_set retargeting (None -> no-op), it never blocks the hire.
+    try:
+        manifest = load_manifest(project_root / ".alc")
+    except Exception:
+        manifest = None
+    check_sets = manifest.check_sets if manifest is not None else None
     print(f"Stage '{stage}':")
     for archetype in _STAGE_PACKS[stage]:
         if archetype not in PACKS:
@@ -390,7 +399,7 @@ def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
 
         if force:
             # The one destructive path: overwrite every pack file.
-            files = pack_files(archetype, stacks)
+            files, _ = retarget_pack_content(pack_files(archetype, stacks), check_sets)
             for rel_path, content in sorted(files.items()):
                 target = project_root / rel_path
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -398,7 +407,9 @@ def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
             print(f"  {archetype}: hired ({', '.join(sorted(files))})")
             continue
 
-        missing, present = split_pack_files(archetype, stacks, project_root)
+        missing, present = split_pack_files(
+            archetype, stacks, project_root, check_sets=check_sets
+        )
         for rel_path in sorted(missing):
             target = project_root / rel_path
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -916,7 +927,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from alc.intake import load_blueprint, load_manifest
     from alc.primer import load_primer
     from alc.runner import MandateRunner, PolicyViolationError
-    from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
+    from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo, runtime_provisions
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
@@ -1003,7 +1014,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             # Provision gitignored runtime deps (node_modules/.env/data) into the
             # worktree so the mandate's checks resolve — before this `alc run
             # --isolate` never provisioned and a Node check 127'd. Empty -> no-op.
-            provisions=manifest.worktree_provision,
+            provisions=runtime_provisions(manifest),
         )
         # Use the context manager manually so we can inspect wt after __exit__.
         wt_path = wt.__enter__()
@@ -1599,7 +1610,13 @@ def _team_hire(args: argparse.Namespace) -> int:
     partially-present archetype as hired.
     """
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
-    from alc.packs import PACK_NEXT_STEP, PACKS, pack_files, split_pack_files
+    from alc.packs import (
+        PACK_NEXT_STEP,
+        PACKS,
+        pack_files,
+        retarget_pack_content,
+        split_pack_files,
+    )
     from alc.policy import (
         lint_provision_coverage,
         has_errors,
@@ -1626,7 +1643,9 @@ def _team_hire(args: argparse.Namespace) -> int:
 
     if args.force:
         # The one destructive path: overwrite every pack file.
-        files = pack_files(args.archetype, stacks)
+        files, retargeted = retarget_pack_content(
+            pack_files(args.archetype, stacks), manifest.check_sets
+        )
         for rel_path, content in sorted(files.items()):
             target = project_root / rel_path
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1635,7 +1654,15 @@ def _team_hire(args: argparse.Namespace) -> int:
         for rel_path in sorted(files):
             print(f"  {rel_path}")
     else:
-        missing, present = split_pack_files(args.archetype, stacks, project_root)
+        missing, present = split_pack_files(
+            args.archetype, stacks, project_root, check_sets=manifest.check_sets
+        )
+        # Which Blueprints had their stack-named set replaced by a declared one
+        # (finding 34) — reported below so the operator learns it happened.
+        _, retargeted = retarget_pack_content(
+            pack_files(args.archetype, stacks), manifest.check_sets
+        )
+        retargeted = {rel: t for rel, t in retargeted.items() if rel in missing}
         # Write ONLY the files not yet on disk — additive, never destructive.
         for rel_path in sorted(missing):
             target = project_root / rel_path
@@ -1658,6 +1685,13 @@ def _team_hire(args: argparse.Namespace) -> int:
                 if (project_root / rel_path).read_text() != present[rel_path]:
                     suffix = " (differs from the pack default — --force overwrites)"
                 print(f"  kept (already on disk): {rel_path}{suffix}")
+
+    if retargeted:
+        names = ", ".join(sorted({t for t in retargeted.values()}))
+        print(
+            f"Pointed {len(retargeted)} Blueprint(s) at your declared check set "
+            f"({names}) — the stack default is not declared in this manifest."
+        )
 
     blueprints = load_all_blueprints(manifest, operator_layer)
     violations = lint(manifest, blueprints)
@@ -1953,7 +1987,11 @@ def _team_remove(args: argparse.Namespace) -> int:
     manifest = load_manifest(operator_layer)
 
     removed, kept = remove_pack(
-        args.member, detect_stacks(project_root), project_root, manifest.loops_dir
+        args.member,
+        detect_stacks(project_root),
+        project_root,
+        manifest.loops_dir,
+        check_sets=manifest.check_sets,
     )
 
     if not removed and not kept:
@@ -2065,7 +2103,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
     from alc.intake import load_flow, load_manifest
     from alc.primer import load_primer
     from alc.runner import PolicyViolationError
-    from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo
+    from alc.worktree import IsolatedWorktree, git_toplevel, is_git_repo, runtime_provisions
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
@@ -2153,7 +2191,7 @@ def cmd_flow(args: argparse.Namespace) -> int:
             # Provision gitignored runtime deps into the worktree so the flow's
             # stages run the real app/checks — parity with the queue drain. Empty
             # worktree_provision -> no-op, byte-identical to before.
-            provisions=manifest.worktree_provision,
+            provisions=runtime_provisions(manifest),
         )
         wt_path = wt.__enter__()
         exc_info = (None, None, None)
@@ -2279,6 +2317,24 @@ def cmd_retry(args: argparse.Namespace) -> int:
 
     operator_layer = _find_operator_layer()
     manifest = load_manifest(operator_layer)
+
+    done_dir_early = operator_layer.parent / manifest.queue_dir / "done"
+    if getattr(args, "dismiss", False):
+        # Close the lineage WITHOUT re-running — the missing exit for a failure
+        # whose goal already happened (finding 32). Retry stays the default verb.
+        if not args.stem:
+            print("[ERROR] --dismiss needs the failure's stem.", file=sys.stderr)
+            return 1
+        from alc.queue import dismiss_failure
+
+        try:
+            root = dismiss_failure(done_dir_early, args.stem)
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
+        print(f"Dismissed '{root}' — it will no longer appear as an outstanding failure.")
+        print(f"Nothing was deleted; remove {manifest.queue_dir}/done/{root}.dismissed to reopen.")
+        return 0
 
     # Single-stem path — the original behavior, unchanged.
     if args.stem:
@@ -4084,6 +4140,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="List the outstanding failures as JSON (machine-readable).",
+    )
+    retry_parser.add_argument(
+        "--dismiss",
+        action="store_true",
+        default=False,
+        help=(
+            "Close the failure's lineage WITHOUT re-running it (requires the stem). "
+            "The archives stay; delete done/<root>.dismissed to reopen."
+        ),
     )
 
     # alc enqueue <name> "<task>" [--kind flow|specialist] [--engine NAME]

@@ -496,6 +496,11 @@ export interface HireResult {
   written: string[]
   kept: string[]
   lint: LintResult
+  /** The pack's one concrete next action, mirrored from the CLI's `Next:` line. */
+  next: string | null
+  /** Blueprints whose stack-named check_set was replaced by a declared one
+   * (finding 34): {relative path: replacement set name}. Empty when none. */
+  retargeted: Record<string, string>
 }
 
 /** POST /team/retire's response: the loop file(s) archived into `loops/retired/`. */

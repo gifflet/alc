@@ -39,10 +39,12 @@ from alc.manifestedit import validate_manifest_text
 from alc.merge import MergeReport, auto_merge_branches
 from alc.models import DeliverySpec, FlowReport, QueueTask, Signal
 from alc.packs import (
+    PACK_NEXT_STEP,
     PACKS,
     hired_archetypes,
     pack_files,
     remove_pack,
+    retarget_pack_content,
     retired_pack_loops,
     split_pack_files,
 )
@@ -63,6 +65,7 @@ from alc.prompts import (
 )
 from alc.queue import (
     build_retry_task,
+    dismiss_failure,
     failure_feedback,
     outstanding_failures,
     write_retry_task,
@@ -376,6 +379,26 @@ def delete_pending(root: Path, stem: str) -> None:
     if not path.is_file():
         raise ApiError(f"no pending task '{stem}'", status=404)
     path.unlink()
+
+
+def dismiss_queue_failure(root: Path, stem: str) -> dict:
+    """Close *stem*'s failure lineage without retrying; return {dismissed: root}.
+
+    Mirrors `alc retry --dismiss` (queue.dismiss_failure): writes the
+    `<root>.dismissed` marker, deletes nothing. An unknown stem is
+    ApiError(404) — the UI only offers the action on failures it just listed,
+    so a miss means the archive moved under it.
+    """
+    manifest = load_manifest(operator_layer(root))
+    done_dir = root / manifest.queue_dir / "done"
+    for suffix in (".report.json", ".yaml"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+    try:
+        dismissed = dismiss_failure(done_dir, stem)
+    except FileNotFoundError as exc:
+        raise ApiError(str(exc), status=404) from exc
+    return {"dismissed": dismissed}
 
 
 def retry_queue(root: Path, stem: str | None = None, all_: bool = False) -> dict:
@@ -944,13 +967,23 @@ def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
         available = ", ".join(sorted(PACKS)) or "none yet"
         raise ApiError(f"no pack named '{archetype}' yet (available: {available})", status=404)
 
+    manifest = load_manifest(operator_layer(root))
+    stacks = detect_stacks(root)
     if force:
-        files = pack_files(archetype, detect_stacks(root))
+        files, retargeted = retarget_pack_content(
+            pack_files(archetype, stacks), manifest.check_sets
+        )
         written = sorted(files)
         kept: list[str] = []
         contents = files
     else:
-        missing, present = split_pack_files(archetype, detect_stacks(root), root)
+        missing, present = split_pack_files(
+            archetype, stacks, root, check_sets=manifest.check_sets
+        )
+        _, retargeted = retarget_pack_content(
+            pack_files(archetype, stacks), manifest.check_sets
+        )
+        retargeted = {rel: t for rel, t in retargeted.items() if rel in missing}
         written = sorted(missing)
         kept = sorted(present)
         contents = missing
@@ -960,7 +993,16 @@ def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(contents[rel_path])
 
-    return {"written": written, "kept": kept, "lint": lint_project(root)}
+    # `next` and `retargeted` exist so the UI can SAY what a hire did — the
+    # CLI prints both, and the roster silently refreshing was read as a broken
+    # app (dogfood round 8, finding 33).
+    return {
+        "written": written,
+        "kept": kept,
+        "lint": lint_project(root),
+        "next": PACK_NEXT_STEP.get(archetype),
+        "retargeted": retargeted,
+    }
 
 
 def team_retire(root: Path, member: str) -> dict:
@@ -1017,7 +1059,10 @@ def team_remove(root: Path, member: str) -> dict:
 
     ol = operator_layer(root)
     manifest = load_manifest(ol)
-    removed, kept = remove_pack(member, detect_stacks(root), root, manifest.loops_dir)
+    removed, kept = remove_pack(
+        member, detect_stacks(root), root, manifest.loops_dir,
+        check_sets=manifest.check_sets,
+    )
     return {"removed": removed, "kept": kept}
 
 

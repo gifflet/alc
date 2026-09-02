@@ -388,7 +388,12 @@ class TestProcessTaskWiring:
         _wt_path, root_arg, provisions_arg, dep_existed = calls[0]
         # The source root is the repo root (git_toplevel of the project root).
         assert Path(root_arg).resolve() == project_root.resolve()
-        assert provisions_arg == manifest.worktree_provision
+        # The operator's declared provisions pass through UNCHANGED, plus ALC's
+        # own runtime intake (signals — round 8 finding 39) and nothing else.
+        declared = list(manifest.worktree_provision)
+        assert provisions_arg[: len(declared)] == declared
+        extras = provisions_arg[len(declared):]
+        assert [e.path for e in extras] == [manifest.signals_dir]
         # The provisioned dep existed inside the worktree during the run.
         assert dep_existed is True
 
@@ -404,8 +409,10 @@ class TestProcessTaskWiring:
 
         manifest = load_manifest(operator_layer)  # worktree_provision defaults to []
 
-        # An empty worktree_provision is a no-op: __enter__ skips the call entirely,
-        # so the spy is never invoked and the worktree run is byte-identical.
+        # With no declared provisions the list still carries ALC's own runtime
+        # intake (signals — round 8 finding 39), so provision_worktree IS
+        # called — but the signals dir does not exist here, and a missing
+        # source is a skip, so the worktree run stays byte-identical.
         seen: list[list] = []
         real_provision = wt_mod.provision_worktree
 
@@ -424,8 +431,10 @@ class TestProcessTaskWiring:
         results = queue_mod.process_queue(manifest, operator_layer)
 
         assert len(results) == 1
-        # With an empty list __enter__ never calls provision_worktree at all.
-        assert seen == []
+        # Exactly one call, carrying ONLY the implicit signals entry — nothing
+        # else sneaks in when the operator declared nothing.
+        assert len(seen) == 1
+        assert [spec.path for spec in seen[0]] == [manifest.signals_dir]
 
 
 # ---------------------------------------------------------------------------

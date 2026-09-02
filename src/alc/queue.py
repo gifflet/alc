@@ -29,6 +29,7 @@ from alc.worktree import (
     git_toplevel,
     is_git_repo,
     release_ports,
+    runtime_provisions,
 )
 
 
@@ -173,6 +174,8 @@ def outstanding_failures(done_dir: Path) -> list[FailedTask]:
     for root, (stem, qt, report, mtime) in latest_failed.items():
         if resolved.get(root):
             continue  # a later attempt in this lineage succeeded -> not outstanding
+        if (done_dir / f"{root}.dismissed").exists():
+            continue  # operator closed this lineage without a retry (finding 32)
         title = qt.task.splitlines()[0] if qt.task else ""
         ranked.append((
             mtime,
@@ -186,6 +189,32 @@ def outstanding_failures(done_dir: Path) -> list[FailedTask]:
 
     ranked.sort(key=lambda r: r[0], reverse=True)  # most recently failed first
     return [ft for _, ft in ranked]
+
+
+def dismiss_failure(done_dir: Path, stem: str) -> str:
+    """Close *stem*'s failure lineage without retrying; return the root closed.
+
+    A failure whose goal already happened (or that the operator refuses to
+    repeat) had exactly one exit — Retry, which would recreate the garbage
+    (dogfood round 8, finding 32). Dismissal writes a ``<root>.dismissed``
+    marker next to the archives; ``outstanding_failures`` treats the lineage as
+    resolved from then on. Nothing is deleted — the archived task and report
+    stay for audit, and a LATER retry of the same stem still works (it starts a
+    new attempt whose failure would re-open nothing, because the marker closes
+    the ROOT lineage; delete the marker to reopen).
+
+    Raises FileNotFoundError when *stem* names no archived task.
+    """
+    task_file = done_dir / f"{stem}.yaml"
+    if not task_file.exists():
+        raise FileNotFoundError(f"no archived task '{stem}' in {done_dir}")
+    try:
+        qt = QueueTask.model_validate(yaml.safe_load(task_file.read_text()))
+        root = qt.retry_of or stem
+    except Exception:
+        root = stem
+    (done_dir / f"{root}.dismissed").write_text("")
+    return root
 
 
 def _error_flow_report(flow_name: str, engine: str, message: str) -> FlowReport:
@@ -330,16 +359,20 @@ def _process_task_body(
             """
             if qt.kind == "specialist":
                 # Resolve the Specialist (definition + Knowledge File) against the
-                # worktree only when the Operator Layer is TRACKED there, so a Learn
-                # write lands on the isolated branch. A gitignored .alc/ is absent
-                # from the fresh worktree (git checks out only tracked files) — fall
-                # back to the main Operator Layer, else load_specialist raises
-                # FileNotFoundError. Same guarantee as the conduct fan-out path.
+                # worktree only when THIS specialist's file was checked out there,
+                # so a Learn write lands on the isolated branch. The old test was
+                # directory-level (`wt_ol.is_dir()`), which passed the moment ANY
+                # of .alc/ was tracked — a freshly hired, not-yet-committed
+                # specialist then raised FileNotFoundError from inside the
+                # worktree while the file sat in the root (dogfood round 8,
+                # finding 38). The blueprint path always reads from the root;
+                # this makes the two dispatch paths agree about where the live
+                # Operator Layer is.
                 ol = operator_layer
                 if workdir is not None:
-                    wt_ol = workdir / operator_layer.name
-                    if wt_ol.is_dir():
-                        ol = wt_ol
+                    wt_spec = workdir / manifest.specialists_dir / f"{unit_name}.yaml"
+                    if wt_spec.is_file():
+                        ol = workdir / operator_layer.name
                 return _run_specialist_task(
                     manifest, ol, qt, unit_name, workdir, env, engine=effective_engine
                 )
@@ -414,7 +447,7 @@ def _process_task_body(
                 # worktree so the demand's dev/qa can run the real app there.
                 # IsolatedWorktree.__enter__ applies these once at creation; an empty
                 # worktree_provision is a no-op -> byte-identical to before.
-                provisions=manifest.worktree_provision,
+                provisions=runtime_provisions(manifest),
             )
             wt_path = wt.__enter__()
             exc_info = (None, None, None)

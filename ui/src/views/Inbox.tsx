@@ -8,8 +8,8 @@
 // dismiss-without-acting button would let the control room hide a truth about
 // the project, which is the one thing it must never do.
 import { useState } from 'react'
-import { Eye, GitMerge, Inbox as InboxIcon, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
-import { useDiscardBranches, useInbox, useLandBranches, useRetryQueue } from '../api/hooks'
+import { XCircle, Eye, GitMerge, Inbox as InboxIcon, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
+import { useDiscardBranches, useDismissFailure, useInbox, useLandBranches, useRetryQueue } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { uiStore } from '../app/uiStore'
 import { ConfirmDialog } from '../components/Dialog'
@@ -56,6 +56,7 @@ export function Inbox() {
   const id = useProjectId()
   const { data, isLoading } = useInbox(id)
   const retry = useRetryQueue(id)
+  const dismiss = useDismissFailure(id)
   const land = useLandBranches(id)
   const discard = useDiscardBranches(id)
   const [discarding, setDiscarding] = useState<string | null>(null)
@@ -77,12 +78,23 @@ export function Inbox() {
       // A queued retry has NOT resolved the failure, so the item stays. But the
       // operator must see that one is already waiting, or they queue it twice.
       return (
-        <Action
-          icon={RotateCcw}
-          label={item.retry_pending ? 'Retry queued' : 'Retry'}
-          disabled={retry.isPending || item.retry_pending}
-          onClick={() => retry.mutate({ stem: item.stem })}
-        />
+        <>
+          <Action
+            icon={RotateCcw}
+            label={item.retry_pending ? 'Retry queued' : 'Retry'}
+            disabled={retry.isPending || item.retry_pending}
+            onClick={() => retry.mutate({ stem: item.stem })}
+          />
+          {/* The exit Retry is not: a failure whose goal already happened can
+              only be re-run or stared at (finding 32). Dismiss closes the
+              lineage; the archives stay, nothing is deleted. */}
+          <Action
+            icon={XCircle}
+            label="Dismiss"
+            disabled={dismiss.isPending}
+            onClick={() => dismiss.mutate(item.stem!)}
+          />
+        </>
       )
     }
     if (item.kind === 'branch') {

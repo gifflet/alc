@@ -68,6 +68,7 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
   const blueprints = useCollection(projectId, 'blueprints').data ?? []
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [started, setStarted] = useState<string | null>(null)
   const start = useStartExec()
   const guarantee = useGuarantee()
 
@@ -76,6 +77,7 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
     if (!trimmed || busy) return
     setBusy(true)
     setError(null)
+    setStarted(null)
     try {
       // `run chore --isolate`, not `conduct`, for three reasons that only became
       // clear once the consequences were traced:
@@ -91,6 +93,11 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
       // Engine and tier are still unasked: the manifest has them.
       await start('run', { blueprint, task: trimmed, isolate: true })
       setGoal('')
+      // The field clearing was the ONLY feedback, and it reads as a reset, not
+      // a receipt — a double-submit happened in practice (finding 36). Say it.
+      setStarted(
+        `Started ${blueprint} — running on an isolated branch. Watch it in the Console or Fleet.`,
+      )
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not start.')
     } finally {
@@ -164,6 +171,11 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
       </div>
 
       {error && <p className="mt-2 text-[length:var(--ui-text-label)] text-error">{error}</p>}
+      {started && !error && (
+        <p className="mt-2 text-[length:var(--ui-text-label)] text-muted" role="status">
+          {started}
+        </p>
+      )}
     </div>
   )
 }

@@ -246,7 +246,30 @@ export function Team() {
 
   const doHire = (archetype: string) => {
     setHiring(archetype)
-    hire.mutate({ archetype }, { onSettled: () => setHiring(null) })
+    hire.mutate(
+      { archetype },
+      {
+        onSettled: () => setHiring(null),
+        // The roster refreshing was the ONLY feedback — the CLI prints what it
+        // wrote and one next action, the UI said nothing (finding 33).
+        onSuccess: (result) => {
+          const n = result.written.length
+          const parts = [
+            n === 0
+              ? `${archetype} was already fully hired — nothing to add.`
+              : `Hired ${archetype} (${n} file${n === 1 ? '' : 's'} added).`,
+          ]
+          const sets = Object.values(result.retargeted ?? {})
+          if (sets.length > 0) {
+            parts.push(
+              `Pointed ${sets.length} Blueprint${sets.length === 1 ? '' : 's'} at your '${sets[0]}' check set.`,
+            )
+          }
+          if (result.next) parts.push(`Next: ${result.next}`)
+          setNotice(parts.join(' '))
+        },
+      },
+    )
   }
 
   const confirmRetire = () => {

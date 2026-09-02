@@ -91,3 +91,48 @@ describe('BlueprintForm', () => {
     expect(lastFrontMatter(onDoc).checks[0].flaky).toBe(3)
   })
 })
+
+describe('BlueprintForm invalid check_set', () => {
+  const BP_INVALID = `---
+name: refactor
+purpose: Clean up.
+check_set: python
+checks:
+  - name: smoke
+    command: ["true"]
+---
+
+body
+`
+
+  // Finding 35: an undeclared stored value rendered as "(none)" — the form
+  // silently misrepresented the file and rewrote it on save.
+  it('shows the undeclared value as its own labelled option', () => {
+    const onDoc = vi.fn()
+    renderControlledForm(
+      BP_INVALID,
+      (value, onChange) => (
+        <BlueprintForm value={value} onChange={onChange} tiers={[]} checkSets={['project', 'security']} />
+      ),
+      onDoc,
+    )
+    const select = screen.getByLabelText('Check set') as HTMLSelectElement
+    expect(select.value).toBe('python')
+    const labels = Array.from(select.options).map((o) => o.label)
+    expect(labels).toContain('python (not declared!)')
+  })
+
+  it('regression: a declared value renders plainly, with no extra option', () => {
+    const onDoc = vi.fn()
+    renderControlledForm(
+      BP_INVALID.replace('check_set: python', 'check_set: project'),
+      (value, onChange) => (
+        <BlueprintForm value={value} onChange={onChange} tiers={[]} checkSets={['project', 'security']} />
+      ),
+      onDoc,
+    )
+    const select = screen.getByLabelText('Check set') as HTMLSelectElement
+    expect(select.value).toBe('project')
+    expect(Array.from(select.options).map((o) => o.label)).toEqual(['(none)', 'project', 'security'])
+  })
+})

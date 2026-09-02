@@ -4,10 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { Fleet } from './Fleet'
 import { installFetch, renderWithProviders } from '../test/utils'
 import { uiStore } from '../app/uiStore'
+import { execStore } from '../app/execStore'
 
 beforeEach(() => {
   localStorage.clear()
   uiStore.reset()
+  execStore.reset()
 })
 
 const STARTED = {
@@ -50,5 +52,44 @@ describe('Fleet', () => {
     renderWithProviders(<Fleet />)
     await userEvent.click(await screen.findByRole('button'))
     expect(uiStore.getState().activeTabId).toBe('run:run-a')
+  })
+})
+
+describe('Fleet cancel', () => {
+  // Finding 37: cancel lived only in the Console drawer — invisible on the one
+  // screen whose job is watching running agents.
+  it('offers Cancel when a running exec owns the unit', async () => {
+    const mock = installFetch({
+      '/fleet': { units: [unit('run-a', [{ ts: 't', event: 'act_started', attempt: 0 }])] },
+      '/cancel': { cancelled: true },
+    })
+    execStore.launch({ id: 'e1', projectId: 'demo', command: 'run' })
+    execStore.noteRun('demo', 'run-a')
+    renderWithProviders(<Fleet />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel run-a' }))
+
+    const call = mock.calls.find((c) => c.method === 'POST' && c.url.includes('/execs/e1/cancel'))
+    expect(call).toBeTruthy()
+  })
+
+  it('offers no Cancel when nothing running matches', async () => {
+    installFetch({
+      '/fleet': { units: [unit('run-a', [{ ts: 't', event: 'act_started', attempt: 0 }])] },
+    })
+    renderWithProviders(<Fleet />)
+    expect(await screen.findByText('tidy the imports')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Cancel/ })).not.toBeInTheDocument()
+  })
+
+  it('never guesses between two running execs without a stem match', async () => {
+    installFetch({
+      '/fleet': { units: [unit('run-a', [{ ts: 't', event: 'act_started', attempt: 0 }])] },
+    })
+    execStore.launch({ id: 'e1', projectId: 'demo', command: 'run' })
+    execStore.launch({ id: 'e2', projectId: 'demo', command: 'run' })
+    renderWithProviders(<Fleet />)
+    expect(await screen.findByText('tidy the imports')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Cancel/ })).not.toBeInTheDocument()
   })
 })
