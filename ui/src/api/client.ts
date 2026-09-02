@@ -207,6 +207,11 @@ export const api = {
     }),
   deletePending: (id: string, stem: string) =>
     request<void>(`${proj(id)}/queue/${encodeURIComponent(stem)}`, { method: 'DELETE' }),
+  dismissQueueFailure: (id: string, stem: string) =>
+    request<{ dismissed: string }>(`${proj(id)}/queue/dismiss`, {
+      method: 'POST',
+      body: JSON.stringify({ stem }),
+    }),
   retryQueue: (id: string, body: { stem?: string; all?: boolean }) =>
     request<{ enqueued: string[] }>(`${proj(id)}/queue/retry`, {
       method: 'POST',

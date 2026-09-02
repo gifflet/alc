@@ -425,6 +425,29 @@ def unprovisioned_dep_dirs(worktree: Path, project_root: Path) -> list[str]:
     return gaps
 
 
+def runtime_provisions(manifest) -> list:
+    """The manifest's declared provisions plus ALC's own runtime intake.
+
+    `signals_dir` is gitignored runtime state — correct for the repo, fatal for
+    an isolated run that needs to READ it: a worktree checks out only tracked
+    files, so a signal-driven unit (the grower's listen specialist) ran
+    "successfully" against an empty signal queue while the signals sat in the
+    root (dogfood round 8, finding 39). Signals are provisioned as a COPY:
+    cheap (small JSON files), isolated (a worktree consuming one cannot corrupt
+    the root's), and read-only in spirit — archiving/consuming stays a
+    root-side concern. An operator-declared provision for the same path wins
+    (no duplicate). Accepts the Manifest loosely typed so this module keeps no
+    intake import.
+    """
+    from alc.models import ProvisionSpec
+
+    provisions = list(manifest.worktree_provision)
+    covered = {spec.path for spec in provisions}
+    if manifest.signals_dir not in covered:
+        provisions.append(ProvisionSpec(copy=manifest.signals_dir))
+    return provisions
+
+
 def provision_worktree(
     worktree: Path, project_root: Path, provisions: list[ProvisionSpec]
 ) -> None:

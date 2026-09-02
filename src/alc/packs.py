@@ -122,6 +122,56 @@ def _check_set_line(
     return f"check_set: {set_name}\n"
 
 
+def retarget_pack_content(
+    files: dict[str, str],
+    check_sets: dict[str, list] | None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Point pack Blueprints at a check_set the Manifest actually declares.
+
+    `_check_set_line` names the set after the DETECTED STACK ('python',
+    'node', …) — the name `alc init` scaffolds. A manifest whose checks were
+    harvested later (`alc onboard` writes a 'project' set) no longer declares
+    that name, so a hire landed Blueprints violating Policy Gate rule 7 and
+    turned the gate red (dogfood round 8, finding 34). The remedy rule 11's
+    warn already computes — "a populated check_set exists, point there" — is
+    applied at WRITE time instead of left as homework:
+
+    - a declared set name is kept, whatever its content;
+    - an undeclared name is replaced by the declared set with the MOST checks
+      (ties break alphabetically) — the same populated-set preference the
+      warn's remedy names;
+    - with nothing populated to point at, the content is left unchanged and
+      lint keeps telling the truth about it.
+
+    Returns ``(files, {relative path: replacement set name})`` — the second
+    mapping is empty when nothing was retargeted, so callers can say exactly
+    what happened. Pure: *check_sets* is plain data (name -> checks list);
+    None (no readable manifest) is a no-op.
+    """
+    import re
+
+    if not check_sets:
+        return files, {}
+    populated = sorted(
+        (name for name, checks in check_sets.items() if checks),
+        key=lambda name: (-len(check_sets[name]), name),
+    )
+    if not populated:
+        return files, {}
+    target = populated[0]
+    line_re = re.compile(r"^check_set: (\S+)$", re.MULTILINE)
+    out: dict[str, str] = {}
+    retargeted: dict[str, str] = {}
+    for rel, content in files.items():
+        match = line_re.search(content)
+        if match and match.group(1) not in check_sets:
+            out[rel] = content[: match.start()] + f"check_set: {target}" + content[match.end():]
+            retargeted[rel] = target
+        else:
+            out[rel] = content
+    return out, retargeted
+
+
 def _builder_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
 ) -> dict[str, str]:
@@ -637,6 +687,7 @@ def split_pack_files(
     archetype: str,
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
     project_root: Path,
+    check_sets: dict[str, list] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Return ({missing rel-path: content}, {present rel-path: content}) for *archetype*.
 
@@ -655,9 +706,10 @@ def split_pack_files(
     Raises:
         KeyError: If *archetype* is not (yet) a registered pack.
     """
+    files, _ = retarget_pack_content(pack_files(archetype, stacks), check_sets)
     missing: dict[str, str] = {}
     present: dict[str, str] = {}
-    for rel, content in pack_files(archetype, stacks).items():
+    for rel, content in files.items():
         if (project_root / rel).exists():
             present[rel] = content
         else:
@@ -737,6 +789,7 @@ def remove_pack(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
     project_root: Path,
     loops_dir_rel: str,
+    check_sets: dict[str, list] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Delete *archetype*'s UNMODIFIED pack files; return (removed, kept).
 
@@ -766,9 +819,10 @@ def remove_pack(
     Raises:
         KeyError: If *archetype* is not (yet) a registered pack.
     """
+    files, _ = retarget_pack_content(pack_files(archetype, stacks), check_sets)
     removed: list[str] = []
     kept: list[str] = []
-    for rel, content in pack_files(archetype, stacks).items():
+    for rel, content in files.items():
         candidates = [rel]
         twin = _retired_twin(rel, loops_dir_rel)
         if twin is not None:

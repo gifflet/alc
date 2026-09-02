@@ -17,7 +17,7 @@ from alc.models import Blueprint, Diffstat, Manifest, RunReport
 from alc.policy import has_errors, lint
 from alc.runtime import RuntimeService
 from alc.verifier import CheckResult, Verifier
-from alc.worktree import allocate_free_ports, release_ports
+from alc.worktree import allocate_free_ports, release_ports, runtime_provisions
 
 def _git_state(workdir: Path) -> dict[str, str] | None:
     """Return a {path: status} map for the given workdir, or None if not a git work tree.
@@ -408,7 +408,7 @@ def execute_mandate(
         # `protect`). Not bound when no provision declares a refresh ->
         # `loop_kwargs` unchanged -> byte-identical.
         loop_kwargs["env_refresh"] = envrefresh.make_env_refresh(
-            provisions=manifest.worktree_provision,
+            provisions=runtime_provisions(manifest),
             workdir=effective_workdir,
             changed_files=lambda: _changed_so_far(effective_workdir, state_before),
             timeout_s=manifest.check_timeout_s,

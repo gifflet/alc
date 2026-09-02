@@ -178,6 +178,26 @@ function createStore() {
   }
 }
 
+/** The running exec that owns *stem*'s run, when the store can prove it.
+
+ * Match by observed run stems first; fall back to "the only running exec of
+ * this project" — unambiguous by counting, which is what an operator's eye
+ * does. Null when nothing running matches: a cancel control must never guess
+ * between two candidates (finding 37 wants cancel WHERE the run is watched,
+ * not a roulette). */
+export function runningExecForStem(
+  state: ExecStoreState,
+  projectId: string,
+  stem: string,
+): ExecEntry | null {
+  const running = state.execs.filter(
+    (e) => e.status === 'running' && e.projectId === projectId,
+  )
+  const byStem = running.find((e) => e.runStems.includes(stem))
+  if (byStem) return byStem
+  return running.length === 1 ? running[0] : null
+}
+
 export const execStore = createStore()
 
 /** Subscribe a component to the whole exec store. */

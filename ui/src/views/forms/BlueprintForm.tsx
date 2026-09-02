@@ -119,12 +119,22 @@ export function BlueprintForm({
       </div>
 
       <Field label="Check set">
+        {/* A stored value the manifest does not declare must stay VISIBLE — the
+            select used to render it as "(none)", silently misrepresenting the
+            file and rewriting it on save (finding 35). The invalid value gets
+            its own labelled option instead. */}
         <Select
           value={str('check_set')}
           onChange={(v) =>
             update((d) => (v === '' ? d.deleteIn(['check_set']) : d.setIn(['check_set'], v)))
           }
-          options={[{ value: '', label: '(none)' }, ...checkSets.map((c) => ({ value: c, label: c }))]}
+          options={[
+            { value: '', label: '(none)' },
+            ...(str('check_set') && !checkSets.includes(str('check_set'))
+              ? [{ value: str('check_set'), label: `${str('check_set')} (not declared!)` }]
+              : []),
+            ...checkSets.map((c) => ({ value: c, label: c })),
+          ]}
         />
       </Field>
 

@@ -61,8 +61,11 @@ describe('Inbox', () => {
     expect(screen.getByRole('button', { name: /Land/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Discard/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Open loop/ })).toBeInTheDocument()
-    // No dismiss: an item leaves by being acted on, never by being hidden.
-    expect(screen.queryByRole('button', { name: /Dismiss/ })).toBeNull()
+    // Dismiss exists for FAILURES only (finding 32 reversed the old "never
+    // hidden" rule: a failure whose goal already happened cannot be acted on,
+    // only re-run into garbage). Branches and loops still leave by being
+    // acted on — one Dismiss on screen means it belongs to the failure.
+    expect(screen.getAllByRole('button', { name: /Dismiss/ })).toHaveLength(1)
   })
 
   it('retries the exact failed stem', async () => {
@@ -222,5 +225,35 @@ describe('Inbox — the badge must agree with the sentence', () => {
 
     expect(await screen.findByText('unverified')).toBeInTheDocument()
     expect(screen.queryByText('to land')).not.toBeInTheDocument()
+  })
+})
+
+describe('Inbox dismiss', () => {
+  // Finding 32: a failure whose goal already happened had exactly one exit —
+  // Retry, which would recreate the garbage.
+  it('dismisses a failure lineage without retrying', async () => {
+    const mock = installFetch({
+      '/inbox': { items: [FAILURE], count: 1 },
+      '/queue/dismiss': { dismissed: 'v1-01-impl-aaa' },
+    })
+    renderWithProviders(<Inbox />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /Dismiss/ }))
+
+    const call = mock.calls.find((c) => c.method === 'POST' && c.url.endsWith('/queue/dismiss'))
+    expect(call?.body).toEqual({ stem: 'v1-01-impl-aaa' })
+  })
+
+  it('regression: Retry still fires and never calls dismiss', async () => {
+    const mock = installFetch({
+      '/inbox': { items: [FAILURE], count: 1 },
+      '/queue/retry': { enqueued: ['x'] },
+    })
+    renderWithProviders(<Inbox />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+
+    expect(mock.calls.some((c) => c.method === 'POST' && c.url.endsWith('/queue/retry'))).toBe(true)
+    expect(mock.calls.some((c) => c.url.endsWith('/queue/dismiss'))).toBe(false)
   })
 })

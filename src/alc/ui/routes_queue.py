@@ -58,6 +58,17 @@ def retry(body: RetryBody, ctx: ProjectContext = Depends(get_project)) -> dict:
     return service.retry_queue(ctx.root, stem=body.stem, all_=body.all)
 
 
+class DismissBody(BaseModel):
+    """Body for POST /queue/dismiss: close one failure lineage without a retry."""
+
+    stem: str
+
+
+@router.post("/queue/dismiss")
+def dismiss(body: DismissBody, ctx: ProjectContext = Depends(get_project)) -> dict:
+    return service.dismiss_queue_failure(ctx.root, body.stem)
+
+
 # ---------------------------------------------------------------------------
 # Runs
 # ---------------------------------------------------------------------------

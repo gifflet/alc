@@ -391,6 +391,17 @@ export function useDeletePending(id: string) {
   })
 }
 
+export function useDismissFailure(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stem: string) => api.dismissQueueFailure(id, stem),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.inbox(id) })
+      qc.invalidateQueries({ queryKey: keys.queue(id) })
+    },
+  })
+}
+
 export function useRetryQueue(id: string) {
   const qc = useQueryClient()
   return useMutation({

@@ -19,6 +19,7 @@ from alc.worktree import (
     IsolatedWorktree,
     git_toplevel,
     is_git_repo,
+    runtime_provisions,
 )
 
 
@@ -126,7 +127,7 @@ def _run_unit(
             # worktree so the unit's dev/qa can run the REAL app there — parity with
             # the queue drain. IsolatedWorktree.__enter__ applies these once at
             # creation; empty worktree_provision -> no-op, byte-identical to before.
-            provisions=manifest.worktree_provision,
+            provisions=runtime_provisions(manifest),
         )
         # Use the context manager manually so we can inspect wt after __exit__
         # (mirrors cli.py: enter -> run -> __exit__ under try/finally).

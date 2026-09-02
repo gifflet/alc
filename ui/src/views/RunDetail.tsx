@@ -5,8 +5,10 @@
 // any refresh. buildTimeline turns the raw events into the segmented track.
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Radio } from 'lucide-react'
+import { Radio, Square } from 'lucide-react'
 import { api, artifactFileUrl } from '../api/client'
+import { runningExecForStem, useExecState } from '../app/execStore'
+import { ActionButton } from '../components/ActionButton'
 import { keys } from '../api/keys'
 import { useRunArtifacts } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
@@ -26,6 +28,7 @@ export function RunDetail({ stem }: { stem: string }) {
   const [events, setEvents] = useState<RunEvent[]>([])
   // A live WS event proves a process is still writing this run — clears stale.
   const [live, setLive] = useState(false)
+  const execState = useExecState()
 
   const query = useQuery({
     queryKey: keys.run(id, stem),
@@ -88,6 +91,25 @@ export function RunDetail({ stem }: { stem: string }) {
             {timeline.model ? `/${timeline.model}` : ''}
           </span>
         )}
+        {/* Cancel where the run is actually being WATCHED, not only in the
+            Console drawer (finding 37). Rendered only while a running exec
+            provably owns this stem. */}
+        {!timeline.finished &&
+          (() => {
+            const exec = runningExecForStem(execState, id, stem)
+            return exec ? (
+              <ActionButton
+                aria-label={`Cancel ${stem}`}
+                tone="error"
+                size="sm"
+                className={timeline.engine ? '' : 'ml-auto'}
+                onClick={() => void api.cancelExec(exec.id).catch(() => {})}
+              >
+                <Square className="h-3 w-3" />
+                Cancel
+              </ActionButton>
+            ) : null
+          })()}
       </header>
 
       {events.length === 0 ? (
