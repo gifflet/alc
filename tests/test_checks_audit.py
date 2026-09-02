@@ -1,5 +1,4 @@
-# test_checks_audit.py — Hermetic tests for `alc checks audit` (roadmap-phase-2.md
-# T13): the pure audit_checks() function, its CLI wiring, and the advisory Policy
+# test_checks_audit.py — Hermetic tests for `alc checks audit`: the pure audit_checks() function, its CLI wiring, and the advisory Policy
 # Gate rule that flags an execution Blueprint resolving to only the smoke
 # placeholder. audit_checks() never writes — every assertion here is read-only.
 from __future__ import annotations
@@ -443,7 +442,7 @@ class TestAuditInstallHints:
 
 
 # ---------------------------------------------------------------------------
-# Policy Gate — advisory smoke-only-execution-blueprint rule (T13)
+# Policy Gate — advisory smoke-only-execution-blueprint rule
 # ---------------------------------------------------------------------------
 
 

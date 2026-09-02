@@ -309,7 +309,7 @@ class AssuranceLoop:
             failed = [cr for cr in check_results if not cr.passed]
             # A quarantined check still RUNS and its failure is fully recorded
             # (failed_checks, checks below) — it is simply excluded from what
-            # blocks success or spends a repair turn (roadmap-phase-3.md T11).
+            # blocks success or spends a repair turn.
             blocking_failed = [cr for cr in failed if cr.name not in self._quarantined]
             quarantined_failed = [cr for cr in failed if cr.name in self._quarantined]
 

@@ -1,4 +1,4 @@
-# test_priority.py — roadmap-phase-3.md T8: `priority: int = 0` on QueueTask.
+# test_priority.py — `priority: int = 0` on QueueTask.
 # The drain orders each dependency WAVE by (-priority, filename); dependency
 # ordering stays authoritative — priority only breaks ties among tasks already
 # ready in the same wave. Covers the pure `_topological_waves` scheduler and

@@ -1127,8 +1127,7 @@ def land_branches(
     Mirrors `alc land --all`'s branch selection when no explicit list is given.
 
     ``mode``/``remote``/``base`` are the UI's equivalent of `alc land`'s
-    ``--push``/``--pr`` flags (roadmap-phase-4.md T8's DeliverySpec, wrapped
-    for the UI, ui-phase-5.md T3): omitted, they fall back to the manifest's
+    ``--push``/``--pr`` flags: omitted, they fall back to the manifest's
     own `delivery` block, then to ``local`` — the response then stays byte-
     identical to before this existed (no ``warning`` key at all). For
     ``push``/``pr``, a delivery failure is carried back as ``warning`` in the
@@ -1321,7 +1320,7 @@ def schedule_status() -> dict:
     """Return the host crontab's ALC-scheduled entries (mirrors `alc schedule list`).
 
     Project-independent — the crontab lives on the host, not inside a project
-    (ui-phase-5.md T12). Never writes: only `has_crontab`/`read_crontab` are
+    Never writes: only `has_crontab`/`read_crontab` are
     called. No `crontab` binary on this host degrades to
     ``{"available": False, "entries": []}``, the same explicit-empty contract
     `_schedule_list` itself already prints as "No `crontab` on this platform.".

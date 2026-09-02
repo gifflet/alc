@@ -58,7 +58,7 @@ name: qa
 purpose: Verify the change end-to-end against a live instance of the service.
 compute_tier: standard
 needs_service: true
-# e2e evidence (roadmap-phase-5.md T6): runs once the health poll has already
+# e2e evidence: runs once the health poll has already
 # proven the service reachable, and writes into $ALC_ARTIFACTS_DIR — ALC
 # collects whatever lands there (plus the health-poll log) into the
 # RunReport, readable back via `alc artifacts`. Swap for a real screenshot
@@ -296,8 +296,7 @@ def _sweeper_files(
     sweep Loop, and the unship Flow — remove -> a require_real_checks gate that
     verifies the removal with the project's REAL checks (checks are law), reporting
     INCONCLUSIVE when the project has only placeholder checks. The grep-based
-    prove-absence strategy (a map Blueprint + a derive_checks gate,
-    roadmap-phase-4.md T9) is retained as a documented opt-in: map.md still ships
+    prove-absence strategy (a map Blueprint + a derive_checks gate) is retained as a documented opt-in: map.md still ships
     and the unship Flow carries the recipe as a commented block."""
     return {
         ".alc/blueprints/map.md": _SWEEPER_MAP,
@@ -322,7 +321,7 @@ purpose: Verify the codebase against the security check_set as a pure gate.
 compute_tier: standard
 check_set: security
 checks:
-  # `security` (T5) can render empty when no scanner binary was on PATH at
+  # `security` can render empty when no scanner binary was on PATH at
   # `alc init` time — a pack Blueprint must never depend on a check_set alone.
   # This inline check keeps the gate lint-clean and non-empty regardless.
   - name: smoke
@@ -409,7 +408,7 @@ stop:
 # exactly like every other archetype (the Grower's loop is hypothesis -> change
 # -> measurement). Metric checks and the `regression` replenish kind now exist,
 # so `grow` ships a commented metric-check example — uncomment it to track a
-# number and fail the run on regression. STILL PARTIAL (roadmap-phase-2.md T12):
+# number and fail the run on regression. STILL PARTIAL:
 # automated signal intake (issue trackers, APM, crash reports) is not yet wired.
 # ---------------------------------------------------------------------------
 
@@ -420,7 +419,7 @@ _GROWER_LISTEN = """\
 # "<pasted issue reports>"`), and its Knowledge File accumulates what users
 # keep hitting over time. This pack is DELIBERATELY PARTIAL — automated
 # signal intake, metric checks, and the `regression` replenish kind land in
-# Phases 4-5 (see docs/roadmap-phase-2.md).
+# Phases 4-5.
 name: listen
 area: user-reported issues and error reports — a durable map of what users keep hitting
 blueprint: plan
@@ -491,8 +490,7 @@ def _grower_files(
     its checks are real when a stack is present and still lint-clean when none
     is; it also ships a commented metric-check example (uncomment to track a
     number and fail on regression — the Grower's own law). Automated signal
-    intake (issue trackers, APM, crash reports) is the remaining partial piece
-    (see docs/roadmap-phase-2.md); metric checks and the `regression` replenish
+    intake (issue trackers, APM, crash reports) is the remaining partial piece; metric checks and the `regression` replenish
     kind now exist.
     """
     return {
@@ -524,7 +522,7 @@ def _maintainer_files(
 
 # ---------------------------------------------------------------------------
 # Prototyper pack — a single throwaway `spike` Blueprint. `mode: spike` is the
-# ONE relaxation of the checks gate (roadmap-phase-3.md T1): it declares no
+# ONE relaxation of the checks gate: it declares no
 # checks at all, and the Policy Gate downgrades that from error to warn only
 # in this mode. The control plane fences the rest (forced isolation, zero
 # repairs, no commit/auto-merge) — see runner.py and cli.py.

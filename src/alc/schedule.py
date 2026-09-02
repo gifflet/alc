@@ -1,5 +1,5 @@
 # schedule.py — Generates and manages the crontab entry that fires `alc tick`
-# or `alc cycle NAME` on a cadence (roadmap-phase-3.md T13).
+# or `alc cycle NAME` on a cadence.
 #
 # `alc tick` already holds a POSIX file lock (lock.py) and exits 0 on every
 # task outcome, so it is cron-safe as-is: an overlapping fire skips instead of

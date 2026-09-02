@@ -116,7 +116,7 @@ class RuntimeService:
         Safe to call any time after ``__enter__`` starts the process (including
         after a failed ``__enter__``), as long as it is called BEFORE teardown
         closes the log file. Best-effort: an unreadable log yields "" rather
-        than raising — this backs e2e evidence capture (roadmap-phase-5.md T6),
+        than raising — this backs e2e evidence capture,
         which must never fail a run.
         """
         if self._log is None:

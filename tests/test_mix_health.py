@@ -1,6 +1,6 @@
 # test_mix_health.py — Hermetic tests for T6: Mix Health, `mix_health()` in
 # src/alc/stagepolicy.py and its surfacing in `alc team status`. Aggregates
-# archived reports (roadmap-phase-4.md T6) by `RunReport.archetype` and pairs
+# archived reports by `RunReport.archetype` and pairs
 # the totals with the stage's target mix — never judging when no stage is set,
 # never a division by zero when no report has been archived yet.
 from __future__ import annotations

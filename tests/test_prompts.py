@@ -130,7 +130,7 @@ class TestPlanContract:
         assert render_plan_contract("CAT", operator_layer, manifest) == "MY CONTRACT CAT"
 
     def test_documents_the_optional_impact_field(self, operator_layer: Path) -> None:
-        # T12 (roadmap-phase-2.md): the reserved plan-contract prompt documents an
+        # T12: the reserved plan-contract prompt documents an
         # OPTIONAL "impact": {"score": ..., "rationale": ...} field a planner with
         # real evidence (e.g. the Grower pack's `listen` Specialist) may attach.
         manifest = load_manifest(operator_layer)

@@ -1,4 +1,4 @@
-# test_metrics_ledger.py — Hermetic tests for roadmap-phase-4.md T2 (the
+# test_metrics_ledger.py — Hermetic tests for the metrics ledger (the
 # per-project metric ledger, src/alc/metrics.py) and T3 (`alc metrics
 # [--check NAME] [--json]`): the time series read back from that ledger.
 #

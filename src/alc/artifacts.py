@@ -1,5 +1,5 @@
 # artifacts.py — `alc artifacts`: read back the e2e evidence a `needs_service`
-# run's `capture:` command produced (roadmap-phase-5.md T7).
+# run's `capture:` command produced.
 #
 # RunReport.artifacts is never persisted to a ledger of its own — it rides the
 # `mandate_finished` event already written to the run log (`alc.events`), the

@@ -1,4 +1,4 @@
-# notify.py — Never-raise push notifications for unattended operation (T12).
+# notify.py — Never-raise push notifications for unattended operation.
 #
 # A notify target is either a command (argv list, no shell — the payload is
 # handed to it on stdin) or a webhook URL (a str — the payload is POSTed as the

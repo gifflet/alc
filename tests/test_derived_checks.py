@@ -1,5 +1,5 @@
 # test_derived_checks.py — Hermetic tests for T9: derived checks on a
-# verify_only Flow stage (roadmap-phase-4.md). Covers the pure materializer
+# verify_only Flow stage. Covers the pure materializer
 # (`flow._derive_checks`), the two new Policy Gate rules, the
 # FlowStage/DeriveChecksSpec model shape, interpolation safety against a
 # hostile value, and end-to-end FlowRunner runs — including the real Sweeper
@@ -221,7 +221,7 @@ class TestDeriveChecksInterpolationIsSafe:
     """Interpolation is a security boundary: the value comes out of a model's
     report and lands in a shell command run via `sh -c`. A hostile value must
     be neutralised by `shlex.quote`, never able to break out of the derived
-    command (roadmap-phase-4.md T9)."""
+    command."""
 
     def test_hostile_value_cannot_execute_extra_commands(self, tmp_path: Path) -> None:
         (tmp_path / "src").mkdir()
@@ -703,8 +703,7 @@ class TestGateHandlesFencedMapReportEndToEnd:
 # ---------------------------------------------------------------------------
 
 # A manifest whose `python` check_set holds ONE cheap, deterministic shell check
-# — the real check the gate resolves and runs (roadmap-phase-4.md / Boris:
-# "checks are law"). `! test -f dead_marker` passes iff the marker file is gone.
+# — the real check the gate resolves and runs. `! test -f dead_marker` passes iff the marker file is gone.
 _PYTHON_CHECK_MANIFEST = """\
 version: 1
 default_engine: mock

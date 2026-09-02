@@ -129,7 +129,7 @@ class TestPackFilesMaintainer:
 
 # ---------------------------------------------------------------------------
 # Loading is strict: flows, specialists, and loops are pydantic-validated
-# YAML — a pack file that fails its loader is a defect (roadmap-phase-2.md).
+# YAML — a pack file that fails its loader is a defect.
 # ---------------------------------------------------------------------------
 
 
@@ -210,7 +210,7 @@ class TestMaintainerPackLoadsThroughTheRealLoaders:
     def test_scan_gate_resolves_to_a_non_empty_check_list_even_with_no_scanner(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Constraint: `security` (T5) can render EMPTY when no scanner binary
+        """Constraint: `security` can render EMPTY when no scanner binary
         was on PATH at `alc init` time — the scan gate must still resolve to
         at least one live check (its own inline smoke check)."""
         monkeypatch.setattr("alc.scaffold.shutil.which", lambda cmd: None)

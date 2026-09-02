@@ -1,4 +1,4 @@
-# test_replenish_signals.py — Hermetic tests for roadmap-phase-5.md T3: the
+# test_replenish_signals.py — Hermetic tests for the
 # `signals` replenish kind (models.Replenish + loop.run_replenish) — the
 # mechanism that turns pending signals into demands (via
 # conduct.dispatch_enqueue, no planner turn) and archives each one consumed.

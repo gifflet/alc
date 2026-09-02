@@ -232,7 +232,7 @@ class _ServiceRun:
             release_ports(self._allocated)
 
     def captured_output(self) -> str:
-        """Delegate to the wrapped RuntimeService's captured stdout+stderr (see T6)."""
+        """Delegate to the wrapped RuntimeService's captured stdout+stderr."""
         return self._svc.captured_output()
 
 
@@ -353,12 +353,12 @@ def execute_mandate(
     if blueprint.max_repairs is not None:
         loop_kwargs["max_repairs"] = blueprint.max_repairs
     if blueprint.mode == "spike":
-        # T1: the ONE relaxation of the checks gate comes fenced — a spike gets
+        # The ONE relaxation of the checks gate comes fenced — a spike gets
         # exactly one engine turn, never a repair cycle, regardless of the
         # Blueprint's own max_repairs (if any).
         loop_kwargs["max_repairs"] = 0
     if blueprint.protect:
-        # T4: `protect` must be detected PER ATTEMPT, inside the loop — pass the
+        # `protect` must be detected PER ATTEMPT, inside the loop — pass the
         # globs plus a callable that re-snapshots git on demand. The loop itself
         # never learns anything about git (see AssuranceLoop.__init__).
         loop_kwargs["protect"] = blueprint.protect
@@ -415,7 +415,7 @@ def execute_mandate(
             max_output_chars=manifest.check_output_chars,
         )
     if manifest.quarantined_checks:
-        # T11: a manifest-declared quarantine still runs but can never fail the
+        # A manifest-declared quarantine still runs but can never fail the
         # run or spend a repair turn (see AssuranceLoop.__init__).
         loop_kwargs["quarantined"] = manifest.quarantined_checks
     if operator_layer is not None:
@@ -431,13 +431,13 @@ def execute_mandate(
     capture_warnings: list[str] = []
     with service_ctx:
         report = loop.run(request=request, checks=checks)
-        # T6: `isinstance(service_ctx, _ServiceRun)` is only True when the health
+        # `isinstance(service_ctx, _ServiceRun)` is only True when the health
         # poll already proved the app reachable (a failed poll raises out of
         # `service_ctx.__enter__` before this line is ever reached) AND
         # `operator_layer is not None` (the ONE condition `_resolve_runtime`
         # requires to build a `_ServiceRun` at all). Gated on `blueprint.capture`
         # too — a `needs_service` run with no `capture:` never touches this at
-        # all (no artifacts, byte-identical to before T6).
+        # all (no artifacts, byte-identical to a run without the feature).
         if isinstance(service_ctx, _ServiceRun) and blueprint.capture:
             from alc.evidence import capture_evidence
             from alc.events import current_run_log_path
@@ -473,12 +473,12 @@ def execute_mandate(
 
     scorecard = report.scorecard
     if blueprint.mode == "spike":
-        # T1: a spike must never count toward the Scorecard's streak — the
+        # A spike must never count toward the Scorecard's streak — the
         # relaxed checks gate would otherwise let a "checked nothing" run
         # masquerade as a disciplined one-shot.
         scorecard = scorecard.model_copy(update={"streak": 0})
 
-    # T4: `expect: shrink` is advisory only — it NEVER fails the run (simplifying
+    # `expect: shrink` is advisory only — it NEVER fails the run (simplifying
     # sometimes means growing before shrinking). A mandate that declared it but
     # finished having grown the codebase (diffstat nets positive) gets a warn on
     # the report itself; the run log gets its own event below.
@@ -492,7 +492,7 @@ def execute_mandate(
                 f"(+{diffstat.adds}/-{diffstat.dels}) — never fails the run; "
                 "simplifying sometimes means growing before shrinking."
             )
-    # T6: a capture command failing (or its artifacts dir being unwritable) is
+    # A capture command failing (or its artifacts dir being unwritable) is
     # never fatal to a green run — warn and carry on, same contract as the
     # `expect: shrink` advisory above.
     warnings.extend(capture_warnings)

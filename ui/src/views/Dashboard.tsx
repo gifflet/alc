@@ -392,8 +392,8 @@ function AuditCard() {
   )
 }
 
-/** Read-only view of the host crontab's ALC-scheduled entries (ui-phase-5.md
- * T12). Installing/removing a schedule stays a CLI-only operation — the card
+/** Read-only view of the host crontab's ALC-scheduled entries.
+ * Installing/removing a schedule stays a CLI-only operation — the card
  * only ever reads, never offers a mutating control. */
 function ScheduleCard() {
   const { data } = useSchedule()

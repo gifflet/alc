@@ -1,5 +1,5 @@
 # metrics.py — Per-project metric ledger: read/write the JSONL ledger of
-# metric-check measurements (roadmap-phase-4.md T2), plus the pure comparison
+# metric-check measurements, plus the pure comparison
 # rule the Verifier judges a fresh measurement against.
 #
 # "Checks are law" extends to numbers here: the engine never judges a metric —
@@ -85,7 +85,7 @@ def latest_accepted_measurement(path: Path, check: str) -> MetricRecord | None:
     This is the ONLY thing a metric check may judge a fresh value against
     (verifier.py). A value that itself failed its tolerance check must never
     become the next baseline — that would let a single regression quietly
-    become the new normal, one bad run at a time (roadmap-phase-4.md T2). Every
+    become the new normal, one bad run at a time. Every
     measurement is still recorded either way (an honest history); this just
     never selects a rejected one as the goalpost.
     """
@@ -115,7 +115,7 @@ def within_tolerance(
 
 
 # ---------------------------------------------------------------------------
-# `alc metrics` (roadmap-phase-4.md T3) — the ledger read back as a time series.
+# `alc metrics` — the ledger read back as a time series.
 # ---------------------------------------------------------------------------
 
 

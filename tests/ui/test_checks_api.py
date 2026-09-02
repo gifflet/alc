@@ -1,5 +1,5 @@
 # test_checks_api.py — GET /checks/history and GET /checks/audit: thin routes
-# over checks.check_history / checks.audit_checks (ui-phase-5.md Wave 4).
+# over checks.check_history / checks.audit_checks.
 from __future__ import annotations
 
 import json

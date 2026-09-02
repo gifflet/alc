@@ -1,4 +1,4 @@
-# test_metric_checks.py — Hermetic tests for roadmap-phase-4.md T1 + T2:
+# test_metric_checks.py — Hermetic tests for metric checks:
 # `metric` checks (the third form of Check), the Verifier's judgment against
 # the metric ledger, and the Policy Gate rule that `direction` is required
 # whenever `metric` is declared.

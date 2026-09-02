@@ -335,7 +335,7 @@ class TestRunFanoutForwardsEngineOverride:
 
 
 # ---------------------------------------------------------------------------
-# (b3) Per-unit engine/tier/label overrides (roadmap-phase-3.md T5).
+# (b3) Per-unit engine/tier/label overrides.
 # ---------------------------------------------------------------------------
 
 

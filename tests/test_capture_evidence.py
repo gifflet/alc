@@ -1,4 +1,4 @@
-# test_capture_evidence.py — e2e evidence capture (roadmap-phase-5.md T6).
+# test_capture_evidence.py — e2e evidence capture.
 #
 # Two layers: `alc.evidence.capture_evidence` unit-tested directly (never-raise
 # contract, artifact discovery, env wiring), then `execute_mandate`'s wiring

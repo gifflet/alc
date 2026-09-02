@@ -1,4 +1,4 @@
-# test_serve_webhook.py — Hermetic tests for roadmap-phase-5.md T4:
+# test_serve_webhook.py — Hermetic tests for
 # `alc serve --webhook`, the stdlib-`http.server` door onto signal intake
 # (`signals.ingest`) and the enqueue path (`conduct.dispatch_enqueue`).
 #

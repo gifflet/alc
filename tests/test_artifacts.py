@@ -1,5 +1,5 @@
 # test_artifacts.py — Hermetic tests for `alc artifacts [<stem>] [--json]`
-# (roadmap-phase-5.md T7): reads the e2e evidence a `needs_service` run's
+#: reads the e2e evidence a `needs_service` run's
 # `capture:` command produced back out of the run logs' `mandate_finished`
 # events. Pure/read-only — writes JSONL fixtures directly rather than running
 # real mandates, mirroring how `alc checks history` is tested

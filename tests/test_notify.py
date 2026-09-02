@@ -1,4 +1,4 @@
-# test_notify.py — roadmap-phase-3.md T12: never-raise push notify hooks.
+# test_notify.py — never-raise push notify hooks.
 #
 # Coverage:
 #   (1) alc.notify.fire — command (argv) and webhook (URL) delivery, both success

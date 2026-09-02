@@ -352,7 +352,7 @@ class TestInitStage:
     def test_pre_pmf_stage_hires_the_full_promised_combo(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     ) -> None:
-        # roadmap-phase-3.md T3: the Prototyper pack completes the five packs, so
+        # The Prototyper pack completes the five packs, so
         # `alc init --stage pre-pmf` finally installs everything it promises
         # (prototyper + builder + sweeper) instead of reporting prototyper as
         # "not available yet".

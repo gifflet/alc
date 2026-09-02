@@ -152,7 +152,7 @@ def parse_plan(
                 f"Item {i} 'touches' must be a list of strings; got {touches!r}."
             )
 
-        # Optional evidence-based justification (roadmap-phase-2.md T12) — the
+        # Optional evidence-based justification — the
         # `plan-contract` prompt documents this to a planner with real signal to
         # draw on. ZERO runtime effect; validated up front like touches/depends_on
         # so a malformed entry fails with a clear "Item N" message, not a raw
@@ -269,7 +269,7 @@ def plan_flows(
         stage_briefing: Optional stage/mix prose (``stagepolicy.stage_briefing``)
             appended to the directive AFTER templating, so it needs no template
             placeholder and never disturbs an operator's directive override. This
-            is PURELY a nudge (roadmap-phase-4.md T7a) — the model may ignore it;
+            is PURELY a nudge — the model may ignore it;
             the ONLY guarantee the product makes about the plan's mix is the
             deterministic check ``conduct()`` runs on the plan this returns.
             None (default, when no stage is declared) leaves the directive
@@ -613,7 +613,7 @@ def conduct(
     worktree); the outcomes land in ``ConductReport.units``. Outside a git repo,
     ``parallel`` prints a note to stderr and falls back to serial dispatch.
 
-    Stage-awareness (roadmap-phase-4.md T7) is TWO parts with different
+    Stage-awareness is TWO parts with different
     guarantees. (a) A stage briefing is folded into the planning directive —
     PROBABILISTIC, the planning model may ignore it. (b) Once the plan comes
     back, ``stagepolicy.validate_stage_mix`` checks it against
@@ -678,7 +678,7 @@ def conduct(
         stage_briefing=briefing,
     )
 
-    # T7b — the deterministic guarantee. Only loads Flow/Specialist/Blueprint
+    # The deterministic guarantee. Only loads Flow/Specialist/Blueprint
     # definitions when a stage is actually declared (validate_stage_mix is a
     # no-op otherwise) so an undeclared-stage project pays no extra I/O.
     stage_warnings: list[str] = []

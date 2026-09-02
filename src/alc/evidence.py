@@ -1,4 +1,4 @@
-# evidence.py — e2e evidence capture for a `needs_service` run (roadmap-phase-5.md T6).
+# evidence.py — e2e evidence capture for a `needs_service` run.
 #
 # A `needs_service` Blueprint proves the app STARTS (health poll) and its checks
 # PASS, but keeps no record that the golden path actually worked — no screenshot,

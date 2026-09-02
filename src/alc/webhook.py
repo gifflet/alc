@@ -1,4 +1,4 @@
-# webhook.py — roadmap-phase-5.md T4: a minimal HTTP door in front of the
+# webhook.py — a minimal HTTP door in front of the
 # signal intake (`signals.ingest`) and the enqueue path (`conduct.dispatch_enqueue`),
 # both of which already write to disk without an engine turn (Wave 1, phase-5).
 #

@@ -259,7 +259,7 @@ export function useCommands() {
 
 /** Host crontab's ALC-scheduled entries (`alc schedule list`) — read-only,
  * project-independent (the crontab lives on the host, not inside any one
- * project; ui-phase-5.md T12). Installing/removing a schedule stays CLI-only. */
+ * project). Installing/removing a schedule stays CLI-only. */
 export function useSchedule() {
   return useQuery({ queryKey: keys.schedule(), queryFn: api.getSchedule })
 }
@@ -373,7 +373,7 @@ export function useEnqueueTask(id: string) {
   })
 }
 
-/** Batch enqueue (ui-phase-5.md T9) — several tasks in one request; invalidates
+/** Batch enqueue — several tasks in one request; invalidates
  * the queue once, same as the single-task mutation. */
 export function useEnqueueBatch(id: string) {
   const qc = useQueryClient()

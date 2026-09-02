@@ -80,7 +80,7 @@ class Verifier:
         # forever — the pre-timeout behavior). A hung check would otherwise freeze the
         # whole drain with NO visible cause; the timeout bounds it and surfaces why.
         self._timeout_s = timeout_s
-        # Where a `metric` check's ledger lives (roadmap-phase-4.md T2). None ->
+        # Where a `metric` check's ledger lives. None ->
         # a metric check still runs and is judged, but nothing is recorded (no
         # project root to write into — the pre-metrics behavior for every
         # existing caller that never passes this).
@@ -352,7 +352,7 @@ class Verifier:
         recorded EITHER WAY — a regression's value is still visible in the
         ledger, just never selected as a future baseline (see
         ``latest_accepted_measurement``) — so the comparison always reflects
-        an honest history rather than a rewritten one (roadmap-phase-4.md T2).
+        an honest history rather than a rewritten one.
 
         A failing run re-measures the same check on every repair attempt plus
         the final post-budget re-verify; an UNCHANGED value is judged (and its
