@@ -282,13 +282,6 @@ def _queue_dir(root: Path) -> Path:
     return root / manifest.queue_dir
 
 
-def _runs_dir(root: Path) -> Path:
-    """The run-log dir where a direct `alc run` archives its `*.report.json` — the
-    second source (besides queue `done/`) that audit + mix_health aggregate."""
-    manifest = load_manifest(operator_layer(root))
-    return root / manifest.runs_dir
-
-
 def read_queue(root: Path) -> dict:
     """Return {pending, done}: pending tasks and archived tasks + their reports."""
     queue_dir = _queue_dir(root)
@@ -427,6 +420,8 @@ def retry_queue(root: Path, stem: str | None = None, all_: bool = False) -> dict
 
 
 def _runs_dir(root: Path) -> Path:
+    """The run-log dir where a direct `alc run` archives its `*.report.json` — the
+    second source (besides queue `done/`) that audit + mix_health aggregate."""
     manifest = load_manifest(operator_layer(root))
     return root / manifest.runs_dir
 
