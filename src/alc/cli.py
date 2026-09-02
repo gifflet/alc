@@ -2505,10 +2505,39 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
 
 
 def cmd_signal(args: argparse.Namespace) -> int:
-    """Run `alc signal <action>`: dispatch to `ingest` or `list`."""
+    """Run `alc signal <action>`: dispatch to `ingest`, `list` or `archive`."""
     if args.signal_action == "list":
         return _signal_list(args)
+    if args.signal_action == "archive":
+        return _signal_archive(args)
     return _signal_ingest(args)
+
+
+def _signal_archive(args: argparse.Namespace) -> int:
+    """`alc signal archive <file>`: mark one pending signal handled.
+
+    The library's `archive_signal` (the move into `signals/done/` the
+    `signals` replenish performs after enqueuing) existed with NO operator
+    verb over it — a signal addressed by hand stayed "pending" forever, and
+    the next listen/replenish pass would re-plan already-done work (dogfood
+    round 9, finding 40). Accepts the file NAME as `alc signal list` prints
+    it; the archives stay under `signals/done/` for audit.
+    """
+    from alc.intake import load_manifest
+    from alc.signals import archive_signal, read_signals
+
+    operator_layer = _find_operator_layer()
+    manifest = load_manifest(operator_layer)
+    signals_dir = operator_layer.parent / manifest.signals_dir
+
+    name = Path(args.name).name  # basename only: never a path escape
+    target = next((p for p in read_signals(signals_dir) if p.path.name == name), None)
+    if target is None:
+        print(f"[ERROR] no pending signal named '{name}' — `alc signal list` shows them.", file=sys.stderr)
+        return 1
+    archive_signal(signals_dir, target.path)
+    print(f"Archived '{name}' into {manifest.signals_dir}/done/.")
+    return 0
 
 
 def _signal_ingest(args: argparse.Namespace) -> int:
@@ -2618,7 +2647,10 @@ def _signal_list(args: argparse.Namespace) -> int:
             .isoformat()
             .replace("+00:00", "Z")
         )
-        print(f"[{p.signal.kind}] {p.signal.source} — {p.signal.title}  ({ts})")
+        print(
+            f"[{p.signal.kind}] {p.signal.source} — {p.signal.title}  ({ts})\n"
+            f"    {p.path.name}"
+        )
 
     return 0
 
@@ -4878,6 +4910,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     signal_subparsers = signal_parser.add_subparsers(
         dest="signal_action", required=True
+    )
+
+    signal_archive_parser = signal_subparsers.add_parser(
+        "archive",
+        help="Mark one pending signal handled (moves it into signals/done/).",
+    )
+    signal_archive_parser.add_argument(
+        "name", help="Signal file name, as `alc signal list` prints it."
     )
 
     signal_ingest_parser = signal_subparsers.add_parser(

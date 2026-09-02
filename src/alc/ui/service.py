@@ -1336,6 +1336,25 @@ def list_signals(root: Path) -> list[dict]:
     return [{"path": str(p.path), **p.signal.model_dump()} for p in pending]
 
 
+def archive_pending_signal(root: Path, name: str) -> dict:
+    """Mark one pending signal handled (move into signals/done/); return {archived}.
+
+    Mirrors `alc signal archive`: *name* is the file's basename as listed by
+    `list_signals` — resolved against the CURRENT pending set, so a stale or
+    hostile path can never escape the signals dir. Unknown name -> 404.
+    """
+    signals_dir = _signals_dir(root)
+    basename = Path(name).name
+    target = next(
+        (p for p in signals_core.read_signals(signals_dir) if p.path.name == basename),
+        None,
+    )
+    if target is None:
+        raise ApiError(f"no pending signal named '{basename}'", status=404)
+    signals_core.archive_signal(signals_dir, target.path)
+    return {"archived": basename}
+
+
 def ingest_signal(root: Path, data: dict) -> dict:
     """Validate *data* as a Signal and ingest it; return {path}.
 

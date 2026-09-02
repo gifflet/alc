@@ -391,6 +391,14 @@ export function useDeletePending(id: string) {
   })
 }
 
+export function useArchiveSignal(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => api.archiveSignal(id, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.signals(id) }),
+  })
+}
+
 export function useDismissFailure(id: string) {
   const qc = useQueryClient()
   return useMutation({

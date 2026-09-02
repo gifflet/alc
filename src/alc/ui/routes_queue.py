@@ -69,6 +69,17 @@ def dismiss(body: DismissBody, ctx: ProjectContext = Depends(get_project)) -> di
     return service.dismiss_queue_failure(ctx.root, body.stem)
 
 
+class ArchiveSignalBody(BaseModel):
+    """Body for POST /queue/signals/archive: the pending signal's file name."""
+
+    name: str
+
+
+@router.post("/queue/signals/archive")
+def archive_signal(body: ArchiveSignalBody, ctx: ProjectContext = Depends(get_project)) -> dict:
+    return service.archive_pending_signal(ctx.root, body.name)
+
+
 # ---------------------------------------------------------------------------
 # Runs
 # ---------------------------------------------------------------------------
