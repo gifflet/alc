@@ -429,7 +429,7 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
           <tr className="border-b border-border text-left text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
             <th className="w-6 px-2 py-1" />
             <th className="px-2 py-1 font-medium">Task</th>
-            <th className="w-20 px-2 py-1 font-medium">Result</th>
+            <th className="hidden w-20 px-2 py-1 font-medium sm:table-cell">Result</th>
             <th className="w-24 px-2 py-1 font-medium">When</th>
             <th className="w-16 px-2 py-1 font-medium" />
           </tr>
@@ -469,13 +469,27 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                       )
                     ) : null}
                   </td>
-                  <td className="truncate px-2 text-muted">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate">{d.task ? firstLine(d.task.task) : d.stem}</span>
+                  <td className="w-full max-w-0 px-2 text-muted">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate">{d.task ? firstLine(d.task.task) : d.stem}</span>
                       <RetryBadge task={d.task} />
                     </span>
+                    {/* On a phone the table scrolls sideways and the Result
+                        column sits off-viewport — the outcome pills were
+                        technically present and practically invisible (round 10
+                        device validation). Below sm they ride with the task. */}
+                    {success !== null && (
+                      <span className="mt-0.5 flex items-center gap-1.5 sm:hidden">
+                        <Pill tone={success ? 'live' : 'error'}>{success ? 'ok' : 'failed'}</Pill>
+                        {editedTree && (
+                          <Pill tone="warn" title={`This non-isolated run edited the working tree directly: ${treeFiles.join(', ')}`}>
+                            edited tree
+                          </Pill>
+                        )}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-2">
+                  <td className="hidden px-2 sm:table-cell">
                     {success === null ? (
                       <span className="text-faint">—</span>
                     ) : (
