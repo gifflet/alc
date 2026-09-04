@@ -13,9 +13,10 @@ const PILL_TONE: Record<Tone, string> = {
 }
 
 /** A compact status badge (success / failed / running …). */
-export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
+export function Pill({ tone, children, title }: { tone: Tone; children: ReactNode; title?: string }) {
   return (
     <span
+      title={title}
       className={`inline-flex items-center rounded-[3px] border px-1.5 py-0.5 font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide ${PILL_TONE[tone]}`}
     >
       {children}

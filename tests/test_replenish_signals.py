@@ -233,7 +233,7 @@ class TestReplenishSignalsDispatch:
         # The corrupt file was never touched (not archived, not crashed on).
         assert (signals_dir / "corrupt.json").exists()
 
-    def test_serial_drain_writes_non_isolated_demands(
+    def test_serial_drain_also_writes_isolated_demands(
         self, operator_layer: Path
     ) -> None:
         _seed_signal(operator_layer)
@@ -246,7 +246,10 @@ class TestReplenishSignalsDispatch:
 
         [written] = _pending_queue_files(operator_layer)
         qt = QueueTask.model_validate(yaml.safe_load(written.read_text()))
-        assert qt.isolate is False
+        # Reversed by round 10's finding 42: a serial cycle used to share the
+        # live workdir, so an unattended cron loop edited the operator's real
+        # tree. EVERY autonomous demand is isolated now, serial or parallel.
+        assert qt.isolate is True
 
     def test_parallel_drain_writes_isolated_demands(
         self, operator_layer: Path

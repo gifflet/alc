@@ -16,7 +16,7 @@ from alc.pydeps import resolve_python_checks
 
 _MANIFEST = """\
 version: 1
-# Chosen by probing PATH at `alc init` time (claude -> claude-code, gemini ->
+# Chosen at `alc init` time (--engine flag, else probing PATH: claude ->
 # gemini, neither -> mock). mock is a free no-op for dry runs — swap in a real
 # engine any time.
 default_engine: {default_engine}
@@ -885,8 +885,14 @@ def _uv_venv_provision(
 # Scaffolder
 # ---------------------------------------------------------------------------
 
-def scaffold(project_root: Path, force: bool = False) -> list[str]:
+def scaffold(project_root: Path, force: bool = False, engine: str | None = None) -> list[str]:
     """Write the default Operator Layer into project_root/.alc/.
+
+    ``engine`` pins the manifest's ``default_engine`` explicitly; None keeps the
+    PATH probe (`detect_default_engine`). `alc init --engine X` passes it — the
+    flag used to configure ONLY --setup's editor skill while READING as "choose
+    my engine", and two operators (dogfood round 10, finding 44) trusted the
+    obvious reading and got the probe's answer instead.
 
     Creates the full directory structure and all default template files from
     the built-in constants. The generated layer is conformant with the Policy
@@ -946,7 +952,7 @@ def scaffold(project_root: Path, force: bool = False) -> list[str]:
     (alc_dir / "prompts").mkdir(parents=True, exist_ok=True)
 
     # Map each relative path to its content.
-    default_engine = detect_default_engine()
+    default_engine = engine if engine is not None else detect_default_engine()
     gemini = default_engine == "gemini"
     files: dict[str, str] = {
         ".alc/manifest.yaml": _MANIFEST.format(

@@ -444,8 +444,11 @@ def cmd_init(args: argparse.Namespace) -> int:
     )
 
     project_root = Path.cwd()
+    # getattr: a hand-built Namespace that predates --engine must never break
+    # (the same guard cmd_ui uses for its newer flags).
+    engine_flag = getattr(args, "engine", None)
     try:
-        created = scaffold(project_root, force=args.force)
+        created = scaffold(project_root, force=args.force, engine=engine_flag)
     except FileExistsError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
@@ -454,10 +457,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     for path in created:
         print(f"  {path}")
 
-    # Say which engine init picked (same probe scaffold() used), so nobody
-    # discovers a mock no-op run the hard way.
-    engine = detect_default_engine()
-    if engine == "mock":
+    # Say which engine init picked and WHY, so nobody discovers a mock no-op
+    # run the hard way — and so an explicit --engine visibly won (finding 44).
+    engine = engine_flag if engine_flag is not None else detect_default_engine()
+    if engine_flag is not None:
+        print(f"Engine: {engine} (--engine flag).")
+    elif engine == "mock":
         print(
             "Engine: mock — no engine CLI (claude, gemini) found on PATH. Runs are "
             "no-ops until you install one and set `default_engine` in .alc/manifest.yaml."
@@ -575,7 +580,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         from alc.setup_skill import _resolve_version, install_skill
 
         try:
-            skill_path, changed = install_skill(engine=args.engine)
+            skill_path, changed = install_skill(engine=engine_flag or "claude-code")
         except ValueError as exc:
             print(f"[ERROR] {exc}", file=sys.stderr)
             return 1
@@ -3948,8 +3953,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument(
         "--engine",
-        default="claude-code",
-        help="Engine whose editor skill to install with --setup (default: claude-code).",
+        choices=["claude-code", "gemini", "mock"],
+        default=None,
+        help=(
+            "Engine for the scaffolded manifest's default_engine (and for "
+            "--setup's editor skill). Default: probe PATH."
+        ),
     )
     init_parser.add_argument(
         "--stage",

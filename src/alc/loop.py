@@ -459,13 +459,16 @@ def run_replenish(
                     manifest,
                     operator_layer,
                     engine_override=engine_override,
-                    # Parallel demands: when the loop drains concurrently
-                    # (drain.concurrency > 1) enqueue demands as isolate:true so each
-                    # committing demand runs in its own provisioned, port-injected
-                    # worktree and its branch is auto-merged after the batch. The
-                    # default concurrency 1 keeps isolate:false -> serial shared-workdir
-                    # standard cycle, byte-identical.
-                    isolate=loop_def.drain.concurrency > 1,
+                    # ALWAYS isolated: a serial cycle used to share the live
+                    # workdir ("byte-identical standard cycle"), which meant an
+                    # autonomous loop — the one path designed to run from cron
+                    # with nobody watching — edited the operator's real working
+                    # tree for minutes at a time (dogfood round 10, finding 42),
+                    # against the product's own promise. Every demand now runs
+                    # in its own provisioned worktree: committing demands
+                    # auto-merge after the batch; non-committing ones leave a
+                    # branch for the Inbox, exactly like any other queue task.
+                    isolate=True,
                     prefix="plan",
                 )
             except ValueError as exc:
@@ -483,9 +486,9 @@ def run_replenish(
         from alc.signals import archive_signal, read_signals
 
         signals_dir = operator_layer.parent / manifest.signals_dir
-        # Parallel drain -> isolated worktrees per demand (Part D); serial ->
-        # shared workdir. Same rule the `plan` kind above uses.
-        isolate = loop_def.drain.concurrency > 1
+        # ALWAYS isolated — same law as the `plan` kind above (finding 42):
+        # an autonomous demand never edits the live working tree.
+        isolate = True
         for pending in read_signals(signals_dir):
             signal = pending.signal
             # The signal's title/body IS the demand; replenish.task is a
@@ -524,9 +527,9 @@ def run_replenish(
         from alc.queue import build_retry_task
 
         metrics_path = metrics_ledger_path(operator_layer.parent / manifest.metrics_dir)
-        # Parallel drain -> isolated worktrees per fix demand; serial -> shared
-        # workdir. Same rule the `plan`/`signals` kinds above use.
-        isolate = loop_def.drain.concurrency > 1
+        # ALWAYS isolated — same law as the `plan`/`signals` kinds above
+        # (finding 42): an autonomous demand never edits the live working tree.
+        isolate = True
         # `state.metric_cursor` (when a state was passed) IS the cursor dict —
         # mutating it below mutates state in place (see the docstring above).
         cursor: dict[str, int] = state.metric_cursor if state is not None else {}

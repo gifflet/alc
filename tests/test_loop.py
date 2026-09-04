@@ -1722,7 +1722,7 @@ class TestPlanReplenish:
         self, operator_layer: Path, monkeypatch
     ) -> None:
         """A valid Conductor plan -> the roadmap change is committed and N demand
-        tasks are written (each flow==demand, isolate false, title == first line)."""
+        tasks are written (each flow==demand, isolated, title == first line)."""
         import subprocess
 
         from alc import loop as loop_mod
@@ -1763,7 +1763,8 @@ class TestPlanReplenish:
         )
         assert "chore(roadmap): plan next version" in subjects.stdout.splitlines()
 
-        # Each written task re-loads as a demand QueueTask, isolate false, short title.
+        # Each written task re-loads as a demand QueueTask — ISOLATED since round
+        # 10's finding 42 (an autonomous demand never edits the live tree).
         queue_dir = operator_layer.parent / manifest.queue_dir
         names = sorted(p.name for p in queue_dir.glob("*.yaml"))
         # The queue filename is descriptive (prefix + title slug), not an opaque uid,
@@ -1779,7 +1780,7 @@ class TestPlanReplenish:
         assert titles == ["First title", "Second title"]
         for t in tasks:
             assert t.flow == "demand"
-            assert t.isolate is False
+            assert t.isolate is True
 
     def test_concurrent_drain_enqueues_isolated_demands(
         self, operator_layer: Path, monkeypatch
