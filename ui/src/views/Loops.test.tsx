@@ -124,3 +124,26 @@ describe('Loops — the row explains itself (finding 41)', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
+
+describe('Loops — the pill agrees with reality (finding 45)', () => {
+  it('renders a persisted "running" as calm "active" when nothing executes', async () => {
+    installFetch({ ...routes(wt(false)), '/loops/deliver/state': { ...loopState, status: 'running', cycle: 1 } })
+    renderWithProviders(<Loops />)
+
+    // The state file persists 'running' between cycles — honest for cron,
+    // an amber lie as a pulse when no cycle/loop exec is live.
+    expect(await screen.findByText('active')).toBeInTheDocument()
+    expect(screen.queryByText('running')).not.toBeInTheDocument()
+    expect(screen.getByText('active')).toHaveAttribute('title', expect.stringMatching(/between cycles/))
+  })
+
+  it('regression: pulses as "running" while a cycle exec is actually live', async () => {
+    installFetch({ ...routes(wt(false)), '/loops/deliver/state': { ...loopState, status: 'running', cycle: 1 } })
+    execStore.launch({ id: 'c1', projectId: 'demo', command: 'cycle' })
+    renderWithProviders(<Loops />)
+
+    expect(await screen.findByText('running')).toBeInTheDocument()
+    expect(screen.queryByText('active')).not.toBeInTheDocument()
+    expect(screen.getByText(/A cycle is executing/)).toBeInTheDocument()
+  })
+})

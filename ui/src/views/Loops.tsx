@@ -59,12 +59,20 @@ const DIRTY_NOTE =
   'never your uncommitted work (outside .alc/). Serial committing demands still ' +
   'need a clean tree; prefer an isolated drain.'
 
-function LoopRow({ name }: { name: string }) {
+function LoopRow({ name, cycleLive }: { name: string; cycleLive: boolean }) {
   const id = useProjectId()
   const { activeTabId } = useUiState()
   const start = useStartExec()
   const { data } = useLoopState(id, name)
   const status = data?.status ?? 'pending'
+  // The state file persists 'running' BETWEEN cycles — honest in the cron
+  // world, a lie as an amber pulse when nothing is executing (finding 45:
+  // the pill contradicted the exec-store banner one line above it). Derive:
+  // pulse only while a cycle/loop exec is actually live; otherwise the loop
+  // is 'active' — armed, between cycles, nothing running right now.
+  const betweenCycles = status === 'running' && !cycleLive
+  const pillTone: Tone = betweenCycles ? 'idle' : STATUS_TONE[status]
+  const pillLabel = betweenCycles ? 'active' : status
   const active = activeTabId === `loop:${name}`
   const [running, setRunning] = useState(false)
   const [confirmingCycle, setConfirmingCycle] = useState(false)
@@ -98,7 +106,7 @@ function LoopRow({ name }: { name: string }) {
           active ? 'bg-hover' : 'hover:bg-hover'
         }`}
       >
-        <StatusDot tone={STATUS_TONE[status]} pulse={status === 'running'} />
+        <StatusDot tone={pillTone} pulse={status === 'running' && cycleLive} />
         <button
           type="button"
           onClick={() => uiStore.openTab({ target: { type: 'loop', name }, title: name })}
@@ -111,7 +119,12 @@ function LoopRow({ name }: { name: string }) {
         >
           <span className="min-w-0 flex-1 truncate">{name}</span>
         </button>
-        <Pill tone={STATUS_TONE[status]}>{status}</Pill>
+        <Pill
+          tone={pillTone}
+          title={betweenCycles ? `between cycles — cycle ${data?.cycle ?? 0} done, nothing executing now` : undefined}
+        >
+          {pillLabel}
+        </Pill>
         <span className="tabular w-16 text-right text-[length:var(--ui-text-label)] text-faint">cycle {data?.cycle ?? 0}</span>
       </div>
       {/* Second line: what the loop DOES, and two LABELED spend controls —
@@ -215,7 +228,7 @@ export function Loops() {
         </div>
       )}
       {loops.map((l) => (
-        <LoopRow key={l.name} name={l.name} />
+        <LoopRow key={l.name} name={l.name} cycleLive={cycleLive} />
       ))}
     </div>
   )

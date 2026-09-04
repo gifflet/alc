@@ -46,7 +46,7 @@ describe('Queue', () => {
     // The task first line shows in both the pending and the done row.
     expect((await screen.findAllByText('add a login page')).length).toBe(2)
     expect(screen.getByText('ship')).toBeInTheDocument()
-    expect(screen.getByText('ok')).toBeInTheDocument()
+    expect(screen.getAllByText('ok').length).toBeGreaterThan(0)
   })
 
   it('shows the retry attempt badge and reveals the carried feedback on expand', async () => {
@@ -185,7 +185,7 @@ describe('Queue actions', () => {
       '/signals': [],
     })
     renderWithProviders(<Queue />)
-    expect(await screen.findByText('failed')).toBeInTheDocument()
+    expect((await screen.findAllByText('failed'))[0]).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry d1' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Retry all failures/ })).not.toBeInTheDocument()
   })
@@ -441,8 +441,13 @@ describe('Queue — a non-isolated success says it edited the tree (finding 43)'
     })
     renderWithProviders(<Queue />)
 
-    const badge = await screen.findByText('edited tree')
-    expect(badge).toHaveAttribute('title', expect.stringContaining('ui/src/lib/format.ts'))
+    // Twice by design: task-cell copy (phone) + Result column (sm and up).
+    const badges = await screen.findAllByText('edited tree')
+    expect(badges).toHaveLength(2)
+    for (const b of badges) {
+      expect(b.closest('[title]') ?? b.parentElement).toHaveAttribute(
+        'title', expect.stringContaining('ui/src/lib/format.ts'))
+    }
   })
 
   it('regression: a committed (isolated) success carries no badge', async () => {
@@ -467,7 +472,7 @@ describe('Queue — a non-isolated success says it edited the tree (finding 43)'
     })
     renderWithProviders(<Queue />)
 
-    expect(await screen.findByText('ok')).toBeInTheDocument()
+    expect((await screen.findAllByText('ok'))[0]).toBeInTheDocument()
     expect(screen.queryByText('edited tree')).not.toBeInTheDocument()
   })
 })

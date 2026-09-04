@@ -1368,7 +1368,11 @@ def cmd_cycle(args: argparse.Namespace) -> int:
             emit_json(state.model_dump())
             return 0
         print(f"Loop:                    {state.name}")
-        print(f"Status:                  {state.status}")
+        # 'running' persists BETWEEN cycles (the cron world's honest state) —
+        # without the clarification it reads as "executing right now" forever
+        # after a standalone cycle (dogfood round 10, finding 45).
+        shown = "running (between cycles)" if state.status == "running" else state.status
+        print(f"Status:                  {shown}")
         print(f"Cycle:                   {state.cycle}")
         print(f"Consecutive no-progress: {state.consecutive_no_progress}")
         if state.budget_used:
