@@ -528,9 +528,9 @@ def dispatch_enqueue(
         manifest: Loaded Manifest (provides queue_dir).
         operator_layer: Path to the ``.alc/`` directory.
         engine_override: If set, written as the ``engine`` field in the task file.
-        isolate: Value written as each task's ``isolate`` field. Default True keeps
-            the Conductor byte-identical; the ``kind: plan`` replenish passes False
-            so demand tasks share the workdir.
+        isolate: Value written as each task's ``isolate`` field. Default True —
+            the Conductor and every loop replenish isolate their demands (an
+            autonomous demand never edits the live working tree; finding 42).
         prefix: Filename prefix that records provenance. Default ``conduct`` (the
             Conductor); the ``kind: plan`` replenish passes ``plan``.
         priority: Value written as each task's ``priority`` field (0 = omitted,

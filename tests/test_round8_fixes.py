@@ -429,3 +429,45 @@ class TestSignalArchive:
         archive_signal(signals_dir, path)
         assert read_signals(signals_dir) == []
         assert (signals_dir / "done" / path.name).exists()
+
+
+# ---------------------------------------------------------------------------
+# Round 10 — 42: autonomous demands are ALWAYS isolated (pinned in
+# test_replenish_*/test_loop.py); 44: `alc init --engine` pins the manifest.
+# ---------------------------------------------------------------------------
+
+
+class TestInitEngineFlag:
+    def test_explicit_engine_beats_the_probe(self, tmp_path: Path, monkeypatch) -> None:
+        import alc.scaffold as scaffold_mod
+
+        monkeypatch.setattr(scaffold_mod, "detect_default_engine", lambda: "claude-code")
+        scaffold_mod.scaffold(tmp_path, engine="mock")
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "mock"
+
+    def test_cmd_init_engine_flag_reaches_the_manifest(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        from alc.cli import cmd_init
+
+        ns = argparse.Namespace(force=False, setup=False, engine="mock", stage=None)
+        assert cmd_init(ns) == 0
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "mock"
+        # The output credits the flag, not the probe (finding 44: the flag used
+        # to configure only --setup while READING as "choose my engine").
+        assert "Engine: mock (--engine flag)." in capsys.readouterr().out
+
+    def test_regression_no_flag_keeps_the_probe(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        import alc.cli as cli_mod
+        import alc.scaffold as scaffold_mod
+
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(scaffold_mod, "detect_default_engine", lambda: "gemini")
+        ns = argparse.Namespace(force=False, setup=False, engine=None, stage=None)
+        assert cli_mod.cmd_init(ns) == 0
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.default_engine == "gemini"
+        assert "found on PATH" in capsys.readouterr().out

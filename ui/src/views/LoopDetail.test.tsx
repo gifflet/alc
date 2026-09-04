@@ -11,6 +11,7 @@ const state: LoopState = {
   consecutive_no_progress: 0,
   budget_used: {},
   stopped_reason: null,
+  definition: null,
 }
 
 const okRecord: CycleRecord = {

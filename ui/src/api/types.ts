@@ -409,6 +409,17 @@ export interface LoopState {
   consecutive_no_progress: number
   budget_used: Record<string, number>
   stopped_reason: string | null
+  /** What the loop DOES and when it stops — the row must explain itself to an
+   * operator who has never read the YAML (finding 41). Null when the
+   * definition is unreadable. */
+  definition: {
+    replenish_kind: string | null
+    replenish_ref: string | null
+    max_cycles: number
+    budget_unit: string | null
+    budget_max: number | null
+    drain_concurrency: number
+  } | null
 }
 
 export interface CycleRecord {

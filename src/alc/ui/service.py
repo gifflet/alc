@@ -725,11 +725,38 @@ def audit(root: Path, since: str) -> dict:
 
 
 def read_loop_state(root: Path, name: str) -> dict:
-    """Return the persisted (or fresh pending) state for a loop."""
+    """Return the persisted (or fresh pending) state for a loop, plus a
+    `definition` summary (what the loop DOES and when it stops).
+
+    The Loops screen used to show status + cycle and two unlabeled buttons —
+    for a junior operator the row explained nothing about what a tap would
+    spend or when it would stop (dogfood round 10, finding 41). The summary is
+    read from the loop definition on demand; an unreadable definition yields
+    None rather than failing the state read.
+    """
     ol = operator_layer(root)
     manifest = load_manifest(ol)
     loops = loops_dir(manifest, ol)
-    return load_loop_state(state_path(loops, name), name).model_dump(mode="json")
+    state = load_loop_state(state_path(loops, name), name).model_dump(mode="json")
+    definition = None
+    try:
+        from alc.intake import load_loop
+
+        loop_def = load_loop(loops, name)
+        budget = loop_def.stop.budget
+        replenish = loop_def.replenish  # None -> Mode B (drain-only)
+        definition = {
+            "replenish_kind": replenish.kind if replenish else None,
+            "replenish_ref": replenish.ref if replenish else None,
+            "max_cycles": loop_def.stop.max_cycles,
+            "budget_unit": budget.unit if budget else None,
+            "budget_max": budget.max if budget else None,
+            "drain_concurrency": loop_def.drain.concurrency,
+        }
+    except Exception:
+        pass
+    state["definition"] = definition
+    return state
 
 
 def read_loop_ledger(root: Path, name: str) -> dict:

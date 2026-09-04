@@ -412,3 +412,62 @@ describe('Signals', () => {
     })
   })
 })
+
+describe('Queue — a non-isolated success says it edited the tree (finding 43)', () => {
+  const baseRoutes = {
+    '/branches': { available: false, branches: [] },
+    '/signals': [],
+  }
+
+  it('badges a success that left uncommitted edits in the working tree', async () => {
+    installFetch({
+      ...baseRoutes,
+      '/queue': {
+        pending: [],
+        done: [
+          {
+            stem: 'd9',
+            mtime: 1783828700,
+            task: { flow: 'unship', task: 'remove dead helper', isolate: false, retries: 0, priority: 0 },
+            report: {
+              flow: 'unship',
+              success: true,
+              commit_sha: null,
+              stages: [{ blueprint: 'refactor', success: true, changed_files: ['ui/src/lib/format.ts'] }],
+            },
+          },
+        ],
+      },
+    })
+    renderWithProviders(<Queue />)
+
+    const badge = await screen.findByText('edited tree')
+    expect(badge).toHaveAttribute('title', expect.stringContaining('ui/src/lib/format.ts'))
+  })
+
+  it('regression: a committed (isolated) success carries no badge', async () => {
+    installFetch({
+      ...baseRoutes,
+      '/queue': {
+        pending: [],
+        done: [
+          {
+            stem: 'd8',
+            mtime: 1783828700,
+            task: { flow: 'unship', task: 'remove dead helper', isolate: true, retries: 0, priority: 0 },
+            report: {
+              flow: 'unship',
+              success: true,
+              commit_sha: 'abc123',
+              stages: [{ blueprint: 'refactor', success: true, changed_files: ['ui/src/lib/format.ts'] }],
+            },
+          },
+        ],
+      },
+    })
+    renderWithProviders(<Queue />)
+
+    expect(await screen.findByText('ok')).toBeInTheDocument()
+    expect(screen.queryByText('edited tree')).not.toBeInTheDocument()
+  })
+})

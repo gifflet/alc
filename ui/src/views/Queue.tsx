@@ -438,6 +438,13 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
           {done.map((d) => {
             const open = expanded === d.stem
             const success = d.report?.success ?? null
+            // A non-isolated success leaves its edits UNCOMMITTED in the live
+            // working tree — no branch, no Inbox item, nothing anywhere said
+            // "the drain changed these files" (finding 43). Say it on the row.
+            const treeFiles: string[] = (d.report?.stages ?? [])
+              .flatMap((st: { changed_files?: string[] }) => st.changed_files ?? [])
+            const editedTree =
+              success === true && !d.report?.commit_sha && treeFiles.length > 0
             return (
               <Fragment key={d.stem}>
                 <tr
@@ -472,7 +479,14 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
                     {success === null ? (
                       <span className="text-faint">—</span>
                     ) : (
-                      <Pill tone={success ? 'live' : 'error'}>{success ? 'ok' : 'failed'}</Pill>
+                      <span className="flex items-center gap-1.5">
+                        <Pill tone={success ? 'live' : 'error'}>{success ? 'ok' : 'failed'}</Pill>
+                        {editedTree && (
+                          <Pill tone="warn" title={`This non-isolated run edited the working tree directly: ${treeFiles.join(', ')}`}>
+                            edited tree
+                          </Pill>
+                        )}
+                      </span>
                     )}
                   </td>
                   <td className="px-2">

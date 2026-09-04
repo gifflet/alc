@@ -333,7 +333,7 @@ class TestReplenishRegressionDispatch:
         assert enqueued == 1
         assert ok is True
 
-    def test_serial_drain_writes_non_isolated_demands(self, operator_layer: Path) -> None:
+    def test_serial_drain_also_writes_isolated_demands(self, operator_layer: Path) -> None:
         _seed_measurement(operator_layer, "bench", value=100.0, ts=1.0, passed=True)
         _seed_measurement(
             operator_layer, "bench", value=150.0, ts=2.0, run="r", passed=False
@@ -347,7 +347,10 @@ class TestReplenishRegressionDispatch:
 
         [written] = _pending_queue_files(operator_layer)
         qt = QueueTask.model_validate(yaml.safe_load(written.read_text()))
-        assert qt.isolate is False
+        # Reversed by round 10's finding 42: a serial cycle used to share the
+        # live workdir, so an unattended cron loop edited the operator's real
+        # tree. EVERY autonomous demand is isolated now, serial or parallel.
+        assert qt.isolate is True
 
     def test_parallel_drain_writes_isolated_demands(self, operator_layer: Path) -> None:
         _seed_measurement(operator_layer, "bench", value=100.0, ts=1.0, passed=True)
