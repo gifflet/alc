@@ -17,7 +17,7 @@ function channel(value: number): number {
 }
 
 /** Relative luminance of a #rrggbb colour. */
-export function luminance(hex: string): number {
+function luminance(hex: string): number {
   const h = hex.replace('#', '')
   if (h.length !== 6) throw new Error(`expected #rrggbb, got ${hex}`)
   const r = parseInt(h.slice(0, 2), 16)
