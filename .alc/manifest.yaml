@@ -55,7 +55,11 @@ check_sets:
     - name: ui-test
       shell: "cd ui && npx vitest run"
     - name: ui-typecheck
-      shell: "cd ui && npx tsc --noEmit"
+      # `tsc -b`, not `tsc --noEmit`: the bare solution-file check is blinder
+      # than the build (noUnusedLocals lives in the referenced configs), so a
+      # demand's gate passed code the build then rejected (round 11, finding
+      # 47). Checks are law only when they see what the build sees.
+      shell: "cd ui && npx tsc -b"
     - name: docs-lint
       shell: "cd docs-site && npm run lint"
 

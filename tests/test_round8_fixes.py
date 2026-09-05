@@ -471,3 +471,99 @@ class TestInitEngineFlag:
         manifest = load_manifest(tmp_path / ".alc")
         assert manifest.default_engine == "gemini"
         assert "found on PATH" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Round 11 — 46: the loop budget brakes MID-cycle, between demands
+# ---------------------------------------------------------------------------
+
+
+_MOCK_TASK = "flow: ship\ntask: \"t{n}\"\nengine: mock\nisolate: false\n"
+
+
+class TestMidCycleBudgetBrake:
+    def _seed(self, operator_layer: Path, n: int) -> Path:
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(n):
+            (queue_dir / f"t{i}.yaml").write_text(_MOCK_TASK.replace("{n}", str(i)))
+        return queue_dir
+
+    def test_process_queue_stop_when_leaves_the_rest_pending(
+        self, operator_layer: Path
+    ) -> None:
+        from alc.intake import load_manifest
+        from alc.queue import process_queue
+
+        manifest = load_manifest(operator_layer)
+        queue_dir = self._seed(operator_layer, 3)
+
+        results = process_queue(manifest, operator_layer, stop_when=lambda r: True)
+
+        assert len(results) == 1, "the brake stops LAUNCHING after the first result"
+        assert len(sorted(queue_dir.glob("*.yaml"))) == 2, "unlaunched tasks stay pending"
+
+    def test_regression_no_stop_when_drains_everything(self, operator_layer: Path) -> None:
+        from alc.intake import load_manifest
+        from alc.queue import process_queue
+
+        manifest = load_manifest(operator_layer)
+        queue_dir = self._seed(operator_layer, 3)
+
+        results = process_queue(manifest, operator_layer)
+
+        assert len(results) == 3
+        assert list(queue_dir.glob("*.yaml")) == []
+
+    def test_cycle_budget_brakes_between_demands(self, operator_layer: Path) -> None:
+        import yaml as yaml_mod
+
+        from alc.intake import load_manifest, load_loop
+        from alc.loop import load_loop_state, loops_dir, run_cycle, state_path
+
+        manifest = load_manifest(operator_layer)
+        loops = operator_layer / "loops"
+        loops.mkdir(exist_ok=True)
+        # Mode B (drain-only) loop. The fixture's ship flow spends TWO engine
+        # calls per demand (two stages), so a cap of 3 crosses after demand
+        # two (4 >= 3) — the third must never launch.
+        (loops / "cap.yaml").write_text(
+            yaml_mod.safe_dump(
+                {
+                    "name": "cap",
+                    "stop": {"max_cycles": 5, "budget": {"unit": "engine_calls", "max": 3}},
+                }
+            )
+        )
+        queue_dir = self._seed(operator_layer, 3)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "cap")
+        state = load_loop_state(state_path(loops_dir(manifest, operator_layer), "cap"), "cap")
+
+        new_state, record = run_cycle(manifest, operator_layer, loop_def, state, engine_override="mock")
+
+        assert record.drained == 2, "the cap crossed after demand two — three never ran"
+        assert len(sorted(queue_dir.glob("*.yaml"))) == 1
+        assert new_state.stopped_reason == "budget"
+
+    def test_regression_unbudgeted_loop_drains_the_whole_cycle(
+        self, operator_layer: Path
+    ) -> None:
+        import yaml as yaml_mod
+
+        from alc.intake import load_manifest, load_loop
+        from alc.loop import load_loop_state, loops_dir, run_cycle, state_path
+
+        manifest = load_manifest(operator_layer)
+        loops = operator_layer / "loops"
+        loops.mkdir(exist_ok=True)
+        (loops / "free.yaml").write_text(
+            yaml_mod.safe_dump({"name": "free", "stop": {"max_cycles": 5}})
+        )
+        queue_dir = self._seed(operator_layer, 3)
+        loop_def = load_loop(loops_dir(manifest, operator_layer), "free")
+        state = load_loop_state(state_path(loops_dir(manifest, operator_layer), "free"), "free")
+
+        _, record = run_cycle(manifest, operator_layer, loop_def, state, engine_override="mock")
+
+        assert record.drained == 3
+        assert list(queue_dir.glob("*.yaml")) == []

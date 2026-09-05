@@ -9,6 +9,7 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -634,6 +635,7 @@ def _run_wave(
     queue_dir: Path,
     max_workers: int,
     engine_override: str | None = None,
+    stop_when: "Callable[[TickResult], bool] | None" = None,
 ) -> dict[Path, TickResult]:
     """Run exactly ``wave_files`` and return a ``{file: TickResult}`` map.
 
@@ -645,18 +647,30 @@ def _run_wave(
 
     ``engine_override`` (``alc tick --engine``) is threaded to every task body so
     the drain-wide override reaches both the serial and the parallel paths.
+
+    ``stop_when`` (None -> byte-identical) is evaluated with each completed
+    TickResult; True stops LAUNCHING further tasks — a running demand always
+    completes, unlaunched files stay pending for a later drain. The serial
+    path checks between tasks (exact); the parallel path checks between the
+    serial stragglers and once before submitting the parallel batch — an
+    already-submitted batch completes (wave-granular, documented in the loop
+    budget's contract).
     """
     project_root = operator_layer.parent
 
     if max_workers == 1:
-        # Serial path — behaviourally identical to the original drain loop.
-        return {
-            task_file: _process_task(
+        # Serial path — behaviourally identical to the original drain loop,
+        # except the optional between-task brake (dogfood round 11, finding 46).
+        results: dict[Path, TickResult] = {}
+        for task_file in wave_files:
+            result = _process_task(
                 manifest, operator_layer, flows_dir, queue_dir, task_file,
                 engine_override=engine_override,
             )
-            for task_file in wave_files
-        }
+            results[task_file] = result
+            if stop_when is not None and stop_when(result):
+                break
+        return results
 
     # Parallel path — only isolated tasks (isolate:true + git repo) may run
     # concurrently; all others share the working directory and run serially.
@@ -669,7 +683,10 @@ def _run_wave(
 
     results: dict[Path, TickResult] = {}
 
-    # Run parallel-eligible tasks concurrently.
+    # Run parallel-eligible tasks concurrently. An already-submitted batch
+    # completes (wave-granular for the budget brake); `tripped` then stops the
+    # serial stragglers below from launching.
+    tripped = False
     if parallel_tasks:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             future_to_file = {
@@ -685,14 +702,22 @@ def _run_wave(
                 for task_file in parallel_tasks
             }
             for future in future_to_file:
-                results[future_to_file[future]] = future.result()
+                result = future.result()
+                results[future_to_file[future]] = result
+                if stop_when is not None and stop_when(result):
+                    tripped = True
 
-    # Run serial tasks one by one.
+    # Run serial tasks one by one (between-task brake, same as the serial path).
     for task_file in serial_tasks:
-        results[task_file] = _process_task(
+        if tripped:
+            break
+        result = _process_task(
             manifest, operator_layer, flows_dir, queue_dir, task_file,
             engine_override=engine_override,
         )
+        results[task_file] = result
+        if stop_when is not None and stop_when(result):
+            tripped = True
 
     return results
 
@@ -776,6 +801,7 @@ def process_queue(
     operator_layer: Path,
     max_workers: int = 1,
     engine_override: str | None = None,
+    stop_when: "Callable[[TickResult], bool] | None" = None,
 ) -> list[TickResult]:
     """Drain the task queue: run each pending Flow and archive the task file.
 
@@ -812,6 +838,11 @@ def process_queue(
         engine_override: ``alc tick --engine`` — a drain-wide hard override that
             wins over every task's own engine: for this drain. None (default) is
             byte-identical to before: each task keeps its own engine.
+        stop_when: Optional brake, evaluated with each completed TickResult.
+            True stops LAUNCHING further tasks — the running demand always
+            completes, unlaunched files stay pending for a later drain. The
+            loop's mid-cycle budget cap passes this (finding 46); None
+            (default) is byte-identical.
 
     Returns:
         List of TickResult, one per pending task found, in the original pending
@@ -840,10 +871,20 @@ def process_queue(
             break
         drained_order.extend(pending)
         pass_count += 1
+        # Wrap the brake once so trippedness is exact and sticky across waves
+        # and passes — a wave whose LAST result trips must still stop the next.
+        _tripped = {"v": False}
+
+        def _brake(result: TickResult) -> bool:
+            if stop_when is not None and not _tripped["v"] and stop_when(result):
+                _tripped["v"] = True
+            return _tripped["v"]
+
         for wave in _topological_waves(pending):
             wave_results = _run_wave(
                 wave, manifest, operator_layer, flows_dir, queue_dir, max_workers,
                 engine_override=engine_override,
+                stop_when=_brake if stop_when is not None else None,
             )
             results_by_file.update(wave_results)
 
@@ -866,6 +907,18 @@ def process_queue(
                         r.merged = r.branch in report.merged  # True merged / False left
                 print(report.summary(), file=sys.stderr, flush=True)
 
+            if _tripped["v"]:
+                break  # brake tripped: unlaunched tasks stay pending
+
+        if _tripped["v"]:
+            left_pending = len(sorted(queue_dir.glob("*.yaml")))
+            print(
+                f"[drain] stop condition tripped mid-drain — {left_pending} task(s) "
+                "left pending for a later drain.",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
         if manifest.retry_strategy == "deferred":
             break
         # Defence-in-depth: legitimate retry passes never exceed max_task_retries + 1
@@ -878,4 +931,4 @@ def process_queue(
             )
             break
 
-    return [results_by_file[f] for f in drained_order]
+    return [results_by_file[f] for f in drained_order if f in results_by_file]

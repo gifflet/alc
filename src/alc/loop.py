@@ -17,6 +17,7 @@ import yaml
 from alc.events import bind_run_log, new_run_log_path
 from alc.intake import load_specialist
 from alc.models import (
+    TickResult,
     CycleRecord,
     FlowReport,
     LoopDefinition,
@@ -729,9 +730,28 @@ def run_cycle(
         manifest, operator_layer, loop_def, engine_override, state=state
     )
 
-    # (c) Drain the queue.
+    # (c) Drain the queue — with the mid-cycle budget brake (dogfood round 11,
+    # finding 46): the cap used to be checked only BETWEEN cycles, so a wide
+    # replenish (nine demands) overshot a $10 budget to $24.84. The brake stops
+    # LAUNCHING new demands once the cap is crossed — the running demand always
+    # completes, and unlaunched tasks stay pending, visible in the queue, for a
+    # later drain. The between-cycles post-check below still records the stop.
+    budget = loop_def.stop.budget
+    stop_when = None
+    if budget is not None:
+        running_delta = dict(delta)  # the replenish's own spend counts too
+        already_used = state.budget_used.get(budget.unit, 0.0)
+
+        def stop_when(result: TickResult) -> bool:
+            if result.report is not None:
+                _flow_usage(result.report, running_delta)
+            return already_used + running_delta.get(budget.unit, 0.0) >= budget.max
+
     results = process_queue(
-        manifest, operator_layer, max_workers=loop_def.drain.concurrency
+        manifest,
+        operator_layer,
+        max_workers=loop_def.drain.concurrency,
+        stop_when=stop_when,
     )
     drained = len(results)
     succeeded = sum(1 for r in results if r.success)
