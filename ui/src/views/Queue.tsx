@@ -443,8 +443,16 @@ function DoneRows({ done, onRetry }: { done: DoneTask[]; onRetry: (stem: string)
             // "the drain changed these files" (finding 43). Say it on the row.
             const treeFiles: string[] = (d.report?.stages ?? [])
               .flatMap((st: { changed_files?: string[] }) => st.changed_files ?? [])
+            // isolate !== true is load-bearing: an ISOLATED demand's edits go
+            // to a worktree branch even when its flow declares no commit
+            // (FlowReport.commit_sha stays null), and the badge falsely
+            // claimed nine branch-bound cycle-3 demands had edited the live
+            // tree — caught on the device, round 11's closing sweep.
             const editedTree =
-              success === true && !d.report?.commit_sha && treeFiles.length > 0
+              success === true &&
+              d.task?.isolate !== true &&
+              !d.report?.commit_sha &&
+              treeFiles.length > 0
             return (
               <Fragment key={d.stem}>
                 <tr

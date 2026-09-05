@@ -476,3 +476,32 @@ describe('Queue — a non-isolated success says it edited the tree (finding 43)'
     expect(screen.queryByText('edited tree')).not.toBeInTheDocument()
   })
 })
+
+describe('Queue — an isolated success never wears the edited-tree badge', () => {
+  it('branch-bound edits are not live-tree edits, even with commit_sha null', async () => {
+    installFetch({
+      '/branches': { available: false, branches: [] },
+      '/signals': [],
+      '/queue': {
+        pending: [],
+        done: [
+          {
+            stem: 'd7',
+            mtime: 1783828700,
+            task: { flow: 'unship', task: 'remove dead helper', isolate: true, retries: 0, priority: 0 },
+            report: {
+              flow: 'unship',
+              success: true,
+              commit_sha: null,
+              stages: [{ blueprint: 'refactor', success: true, changed_files: ['ui/src/lib/x.ts'] }],
+            },
+          },
+        ],
+      },
+    })
+    renderWithProviders(<Queue />)
+
+    expect((await screen.findAllByText('ok')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('edited tree')).not.toBeInTheDocument()
+  })
+})
