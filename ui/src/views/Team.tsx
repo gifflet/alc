@@ -11,6 +11,7 @@ import { Archive, UserMinus, UserPlus, Users } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { useHireArchetype, useRemoveMember, useRetireMember, useTeam } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
+import { uiStore } from '../app/uiStore'
 import { formatCost } from '../lib/format'
 import { formatNetLines } from '../lib/scorecard'
 import { ActionButton } from '../components/ActionButton'
@@ -243,6 +244,7 @@ export function Team() {
   // One outcome line for archive AND remove: both end in "the dialog closed,
   // now what happened?" — a single slot keeps the answers from stacking.
   const [notice, setNotice] = useState<string | null>(null)
+  const [tryIt, setTryIt] = useState<string | null>(null)
 
   if (isLoading) return <Loading />
 
@@ -274,6 +276,11 @@ export function Team() {
           }
           if (result.next) parts.push(`Next: ${result.next}`)
           setNotice(parts.join(' '))
+          // `alc run <blueprint> ...` next-steps become a one-tap action: the
+          // dashboard's StartWork opens with the pack's blueprint selected —
+          // a CLI command string is homework on a dashboard (round 12).
+          const runMatch = result.next?.match(/^alc run (\w+)/)
+          setTryIt(runMatch ? runMatch[1] : null)
         },
       },
     )
@@ -344,8 +351,21 @@ export function Team() {
           </p>
         )}
         {notice && !retire.error && !remove.error && (
-          <p className="mt-2 text-[length:var(--ui-text-label)] text-muted" role="status">
-            {notice}
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-[length:var(--ui-text-label)] text-muted" role="status">
+            <span>{notice}</span>
+            {tryIt && (
+              <ActionButton
+                aria-label={`Start work with ${tryIt}`}
+                tone="accent"
+                size="sm"
+                onClick={() => {
+                  uiStore.setPendingBlueprint(tryIt)
+                  uiStore.openTab({ target: { type: 'view', view: 'dashboard' }, title: 'Dashboard', closable: false })
+                }}
+              >
+                Try it now
+              </ActionButton>
+            )}
           </p>
         )}
       </section>

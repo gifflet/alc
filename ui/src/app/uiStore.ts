@@ -43,6 +43,9 @@ export interface Tab {
 export interface UiState {
   tabs: Tab[]
   activeTabId: string | null
+  /** One-shot blueprint preselection for StartWork (a pack's "try it" action
+   * sets it; StartWork consumes and clears it). Never persisted. */
+  pendingBlueprint: string | null
   /** Tab ids with unsaved editor changes (drives the tab dirty dot + close guard). */
   dirty: Record<string, boolean>
   leftWidth: number
@@ -121,7 +124,8 @@ function createStore() {
 
   function initial(): UiState {
     const panels = loadPanels()
-    return { tabs: [], activeTabId: null, dirty: {}, navSeq: 0, ...panels }
+    return { tabs: [], activeTabId: null,
+  pendingBlueprint: null, dirty: {}, navSeq: 0, ...panels }
   }
 
   function persistPanels(s: UiState): void {
@@ -157,6 +161,10 @@ function createStore() {
       clearAllDrafts()
       set(initial())
     },
+    setPendingBlueprint(name: string | null): void {
+      set({ ...state, pendingBlueprint: name })
+    },
+
     openTab(tab: { target: TabTarget; title: string; closable?: boolean }): void {
       const id = tabId(tab.target)
       const exists = state.tabs.some((t) => t.id === id)

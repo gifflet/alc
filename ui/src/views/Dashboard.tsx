@@ -7,7 +7,7 @@
 // Recent runs, kept as the one shortcut worth having (it is what lets Runs leave
 // the mobile bar). Every card is a live query invalidated over WS.
 import { useState } from 'react'
-import { Activity, CalendarClock, ClipboardList, Cpu, Gauge, Inbox as InboxIcon, PieChart } from 'lucide-react'
+import { Users, UserPlus, Activity, CalendarClock, ClipboardList, Cpu, Gauge, Inbox as InboxIcon, PieChart } from 'lucide-react'
 import {
   useAudit,
   useEngines,
@@ -20,6 +20,7 @@ import {
 } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { openView } from '../components/ActivityBar'
+import { ActionButton } from '../components/ActionButton'
 import { uiStore } from '../app/uiStore'
 import { formatCost } from '../lib/format'
 import { formatNetLines, scorecardHistory } from '../lib/scorecard'
@@ -196,11 +197,13 @@ function EnginesCard() {
     <Card title="Engines" icon={Cpu}>
       <div className="flex flex-col gap-1.5">
         {engines.map((e) => (
-          <div key={e.name} className="flex items-center gap-2 text-[length:var(--ui-text-body)]">
+          <div key={e.name} className="flex min-w-0 items-center gap-2 text-[length:var(--ui-text-body)]">
             <StatusDot tone={e.healthy ? 'live' : 'error'} />
-            <span className="text-primary">{e.name}</span>
+            {/* min-w-0 + truncate: at tablet widths the name used to wrap
+                mid-word ("claude-" / "code") against the pill and type. */}
+            <span className="min-w-0 truncate text-primary">{e.name}</span>
             {e.default && <Pill tone="accent">default</Pill>}
-            <span className="ml-auto font-mono text-[length:var(--ui-text-label)] text-faint">{e.type}</span>
+            <span className="ml-auto shrink-0 font-mono text-[length:var(--ui-text-label)] text-faint">{e.type}</span>
           </div>
         ))}
         {mockIsDefault && (
@@ -244,20 +247,34 @@ function MixHealthCard() {
            opted into is not running, in two words nothing on the page defines.
            If it is going to take the space, it has to say what declaring a stage
            would buy and how to do it. */
-        <div className="flex flex-col gap-1.5 text-[length:var(--ui-text-body)] text-faint">
+        <div className="flex flex-col gap-2 text-[length:var(--ui-text-body)] text-faint">
           <p className="text-muted">
             No stage declared, so these {health.total_runs} run{health.total_runs === 1 ? '' : 's'} are
             not measured against any target.
           </p>
           <p>
-            Set <code className="font-mono text-muted">stage:</code> to{' '}
-            <code className="font-mono text-muted">pre-pmf</code>,{' '}
-            <code className="font-mono text-muted">growth</code> or{' '}
-            <code className="font-mono text-muted">strong-pmf</code> in{' '}
-            <code className="font-mono text-muted">.alc/manifest.yaml</code> and this card reports how
-            much of your recent work matched the kind that stage expects. Advisory — it never changes
-            how a run executes.
+            Declare your product's stage and this card reports how much of your recent
+            work matched the mix that stage expects. Advisory — it never changes how a
+            run executes.
           </p>
+          {/* An ACTION, not YAML homework: the old copy told a dashboard user
+              to hand-edit .alc/manifest.yaml (round 12). The Manifest form has
+              the stage field. */}
+          <div>
+            <ActionButton
+              aria-label="Declare the stage in the Manifest"
+              tone="ghost"
+              size="sm"
+              onClick={() =>
+                uiStore.openTab({
+                  target: { type: 'source', resource: 'manifest', name: 'manifest' },
+                  title: 'manifest.yaml',
+                })
+              }
+            >
+              Declare stage
+            </ActionButton>
+          </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -276,6 +293,58 @@ function MixHealthCard() {
           })()}
         </div>
       )}
+    </Card>
+  )
+}
+
+/** The roster, on the front page. The dashboard had no Team presence at all —
+ * a user wanting to hire or check their agents had zero doors from the
+ * product's front page (round 12). Hired members show their loops' live
+ * state; the available count is the hire door. */
+function TeamCard() {
+  const id = useProjectId()
+  const { data } = useTeam(id)
+  const members = data?.members ?? []
+  const available = 5 - members.length
+
+  return (
+    <Card title="Team" icon={Users} action={<LinkButton onClick={() => openView('team')} />}>
+      <div className="flex flex-col gap-1.5">
+        {members.length === 0 ? (
+          <p className="text-[length:var(--ui-text-body)] text-faint">
+            No agents hired yet — five prebuilt packs are ready to work.
+          </p>
+        ) : (
+          members.map((m) => (
+            <div key={m.archetype} className="flex min-w-0 items-center gap-2 text-[length:var(--ui-text-body)]">
+              <StatusDot
+                tone={m.loops.some((l) => l.status === 'running') ? 'running' : 'idle'}
+                pulse={m.loops.some((l) => l.status === 'running')}
+              />
+              <span className="min-w-0 truncate capitalize text-primary">{m.archetype}</span>
+              {m.retired_loops.length > 0 && <Pill tone="idle">loops archived</Pill>}
+              {m.loops.map((l) => (
+                <Pill key={l.name} tone={l.status === 'running' ? 'running' : l.status === 'stopped' ? 'error' : 'idle'}>
+                  {l.name}
+                </Pill>
+              ))}
+            </div>
+          ))
+        )}
+        {available > 0 && (
+          <div className="mt-0.5">
+            <ActionButton
+              aria-label="Hire an archetype pack"
+              tone={members.length === 0 ? 'accent' : 'ghost'}
+              size="sm"
+              onClick={() => openView('team')}
+            >
+              <UserPlus className="h-3 w-3" />
+              {available} pack{available === 1 ? '' : 's'} available
+            </ActionButton>
+          </div>
+        )}
+      </div>
     </Card>
   )
 }
@@ -443,6 +512,7 @@ export function Dashboard() {
         <StartWork />
       </div>
       <ScorecardCard />
+      <TeamCard />
       <EnginesCard />
       <RunsCard />
       <MixHealthCard />

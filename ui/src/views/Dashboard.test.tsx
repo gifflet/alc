@@ -524,9 +524,8 @@ describe('Dashboard — the numbers explain themselves', () => {
     // Await the body, not the header — the header renders before the query lands.
     expect(await screen.findByText(/not measured against any target/)).toBeInTheDocument()
     expect(screen.getByText(/how much of your recent work matched/)).toBeInTheDocument()
-    // And how to actually do it.
-    expect(screen.getByText('pre-pmf')).toBeInTheDocument()
-    expect(screen.getByText('.alc/manifest.yaml')).toBeInTheDocument()
+    // And how to actually do it — an ACTION now, not YAML homework (round 12).
+    expect(screen.getByRole('button', { name: 'Declare the stage in the Manifest' })).toBeInTheDocument()
   })
 
   it('still reports the mix once a stage is declared', async () => {
@@ -547,5 +546,37 @@ describe('Dashboard — the numbers explain themselves', () => {
     renderWithProviders(<Dashboard />)
     expect(await screen.findByText('growth')).toBeInTheDocument()
     expect(screen.queryByText(/not measured against any target/)).not.toBeInTheDocument()
+  })
+})
+
+describe('Dashboard — the Team has a front door (round 12)', () => {
+  it('shows hired members with their loops and the hire door', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': {
+        members: [
+          { archetype: 'sweeper', files: [], loops: [{ name: 'sweep', status: 'stopped', cycle: 3, stopped_reason: 'budget' }], retired_loops: [] },
+          { archetype: 'builder', files: [], loops: [], retired_loops: [] },
+        ],
+        mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0, idle_core: [] },
+      },
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText('sweeper')).toBeInTheDocument()
+    expect(screen.getByText('builder')).toBeInTheDocument()
+    expect(screen.getByText('sweep')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hire an archetype pack' })).toHaveTextContent('3 packs available')
+  })
+
+  it('sells the packs when nothing is hired yet', async () => {
+    installFetch({
+      ...dashboardStubs,
+      '/team': { members: [], mix_health: { stage: null, core: [], secondary: [], by_archetype: [], total_runs: 0, idle_core: [] } },
+    })
+    renderWithProviders(<Dashboard />)
+
+    expect(await screen.findByText(/five prebuilt packs are ready to work/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hire an archetype pack' })).toHaveTextContent('5 packs available')
   })
 })
