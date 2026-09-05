@@ -9,7 +9,7 @@ import { uiStore, useUiState } from './uiStore'
 
 export type Theme = 'dark' | 'light'
 
-export const LIGHT_QUERY = '(prefers-color-scheme: light)'
+const LIGHT_QUERY = '(prefers-color-scheme: light)'
 
 /**
  * The theme to apply: the operator's explicit choice, else the OS preference.
