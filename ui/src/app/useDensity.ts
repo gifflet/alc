@@ -7,7 +7,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { COARSE_QUERY, NARROW_QUERY, WIDE_QUERY, resolveDensity } from './density'
 import type { Density } from './density'
-import { uiStore, useUiState } from './uiStore'
+import { useUiState } from './uiStore'
 
 /**
  * Subscribe to a media query.
