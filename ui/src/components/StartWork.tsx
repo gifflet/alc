@@ -12,12 +12,13 @@
 // The guarantee is stated, not taught: the line under the field says the change
 // is verified before it is reported done. That is the whole promise, in the
 // words of the outcome rather than the mechanism.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, FolderGit2, Loader2, ShieldCheck } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { useChecksAudit, useEngines } from '../api/hooks'
 import { useProjectId } from '../app/ProjectContext'
 import { useCollection } from '../api/hooks'
+import { uiStore, useUiState } from '../app/uiStore'
 import { useStartExec } from '../app/useStartExec'
 import { ActionButton } from './ActionButton'
 
@@ -64,8 +65,18 @@ export function StartWork({ compact = false }: { compact?: boolean }) {
   // main entry point — the junior operator hired a sweeper and had no way to
   // run its refactor from here (dogfood finding 25).
   const [blueprint, setBlueprint] = useState('chore')
+  // A pack's "try it" action preselects its blueprint here (one-shot channel;
+  // round 12: the hire notice used to hand the operator a CLI command on a
+  // dashboard). Consumed only when the blueprint actually exists.
+  const { pendingBlueprint } = useUiState()
   const projectId = useProjectId()
   const blueprints = useCollection(projectId, 'blueprints').data ?? []
+  useEffect(() => {
+    if (pendingBlueprint && blueprints.some((b) => b.name === pendingBlueprint)) {
+      setBlueprint(pendingBlueprint)
+      uiStore.setPendingBlueprint(null)
+    }
+  }, [pendingBlueprint, blueprints])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [started, setStarted] = useState<string | null>(null)

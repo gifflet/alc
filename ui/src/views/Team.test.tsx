@@ -442,3 +442,25 @@ describe('Team hire — saying what happened', () => {
     expect(status).toHaveTextContent(/Hired sweeper \(1 file added\)/)
   })
 })
+
+describe('Team hire — the next step is a tap, not homework', () => {
+  it('offers Try it now for an `alc run` next step and preselects the blueprint', async () => {
+    installFetch({
+      '/team/hire': {
+        written: ['.alc/blueprints/refactor.md'],
+        kept: [],
+        lint: { violations: [] },
+        next: 'alc run refactor "<the file or area to clean up>"',
+        retargeted: {},
+      },
+      '/team': oneHiredMember,
+    })
+    renderWithProviders(<Team />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Hire sweeper' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Start work with refactor' }))
+
+    expect(uiStore.getState().pendingBlueprint).toBe('refactor')
+    expect(uiStore.getState().activeTabId).toBe('view:dashboard')
+  })
+})
