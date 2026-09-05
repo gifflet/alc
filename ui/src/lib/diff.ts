@@ -8,7 +8,7 @@
 // Pure, so the addressing is unit-tested without a DOM — the subtle part is that
 // line numbers advance on additions and context but not on deletions.
 
-export type DiffLineKind = 'file' | 'hunk' | 'add' | 'del' | 'context' | 'meta'
+type DiffLineKind = 'file' | 'hunk' | 'add' | 'del' | 'context' | 'meta'
 
 export interface DiffLine {
   kind: DiffLineKind
