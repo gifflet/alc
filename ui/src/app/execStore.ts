@@ -26,7 +26,7 @@ export interface ExecEntry {
   runStems: string[]
 }
 
-export interface ExecStoreState {
+interface ExecStoreState {
   execs: ExecEntry[]
   selectedId: string | null
 }
