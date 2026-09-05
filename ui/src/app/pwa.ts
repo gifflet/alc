@@ -12,20 +12,3 @@ export function registerServiceWorker(): void {
   })
 }
 
-/**
- * Ask for notification permission.
- *
- * Called only from an explicit operator action (the Inbox opt-in), never on
- * load: a permission prompt the user did not ask for is denied by reflex, and a
- * denial is sticky.
- */
-export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (typeof Notification === 'undefined') return 'denied'
-  if (Notification.permission !== 'default') return Notification.permission
-  return Notification.requestPermission()
-}
-
-/** Whether this browser will show notifications right now. */
-export function canNotify(): boolean {
-  return typeof Notification !== 'undefined' && Notification.permission === 'granted'
-}
