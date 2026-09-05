@@ -10,7 +10,7 @@
 
 const STORAGE_KEY = 'alc-ui:token'
 /** The query parameter `alc ui` prints in its one-time URL. */
-export const TOKEN_PARAM = 't'
+const TOKEN_PARAM = 't'
 
 function storage(): Storage | null {
   try {
