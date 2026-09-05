@@ -161,7 +161,12 @@ export function RunDetail({ stem }: { stem: string }) {
             />
           </div>
 
-          <TimelineView timeline={timeline} />
+          {/* mt-4 like every sibling: the timeline was the ONE block in the
+              column with no top margin, so the outcome banner sat glued to it
+              while everything else breathed at 16px. */}
+          <div className="mt-4">
+            <TimelineView timeline={timeline} />
+          </div>
 
           {timeline.scorecard && (
             <div className="mt-4 flex gap-6 rounded-panel border border-border bg-panel px-4 py-3">
