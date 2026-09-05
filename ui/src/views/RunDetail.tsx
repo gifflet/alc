@@ -212,7 +212,13 @@ export function RunDetail({ stem }: { stem: string }) {
                   className="flex items-baseline gap-3 border-b border-border/50 px-3 py-1 last:border-b-0"
                 >
                   <span className="shrink-0 text-faint">{String(e.ts).slice(11, 19)}</span>
-                  <span className="text-muted">{describeEvent(e)}</span>
+                  {/* min-w-0 + overflow-wrap anywhere: event lines carry
+                      unbreakable tokens (worktree paths, quoted commands) that
+                      blew the row past the parent on a phone and forced a
+                      horizontal swipe (round 12 follow-up). `anywhere` breaks
+                      inside a token only when nothing else fits — spaces keep
+                      winning when they exist. */}
+                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere] text-muted">{describeEvent(e)}</span>
                 </li>
               ))}
             </ul>

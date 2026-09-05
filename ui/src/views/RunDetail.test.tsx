@@ -115,3 +115,28 @@ describe('RunDetail evidence panel', () => {
     expect(link).toHaveAttribute('href', artifactFileUrl('demo', path))
   })
 })
+
+describe('RunDetail — event lines fit the phone', () => {
+  it('event text carries the wrap-anywhere guard for unbreakable tokens', async () => {
+    installFetch({
+      '/runs/r1': {
+        events: [
+          { ts: '2026-09-05T01:39:16Z', event: 'engine_tool', tool: 'Bash', detail: 'find /private/var/folders/p6/rt1tk2pn37189vrg5y_7kwtc0000gp/T/alc-wt-x' },
+        ],
+        next_offset: 1,
+        stale: false,
+      },
+      '/artifacts': { artifacts: [] },
+    })
+    renderWithProviders(<RunDetail stem="r1" />)
+
+    const row = await screen.findByText(/01:39:16/)
+    const text = row.parentElement?.querySelector('span:last-child')
+    // CSS wrapping is unmeasurable in jsdom; pin the load-bearing classes —
+    // min-w-0 lets the flex child shrink, overflow-wrap:anywhere breaks a
+    // monster token only when nothing else fits (round 12 follow-up: event
+    // rows forced a horizontal swipe on the phone).
+    expect(text?.className).toContain('min-w-0')
+    expect(text?.className).toContain('[overflow-wrap:anywhere]')
+  })
+})
