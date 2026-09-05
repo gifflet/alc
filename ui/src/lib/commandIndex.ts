@@ -20,7 +20,7 @@ export interface Command {
 }
 
 /** Group order in the result list — where an operator expects to look first. */
-export const KIND_ORDER: CommandKind[] = [
+const KIND_ORDER: CommandKind[] = [
   'view',
   'action',
   'blueprint',
@@ -34,7 +34,7 @@ export const KIND_ORDER: CommandKind[] = [
   'run',
 ]
 
-export type MatchStrength = 'prefix' | 'word' | 'substring' | 'subsequence' | null
+type MatchStrength = 'prefix' | 'word' | 'substring' | 'subsequence' | null
 
 /**
  * How well `query` matches `label`, or null.
