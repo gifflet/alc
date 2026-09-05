@@ -18,7 +18,7 @@ export interface WebSocketLike {
   onerror: (() => void) | null
 }
 
-export interface WsClientOptions {
+interface WsClientOptions {
   url: string
   createSocket?: (url: string) => WebSocketLike
   /** Overridable for tests; defaults to the browser's stored token. */
