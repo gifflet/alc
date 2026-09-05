@@ -54,7 +54,9 @@ function AttemptTrack({ attempt }: { attempt: TimelineAttempt }) {
 function GroupRow({ group }: { group: TimelineGroup }) {
   return (
     <div className="flex items-start gap-3 py-1.5">
-      <div className="w-32 shrink-0">
+      {/* w-24 below sm: a 128px label column left the attempt track ~7px short
+          at 411px, nudging the row past its parent (round 12 final sweep). */}
+      <div className="w-24 shrink-0 sm:w-32">
         <div className="flex items-center gap-1.5 truncate text-[length:var(--ui-text-body)] text-primary">
           <StatusDot tone={groupTone(group)} pulse={group.success === null} />
           <span className="truncate">{group.label}</span>
@@ -63,7 +65,7 @@ function GroupRow({ group }: { group: TimelineGroup }) {
           <div className="truncate pl-3.5 text-[length:var(--ui-text-label)] text-faint">{group.ref}</div>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
         {group.attempts.length === 0 ? (
           <span className="font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">waiting</span>
         ) : (
