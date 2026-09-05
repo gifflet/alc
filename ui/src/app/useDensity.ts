@@ -72,7 +72,3 @@ export function useApplyDensity(): Density {
   return density
 }
 
-/** Flip the override; passing null returns to automatic detection. */
-export function setDensityOverride(density: Density | null): void {
-  uiStore.setDensity(density)
-}
