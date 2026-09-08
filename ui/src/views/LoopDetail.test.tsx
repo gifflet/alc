@@ -50,4 +50,21 @@ describe('LoopDetail', () => {
     await screen.findByText('sweep')
     expect(screen.queryByText('replenish failed')).not.toBeInTheDocument()
   })
+
+  it('lets the ledger chart columns stretch, so percentage-height bars can render', async () => {
+    // The bug: with `items-end` each column sized to content, the bars' height:%
+    // resolved against zero, and the chart showed an empty box (Dashboard's
+    // ActivityChart fixed the same collapse). jsdom computes no layout, so the
+    // class itself is what this guards.
+    installFetch({
+      '/loops/sweep/state': state,
+      '/loops/sweep/ledger': { records: [okRecord] },
+    })
+    renderWithProviders(<LoopDetail name="sweep" />)
+
+    const bar = await screen.findByTitle(/cycle 1: 1 ok, 0 failed/)
+    const chart = bar.parentElement!
+    expect(chart.className).toContain('items-stretch')
+    expect(chart.className).not.toContain('items-end')
+  })
 })

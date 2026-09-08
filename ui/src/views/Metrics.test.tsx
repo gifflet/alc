@@ -22,6 +22,23 @@ describe('Metrics', () => {
     expect(screen.getByText('+10')).toBeInTheDocument()
   })
 
+  it('lets the chart columns stretch, so percentage-height bars can render', async () => {
+    // The bug: with `items-end` each column sized to content, the bar's height:%
+    // resolved against zero, and the chart showed an empty box (found live on
+    // the Metrics screen; Dashboard's ActivityChart fixed the same collapse).
+    // jsdom computes no layout, so the class itself is what this guards.
+    const series: MetricSeries = {
+      'bundle-size': [{ ts: 1, value: 100, run: 'ship', delta: null, trend: 'n/a', passed: true }],
+    }
+    installFetch({ '/metrics': series })
+    renderWithProviders(<Metrics />)
+
+    const bar = await screen.findByTitle(/ship: 100/)
+    const chart = bar.parentElement!
+    expect(chart.className).toContain('items-stretch')
+    expect(chart.className).not.toContain('items-end')
+  })
+
   it('renders one section per check when the ledger has more than one', async () => {
     const series: MetricSeries = {
       'bundle-size': [{ ts: 1, value: 100, run: 'ship', delta: null, trend: 'n/a', passed: true }],
