@@ -117,6 +117,19 @@ describe('Loops — the row explains itself (finding 41)', () => {
     expect(await screen.findByText(/plan via janitor · stops after 10 cycles or 5000 tokens/)).toBeInTheDocument()
   })
 
+  it('shows a usd budget alongside the cycle cap', async () => {
+    installFetch({
+      ...routes(wt(false)),
+      '/loops/deliver/state': {
+        ...loopState,
+        definition: { ...loopState.definition, budget_unit: 'usd', budget_max: 25 },
+      },
+    })
+    renderWithProviders(<Loops />)
+
+    expect(await screen.findByText(/plan via janitor · stops after 10 cycles or \$25/)).toBeInTheDocument()
+  })
+
   it('labels both spend controls with words, not icons alone', async () => {
     installFetch(routes(wt(false)))
     renderWithProviders(<Loops />)
