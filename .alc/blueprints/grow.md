@@ -10,6 +10,14 @@ checks:
   # checks and fail Policy Gate rule 1. This inline check keeps it lint-clean.
   - name: smoke
     command: [ "true" ]
+  - name: ui-src-lines
+    direction: lower_is_better
+    tolerance_pct: 2
+    # Shell-string metric (the form can only author the argv form — finding 48).
+    # Excludes test files on purpose: the sweeper pushes this number down and
+    # the builder pushes TESTS up — a product-surface metric must not punish
+    # test growth.
+    metric: "git ls-files ui/src ':!*.test.*' ':!*/test/*' | xargs wc -l | tail -1 | awk '{print $1}'"
   # OPT-IN — the Grower's own law: a METRIC CHECK. Uncomment this block and
   # replace the command with one that prints YOUR tracked number (bundle
   # size, coverage %, p95 latency, …) as a single number on stdout. The
