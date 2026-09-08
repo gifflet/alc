@@ -125,4 +125,24 @@ describe('CheckListEditor', () => {
     expect(parsed.checks[0].metric).toBe('git ls-files | wc -l')
     expect(parsed.checks[0].tolerance_pct).toBe(2)
   })
+
+  it("displays argv tokens with the quoting they need, and a re-save keeps the semantics", () => {
+    const onDoc = vi.fn()
+    render(
+      <Harness
+        initial={'checks:\n  - name: firstline\n    command: ["awk", "{print $1}"]\n'}
+        onDoc={onDoc}
+      />
+    )
+    // The joined display quotes the token that needs it — the line shown is
+    // the line that runs (round 14's logged edge, now closed).
+    const field = screen.getByLabelText('Check value') as HTMLInputElement
+    expect(field.value).toBe("awk '{print $1}'")
+    // A real edit re-saves through the shell-syntax path: the quoting makes
+    // it a shell one-liner with identical semantics, not a split argv.
+    fireEvent.change(screen.getByLabelText('Flaky reruns'), { target: { value: '1' } })
+    const parsed = lastDoc(onDoc)
+    expect(parsed.checks[0].shell).toBe("awk '{print $1}'")
+    expect(parsed.checks[0].command).toBeUndefined()
+  })
 })
