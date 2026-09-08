@@ -37,6 +37,9 @@ VALID_ARCHETYPES: frozenset[str] = frozenset(
 # that fallback is ALL that ran.
 
 
+
+_SHELL_OPERATORS = frozenset({"|", "&&", "||", ";", "&", ">", ">>", "<", "<<", "2>", "2>>"})
+
 def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
     """Run all Policy Gate rules and return every Violation found.
 
@@ -321,6 +324,35 @@ def lint(manifest: Manifest, blueprints: list[Blueprint]) -> list[Violation]:
                         ),
                     )
                 )
+
+            # Rule 17: an argv-form check whose argv contains a bare shell
+            # operator almost certainly wanted to be a shell one-liner — argv
+            # checks run WITHOUT a shell, so `|` or `&&` reach the command as
+            # literal arguments and the "pipeline" silently never pipes.
+            # Advisory, not an error: rare tools take such tokens as real
+            # arguments (`find -exec ... ';'`).
+            argv = (
+                check.command
+                if check.command is not None
+                else (check.metric if isinstance(check.metric, list) else None)
+            )
+            if argv is not None:
+                operators = sorted(_SHELL_OPERATORS.intersection(argv))
+                if operators:
+                    violations.append(
+                        Violation(
+                            rule="argv-check-with-shell-operator",
+                            severity="warn",
+                            message=(
+                                f"Blueprint '{bp.name}' check '{check.name}' has "
+                                f"{operators} inside its argv — argv checks run "
+                                "without a shell, so the operator is passed to "
+                                "the command as a literal argument. If you meant "
+                                "a pipeline, write the check as a single string "
+                                "('shell:', or a string 'metric:')."
+                            ),
+                        )
+                    )
 
         # Rule 12: protect globs, when declared, must be well-formed relative
         # patterns. A changed-file path is always workdir-relative (git status

@@ -167,3 +167,48 @@ def load_manifest_from(operator_layer):
     from alc.intake import load_manifest
 
     return load_manifest(operator_layer)
+
+
+class TestArgvCheckWithShellOperator:
+    """Rule 17: a bare shell operator inside an argv check is almost always an
+    authoring mistake — argv runs without a shell, so the operator reaches the
+    command as a literal argument (the exact damage of finding 48)."""
+
+    def test_pipe_inside_command_argv_warns(self) -> None:
+        bp = _valid_blueprint()
+        bp.checks = [Check(name="lines", command=["git", "ls-files", "|", "wc", "-l"])]
+        violations = lint(_valid_manifest(), [bp])
+        matching = [v for v in violations if v.rule == "argv-check-with-shell-operator"]
+        assert len(matching) == 1
+        assert matching[0].severity == "warn"
+        assert "'|'" in matching[0].message
+        assert "lines" in matching[0].message
+
+    def test_operator_inside_list_metric_warns(self) -> None:
+        bp = _valid_blueprint()
+        bp.checks = [
+            Check(
+                name="size",
+                metric=["wc", "-l", "|", "tail", "-1"],
+                direction="lower_is_better",
+            )
+        ]
+        violations = lint(_valid_manifest(), [bp])
+        assert [v for v in violations if v.rule == "argv-check-with-shell-operator"]
+
+    def test_string_forms_are_unaffected(self) -> None:
+        bp = _valid_blueprint()
+        bp.checks = [
+            Check(name="diffclean", shell="git ls-files | wc -l"),
+            Check(
+                name="size",
+                metric="git ls-files | wc -l",
+                direction="lower_is_better",
+            ),
+        ]
+        violations = lint(_valid_manifest(), [bp])
+        assert [v for v in violations if v.rule == "argv-check-with-shell-operator"] == []
+
+    def test_clean_argv_is_clean(self) -> None:
+        violations = lint(_valid_manifest(), [_valid_blueprint()])
+        assert [v for v in violations if v.rule == "argv-check-with-shell-operator"] == []
