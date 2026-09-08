@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import yaml
+
 # ---------------------------------------------------------------------------
 # Builder pack — test authoring, live e2e QA, and a hardened ship flow.
 # ---------------------------------------------------------------------------
@@ -784,6 +786,47 @@ def retired_pack_loops(
     return sorted(retired)
 
 
+
+def pack_default_equal(on_disk: str, default: str, rel: str) -> bool:
+    """True when *on_disk* IS the pack default in substance.
+
+    Byte equality first; failing that, a PARSED comparison for the two shapes
+    a pack writes — Markdown-with-front-matter and YAML. A form save can
+    change quoting, flow-vs-block style or spacing without changing meaning
+    (dogfood round 12: a cosmetically-normalised refactor.md made `remove`
+    keep the file and the roster call it customised), and cosmetic churn is
+    not an operator edit. Anything unparseable counts as modified — on doubt,
+    never delete.
+    """
+    if on_disk == default:
+        return True
+    # Comments are operator-authored content, not style: a file whose only
+    # difference is an added "# tuned because ..." line is an edit to keep.
+    # (The UI's YAML editor preserves comments, so mere re-styling passes.)
+    if _comment_lines(on_disk) != _comment_lines(default):
+        return False
+    try:
+        if rel.endswith(".md"):
+            # Local import: intake pulls in pydantic models this module
+            # otherwise never needs at import time.
+            from alc.intake import _parse_front_matter
+
+            return _parse_front_matter(on_disk) == _parse_front_matter(default)
+        if rel.endswith((".yaml", ".yml")):
+            return yaml.safe_load(on_disk) == yaml.safe_load(default)
+    except yaml.YAMLError:
+        return False
+    return False
+
+
+def _comment_lines(text: str) -> list[str]:
+    """The multiset (sorted) of '#'-lines — YAML comments, and in Markdown
+    bodies also headings, which parsed-equality already forces to match."""
+    return sorted(
+        line.strip() for line in text.splitlines() if line.strip().startswith("#")
+    )
+
+
 def remove_pack(
     archetype: str,
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
@@ -795,8 +838,9 @@ def remove_pack(
 
     The inverse of `alc team hire`, with the same respect for the operator's
     edits that hire's additive default shows: a file is deleted only when its
-    on-disk content is byte-identical to what the pack would write today —
-    anything the operator customised is KEPT and reported, never destroyed.
+    on-disk content is the pack default in substance (byte-identical, or
+    parsed-equal when a form save merely normalised YAML style) — anything
+    the operator customised is KEPT and reported, never destroyed.
     Deleting only pack-identical content makes the operation reversible: `alc
     team hire` rewrites exactly what was removed.
 
@@ -832,7 +876,9 @@ def remove_pack(
             if not path.exists():
                 continue
             try:
-                unmodified = path.read_text(encoding="utf-8") == content
+                unmodified = pack_default_equal(
+                    path.read_text(encoding="utf-8"), content, candidate
+                )
             except OSError:
                 unmodified = False  # unreadable -> never delete
             if unmodified:

@@ -1073,8 +1073,8 @@ def team_remove(root: Path, member: str) -> dict:
     """Delete *member*'s UNMODIFIED pack files; return {removed, kept}.
 
     Mirrors `_team_remove`'s contract exactly, via the same `packs.remove_pack`
-    computation: only files byte-identical to what the pack would write today
-    are deleted (including a retired loop's archived copy under
+    computation: only files matching what the pack would write today (byte-
+    identical, or parsed-equal after cosmetic YAML normalisation) are deleted (including a retired loop's archived copy under
     `loops/retired/`); customised files are KEPT and returned in ``kept`` — a
     non-empty ``kept`` means the member stays on the roster. Both lists empty
     means nothing of the pack was on disk (a no-op, never an error). An
