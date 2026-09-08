@@ -79,4 +79,50 @@ describe('CheckListEditor', () => {
     await userEvent.click(screen.getByLabelText('Remove check'))
     expect(lastDoc(onDoc).checks).toHaveLength(0)
   })
+
+  it('saves a metric carrying shell syntax as a string, not a split argv (finding 48)', () => {
+    const onDoc = vi.fn()
+    render(
+      <Harness
+        initial={'checks:\n  - name: lines\n    metric: ["true"]\n    direction: lower_is_better\n    tolerance_pct: 0\n'}
+        onDoc={onDoc}
+      />
+    )
+    fireEvent.change(screen.getByLabelText('Check value'), {
+      target: { value: "git ls-files ui/src | xargs wc -l | tail -1 | awk '{print $1}'" },
+    })
+    const parsed = lastDoc(onDoc)
+    // The whole pipeline survives as one shell string — argv-splitting it
+    // would hand `|` and `xargs` to git as literal arguments.
+    expect(parsed.checks[0].metric).toBe("git ls-files ui/src | xargs wc -l | tail -1 | awk '{print $1}'")
+    expect(parsed.checks[0].direction).toBe('lower_is_better')
+  })
+
+  it('turns a command carrying shell syntax into a shell one-liner, and the mode chip follows', () => {
+    const onDoc = vi.fn()
+    render(<Harness initial={'checks:\n  - name: smoke\n    command: ["true"]\n'} onDoc={onDoc} />)
+    fireEvent.change(screen.getByLabelText('Check value'), {
+      target: { value: 'npm test && npm run build' },
+    })
+    const parsed = lastDoc(onDoc)
+    expect(parsed.checks[0].shell).toBe('npm test && npm run build')
+    expect(parsed.checks[0].command).toBeUndefined()
+    // The saved shape is what the row re-reads — the flip is the feedback.
+    expect((screen.getByLabelText('Check mode') as HTMLSelectElement).value).toBe('shell')
+  })
+
+  it('round-trips an existing string metric without argv-splitting it', () => {
+    const onDoc = vi.fn()
+    render(
+      <Harness
+        initial={'checks:\n  - name: lines\n    metric: git ls-files | wc -l\n    direction: lower_is_better\n    tolerance_pct: 0\n'}
+        onDoc={onDoc}
+      />
+    )
+    // Touch an unrelated field so the row re-saves in full.
+    fireEvent.change(screen.getByLabelText('Tolerance percent'), { target: { value: '2' } })
+    const parsed = lastDoc(onDoc)
+    expect(parsed.checks[0].metric).toBe('git ls-files | wc -l')
+    expect(parsed.checks[0].tolerance_pct).toBe(2)
+  })
 })

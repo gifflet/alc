@@ -22,6 +22,13 @@ interface CheckRow {
 
 type Path = (string | number)[]
 
+// Shell metacharacters that make a whitespace argv-split wrong: pipes,
+// redirects, logic, subshells, variables, quoting. An argv check runs
+// WITHOUT a shell, so a value carrying any of these must be saved in a
+// string (shell) form — splitting it would hand `|` or `"$(...)"` to the
+// command as literal arguments (finding 48).
+const SHELL_SYNTAX = /[|&;<>$`"'()]/
+
 function readArgvLike(node: unknown): string {
   const seq = node as { toJSON?: () => unknown } | null
   if (seq && typeof seq === 'object' && typeof seq.toJSON === 'function') {
@@ -69,6 +76,12 @@ export function CheckListEditor({
       safeDeleteIn(d, [...path, i, 'metric'])
       if (row.mode === 'shell') {
         d.setIn([...path, i, 'shell'], row.value)
+      } else if (SHELL_SYNTAX.test(row.value)) {
+        // Shell syntax typed into an argv mode: save the string form instead.
+        // `metric` accepts a string directly; a command becomes `shell:` (the
+        // model's only string-command shape), and the mode chip re-reads as
+        // "shell" on the next render — the flip is the feedback.
+        d.setIn([...path, i, row.mode === 'metric' ? 'metric' : 'shell'], row.value)
       } else {
         const argv = row.value.trim() ? row.value.trim().split(/\s+/) : ['true']
         d.setIn([...path, i, row.mode === 'metric' ? 'metric' : 'command'], argv)
