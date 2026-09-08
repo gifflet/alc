@@ -17,7 +17,12 @@ const STATUS_TONE: Record<LoopStatus, Tone> = {
 function LedgerChart({ records }: { records: CycleRecord[] }) {
   const max = Math.max(1, ...records.map((r) => r.succeeded + r.failed))
   return (
-    <div className="flex h-24 items-end gap-1 rounded-panel border border-border bg-base p-2">
+    // items-stretch, not items-end: with `items-end` each column sizes to its
+    // content, so the bars' percentage heights resolved against a zero-height
+    // parent and NOTHING rendered (Dashboard's ActivityChart hit and fixed
+    // the same collapse). The column stretches; `justify-end` inside it
+    // still anchors the bars to the bottom.
+    <div className="flex h-24 items-stretch gap-1 rounded-panel border border-border bg-base p-2">
       {records.map((r) => {
         const okH = (r.succeeded / max) * 100
         const failH = (r.failed / max) * 100

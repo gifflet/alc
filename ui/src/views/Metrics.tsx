@@ -31,7 +31,12 @@ function formatDelta(delta: number | null): string {
 function MetricChart({ points }: { points: MetricPoint[] }) {
   const max = Math.max(1, ...points.map((p) => Math.abs(p.value)))
   return (
-    <div className="flex h-24 items-end gap-1 rounded-panel border border-border bg-base p-2">
+    // items-stretch, not items-end: with `items-end` each column sizes to its
+    // content, so the bar's percentage height resolved against a zero-height
+    // parent and NOTHING rendered (Dashboard's ActivityChart hit and fixed
+    // the same collapse). The column stretches; `justify-end` inside it
+    // still anchors the bar to the bottom.
+    <div className="flex h-24 items-stretch gap-1 rounded-panel border border-border bg-base p-2">
       {points.map((p, i) => {
         const h = Math.max(4, (Math.abs(p.value) / max) * 100)
         return (
