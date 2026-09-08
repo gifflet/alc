@@ -6,7 +6,15 @@ from pathlib import Path
 import pytest
 
 from alc.intake import load_all_blueprints, load_manifest
-from alc.packs import PACKS, hired_archetypes, pack_files, remove_pack, retired_pack_loops, split_pack_files
+from alc.packs import (
+    PACKS,
+    hired_archetypes,
+    pack_default_equal,
+    pack_files,
+    remove_pack,
+    retired_pack_loops,
+    split_pack_files,
+)
 from alc.policy import lint
 from alc.scaffold import detect_stacks, scaffold
 
@@ -374,3 +382,91 @@ class TestRetiredPackLoops:
         result = retired_pack_loops("sweeper", stacks, tmp_path, self.LOOPS_DIR)
 
         assert "sweep" not in result
+
+
+class TestPackDefaultEqual:
+    """pack_default_equal(): cosmetic YAML churn is not an operator edit."""
+
+    def test_byte_identical_is_equal(self) -> None:
+        assert pack_default_equal("a: 1\n", "a: 1\n", "x.yaml")
+
+    def test_normalised_yaml_style_is_equal(self) -> None:
+        # A form save turns flow style into block style without changing meaning.
+        assert pack_default_equal(
+            "checks:\n  - name: smoke\n    command:\n      - 'true'\n",
+            'checks:\n  - name: smoke\n    command: [ "true" ]\n',
+            ".alc/loops/sweep.yaml",
+        )
+
+    def test_normalised_front_matter_is_equal(self) -> None:
+        default = '---\nname: refactor\ncommand: [ "true" ]\n---\n# Workflow\n\nDo it.\n'
+        normalised = "---\nname: refactor\ncommand:\n  - 'true'\n---\n# Workflow\n\nDo it.\n"
+        assert pack_default_equal(normalised, default, ".alc/blueprints/refactor.md")
+
+    def test_real_edit_is_not_equal(self) -> None:
+        assert not pack_default_equal(
+            "---\nname: refactor\npurpose: my own twist\n---\nbody\n",
+            "---\nname: refactor\npurpose: the default\n---\nbody\n",
+            ".alc/blueprints/refactor.md",
+        )
+
+    def test_workflow_body_edit_is_not_equal(self) -> None:
+        assert not pack_default_equal(
+            "---\nname: r\n---\n# Workflow\n\nMy custom steps.\n",
+            "---\nname: r\n---\n# Workflow\n\nDo it.\n",
+            ".alc/blueprints/r.md",
+        )
+
+    def test_unparseable_counts_as_modified(self) -> None:
+        assert not pack_default_equal("a: [unclosed\n", "a: 1\n", "x.yaml")
+
+    def test_non_yaml_non_md_stays_byte_strict(self) -> None:
+        assert not pack_default_equal("hello \n", "hello\n", "scripts/x.sh")
+
+
+class TestRemovePackSemanticCompare:
+    """remove_pack() deletes a pack file whose YAML was merely re-styled."""
+
+    LOOPS_DIR = ".alc/loops"
+
+    def test_removes_cosmetically_normalised_blueprint(self, tmp_path: Path) -> None:
+        # Round 12's dance: a form save normalised refactor.md's YAML style,
+        # remove kept it, and the roster called it customised. Parsed-equal
+        # content must now be deleted like the default it still is.
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        files = pack_files("sweeper", stacks)
+        blueprint_rel = next(rel for rel in files if rel.endswith("refactor.md"))
+        for rel, content in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if rel == blueprint_rel:
+                # Re-style the front matter the way a YAML round-trip does,
+                # leaving the parsed document identical.
+                content = content.replace('command: ["true"]', "command:\n      - 'true'")
+                assert content != files[rel]
+            target.write_text(content)
+
+        removed, kept = remove_pack("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert blueprint_rel in removed
+        assert kept == []
+
+    def test_added_comment_still_counts_as_modified(self, tmp_path: Path) -> None:
+        # A comment is operator-authored content — parsed-equality alone must
+        # not erase "# tuned because ..." annotations.
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        files = pack_files("sweeper", stacks)
+        loop_rel = next(rel for rel in files if rel.endswith("sweep.yaml"))
+        for rel, content in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if rel == loop_rel:
+                content = content + "\n# operator customization\n"
+            target.write_text(content)
+
+        removed, kept = remove_pack("sweeper", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert kept == [loop_rel]
+        assert (tmp_path / loop_rel).exists()

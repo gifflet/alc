@@ -1620,8 +1620,9 @@ def _team_hire(args: argparse.Namespace) -> int:
     """
     from alc.intake import load_all_blueprints, load_all_loops, load_manifest
     from alc.packs import (
-        PACK_NEXT_STEP,
         PACKS,
+        PACK_NEXT_STEP,
+        pack_default_equal,
         pack_files,
         retarget_pack_content,
         split_pack_files,
@@ -1689,9 +1690,13 @@ def _team_hire(args: argparse.Namespace) -> int:
                 print(f"  {rel_path}")
             for rel_path in sorted(present):
                 # Flag drift so the operator knows --force would reconcile it —
-                # present[] carries the pack default, compared to the disk bytes.
+                # present[] carries the pack default. Parsed-equal counts as
+                # unmodified (pack_default_equal): a form save's cosmetic YAML
+                # normalisation is not drift (dogfood round 12).
                 suffix = ""
-                if (project_root / rel_path).read_text() != present[rel_path]:
+                if not pack_default_equal(
+                    (project_root / rel_path).read_text(), present[rel_path], rel_path
+                ):
                     suffix = " (differs from the pack default — --force overwrites)"
                 print(f"  kept (already on disk): {rel_path}{suffix}")
 
