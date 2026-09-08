@@ -29,11 +29,22 @@ type Path = (string | number)[]
 // command as literal arguments (finding 48).
 const SHELL_SYNTAX = /[|&;<>$`"'()]/
 
+/** Quote one argv token for display: bare when it's plain, single-quoted
+ * (embedded quotes as '\'') when it carries whitespace or shell
+ * metacharacters — so the field shows a line that runs the same way, and a
+ * re-save through the shell-syntax path preserves the token's semantics
+ * instead of dropping its quoting (round 14's logged edge). */
+function quoteToken(token: string): string {
+  if (token === '') return "''"
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(token)) return token
+  return `'${token.replaceAll("'", "'\\''")}'`
+}
+
 function readArgvLike(node: unknown): string {
   const seq = node as { toJSON?: () => unknown } | null
   if (seq && typeof seq === 'object' && typeof seq.toJSON === 'function') {
     const v = seq.toJSON()
-    return Array.isArray(v) ? v.join(' ') : String(v ?? '')
+    return Array.isArray(v) ? v.map((t) => quoteToken(String(t))).join(' ') : String(v ?? '')
   }
   return node == null ? '' : String(node)
 }
