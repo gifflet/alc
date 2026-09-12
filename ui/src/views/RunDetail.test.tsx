@@ -140,3 +140,43 @@ describe('RunDetail — event lines fit the phone', () => {
     expect(text?.className).toContain('[overflow-wrap:anywhere]')
   })
 })
+
+describe('service strip (round 16)', () => {
+  it('renders the healthy service with its URL and teardown note', async () => {
+    const withService = [
+      { ts: '2026-09-12T17:21:00Z', event: 'service_started', start: 'python3 -m http.server "$PORT"', port: 55346 },
+      { ts: '2026-09-12T17:21:00Z', event: 'service_ready', ok: true, base_url: 'http://127.0.0.1:55346', elapsed_s: 0.21 },
+      ...events,
+      { ts: '2026-09-12T17:21:05Z', event: 'service_stopped' },
+    ]
+    installFetch({ '/runs/': { events: withService, next_offset: 9 } })
+    renderWithProviders(<RunDetail stem="20260912T1721-run-qa-x" />)
+
+    expect(await screen.findByText('Service')).toBeInTheDocument()
+    expect(screen.getByText('healthy')).toBeInTheDocument()
+    expect(screen.getByText('http://127.0.0.1:55346')).toBeInTheDocument()
+    expect(screen.getByText('up in 0.2s')).toBeInTheDocument()
+    expect(screen.getByText('stopped after the run')).toBeInTheDocument()
+  })
+
+  it('renders a failed health poll in the error tone', async () => {
+    const failing = [
+      { ts: '2026-09-12T17:21:00Z', event: 'service_started', start: 'npm run dev', port: 4000 },
+      { ts: '2026-09-12T17:21:15Z', event: 'service_ready', ok: false, elapsed_s: 15.0 },
+    ]
+    installFetch({ '/runs/': { events: failing, next_offset: 2 } })
+    renderWithProviders(<RunDetail stem="20260912T1722-run-qa-y" />)
+
+    expect(await screen.findByText('failed')).toBeInTheDocument()
+    expect(screen.getByText('never became healthy')).toBeInTheDocument()
+    // No base_url ever arrived — the strip falls back to the start command.
+    expect(screen.getByText('npm run dev')).toBeInTheDocument()
+  })
+
+  it('does not render on runs without a service', async () => {
+    installFetch({ '/runs/': { events, next_offset: 6 } })
+    renderWithProviders(<RunDetail stem="20260712T0359-run-chore-x" />)
+    await screen.findByText(/exec via API/)
+    expect(screen.queryByText('Service')).not.toBeInTheDocument()
+  })
+})
