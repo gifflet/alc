@@ -127,10 +127,13 @@ class TestSplitPackFiles:
 class TestPackFilesBuilder:
     def test_returns_the_expected_relative_paths(self) -> None:
         files = pack_files("builder", stacks=[])
+        # ship-e2e joined in round 15: the hardened ship closed by a live
+        # end-to-end gate (the qa stage against the Manifest's service).
         assert set(files) == {
             ".alc/blueprints/test.md",
             ".alc/blueprints/qa.md",
             ".alc/flows/ship-hardened.yaml",
+            ".alc/flows/ship-e2e.yaml",
         }
 
     def test_test_blueprint_references_the_primary_stack_check_set(self) -> None:
@@ -470,3 +473,47 @@ class TestRemovePackSemanticCompare:
 
         assert kept == [loop_rel]
         assert (tmp_path / loop_rel).exists()
+
+
+class TestBuilderShipE2EFlow:
+    """ship-e2e: the hardened ship closed by a live end-to-end gate."""
+
+    def test_flow_parses_and_ends_with_the_qa_stage(self) -> None:
+        import yaml as _yaml
+
+        files = pack_files("builder", stacks=[])
+        flow = _yaml.safe_load(
+            "\n".join(
+                line
+                for line in files[".alc/flows/ship-e2e.yaml"].splitlines()
+                if not line.startswith("#")
+            )
+        )
+        assert flow["name"] == "ship-e2e"
+        names = [st["name"] for st in flow["stages"]]
+        assert names == ["plan", "build", "harden", "gate", "e2e"]
+        # The live gate is the LAST word — e2e runs after the static gate,
+        # and it is a real engine stage (verify_only would bypass the
+        # service lifecycle, which lives in the runner).
+        assert flow["stages"][-1]["blueprint"] == "qa"
+        assert "verify_only" not in flow["stages"][-1]
+        assert flow["stages"][3]["verify_only"] is True
+
+    def test_flow_lints_clean_in_a_scaffolded_project(self, tmp_path: Path) -> None:
+        from alc.intake import load_all_blueprints, load_all_flows
+        from alc.policy import lint_flow
+
+        scaffold(tmp_path)
+        stacks = detect_stacks(tmp_path)
+        for rel, content in pack_files("builder", stacks).items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        manifest = load_manifest(tmp_path / ".alc")
+        blueprints = load_all_blueprints(manifest, tmp_path / ".alc")
+        flows = {f.name: f for f in load_all_flows(manifest, tmp_path / ".alc")}
+        assert "ship-e2e" in flows
+        violations = lint_flow(
+            flows["ship-e2e"], {b.name for b in blueprints}, set()
+        )
+        assert violations == []

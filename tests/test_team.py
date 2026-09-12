@@ -107,7 +107,10 @@ class TestTeamHire:
 
         out = capsys.readouterr().out
         # Reports the added missing files and the kept (drifted) one by name.
-        assert "added 2 missing file(s)" in out
+        # 2 -> 3 in round 15: the builder pack gained ship-e2e.yaml (the
+        # hardened ship closed by a live end-to-end gate), so a hire with
+        # test.md customised now writes qa.md plus BOTH ship flows.
+        assert "added 3 missing file(s)" in out
         assert ".alc/blueprints/qa.md" in out
         assert "kept (already on disk): .alc/blueprints/test.md" in out
         assert "differs from the pack default" in out
