@@ -357,3 +357,113 @@ class TestChecksSeeServiceEnv:
         manifest = load_manifest(operator_layer)
         report = self._report(manifest, bp, operator_layer, tmp_path, monkeypatch)
         assert report.success is True
+
+
+class TestServiceLifecycleEvents:
+    """Round 16: the service phase announces itself in the run log — the same
+    channel the UI's timeline reads — instead of being an invisible pause."""
+
+    def _events(self, log: Path) -> list[dict]:
+        import json
+
+        return [json.loads(line) for line in log.read_text().splitlines()]
+
+    def test_service_run_emits_lifecycle_events_in_order(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        from alc.events import bind_run_log
+
+        manifest = load_manifest(operator_layer).model_copy(
+            update={"service": ServiceSpec(start="python app.py")}
+        )
+        engine = _RecordingEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        monkeypatch.setattr("alc.runner.RuntimeService", _FakeRuntimeService)
+        log = tmp_path / "run.jsonl"
+        with bind_run_log(log):
+            execute_mandate(
+                manifest=manifest,
+                blueprint=_bp(needs_service=True),
+                directive="# original",
+                workdir=tmp_path,
+                operator_layer=operator_layer,
+                env={},
+            )
+        events = self._events(log)
+        names = [e["event"] for e in events]
+        assert names.index("service_started") < names.index("service_ready")
+        assert names.index("service_ready") < names.index("service_stopped")
+        ready = next(e for e in events if e["event"] == "service_ready")
+        assert ready["ok"] is True
+        assert ready["base_url"].startswith("http://127.0.0.1:")
+        assert ready["elapsed_s"] >= 0
+        started = next(e for e in events if e["event"] == "service_started")
+        assert started["start"] == "python app.py"
+        assert isinstance(started["port"], int)
+
+    def test_failed_health_emits_not_ready_and_no_stop(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        from alc.events import bind_run_log
+
+        class _NeverHealthy(_FakeRuntimeService):
+            def __enter__(self):
+                raise RuntimeError("app never became healthy")
+
+        manifest = load_manifest(operator_layer).model_copy(
+            update={"service": ServiceSpec(start="python app.py")}
+        )
+        engine = _RecordingEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        monkeypatch.setattr("alc.runner.RuntimeService", _NeverHealthy)
+        log = tmp_path / "run.jsonl"
+        with bind_run_log(log), pytest.raises(RuntimeError):
+            execute_mandate(
+                manifest=manifest,
+                blueprint=_bp(needs_service=True),
+                directive="# original",
+                workdir=tmp_path,
+                operator_layer=operator_layer,
+                env={},
+            )
+        events = self._events(log)
+        names = [e["event"] for e in events]
+        assert "service_started" in names
+        ready = next(e for e in events if e["event"] == "service_ready")
+        assert ready["ok"] is False
+        # The app never came up, so there is no teardown to report.
+        assert "service_stopped" not in names
+
+    def test_capture_emits_evidence_captured(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        from alc.events import bind_run_log
+
+        class _WithOutput(_FakeRuntimeService):
+            def captured_output(self) -> str:
+                return "health poll: 200"
+
+        manifest = load_manifest(operator_layer).model_copy(
+            update={"service": ServiceSpec(start="python app.py")}
+        )
+        bp = _bp(needs_service=True)
+        bp.capture = 'printf hi > "$ALC_ARTIFACTS_DIR/hi.txt"'
+        engine = _RecordingEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        monkeypatch.setattr("alc.runner.RuntimeService", _WithOutput)
+        log = tmp_path / "run.jsonl"
+        with bind_run_log(log):
+            execute_mandate(
+                manifest=manifest,
+                blueprint=bp,
+                directive="# original",
+                workdir=tmp_path,
+                operator_layer=operator_layer,
+                env={},
+            )
+        captured = next(
+            e for e in self._events(log) if e["event"] == "evidence_captured"
+        )
+        names = {p.rsplit("/", 1)[-1] for p in captured["artifacts"]}
+        assert names == {"hi.txt", "health-poll.log"}
+        assert captured["warnings"] == 0

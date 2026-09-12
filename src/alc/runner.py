@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import contextlib
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 from alc import checkconfig, envrefresh
@@ -217,19 +219,54 @@ class _ServiceRun:
     ) -> None:
         self._svc = RuntimeService(service, workdir, port, env)
         self._allocated = allocated
+        self._port = port
+        self._start_cmd = service.start
 
     def __enter__(self):
+        # Announce on BOTH channels the Assurance Loop already uses: stderr for
+        # the terminal (the boot + health poll is otherwise a silent freeze with
+        # no visible cause — the same sin the check timeout fixed for checks)
+        # and run-log events for the UI's timeline.
+        print(
+            f"→ Service… {self._start_cmd} (port {self._port})",
+            file=sys.stderr,
+            flush=True,
+        )
+        emit("service_started", port=self._port, start=self._start_cmd)
+        began = time.monotonic()
         try:
-            return self._svc.__enter__()
+            base_url = self._svc.__enter__()
         except BaseException:
+            elapsed = time.monotonic() - began
+            print(
+                f"  ✗ not healthy after {elapsed:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+            emit("service_ready", ok=False, elapsed_s=round(elapsed, 3))
             release_ports(self._allocated)
             raise
+        elapsed = time.monotonic() - began
+        print(
+            f"  ✓ healthy at {base_url} ({elapsed:.1f}s)",
+            file=sys.stderr,
+            flush=True,
+        )
+        emit(
+            "service_ready",
+            ok=True,
+            base_url=base_url,
+            elapsed_s=round(elapsed, 3),
+        )
+        return base_url
 
     def __exit__(self, *exc) -> None:
         try:
             self._svc.__exit__(*exc)
         finally:
             release_ports(self._allocated)
+        print("  · service stopped", file=sys.stderr, flush=True)
+        emit("service_stopped")
 
     def captured_output(self) -> str:
         """Delegate to the wrapped RuntimeService's captured stdout+stderr."""
@@ -464,6 +501,12 @@ def execute_mandate(
                 env=_env,
                 timeout_s=manifest.check_timeout_s,
             )
+            print(
+                f"→ Evidence… {len(artifacts)} artifact(s) captured",
+                file=sys.stderr,
+                flush=True,
+            )
+            emit("evidence_captured", artifacts=artifacts, warnings=len(capture_warnings))
 
     # Snapshot the git state after the Assurance Loop and compute changed paths.
     state_after = _git_state(effective_workdir)
