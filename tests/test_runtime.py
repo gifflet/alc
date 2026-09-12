@@ -310,3 +310,50 @@ def test_service_conventions_is_a_reserved_prompt(operator_layer: Path) -> None:
     )
     assert "Service conventions" in text
     assert "$ALC_BASE_URL" in text
+
+
+class TestChecksSeeServiceEnv:
+    """Finding 50: a needs_service run's checks verify against the same live
+    service the engine talked to — $ALC_BASE_URL reaches the Verifier too."""
+
+    def _report(self, manifest, blueprint, operator_layer, tmp_path, monkeypatch):
+        engine = _RecordingEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        monkeypatch.setattr("alc.runner.RuntimeService", _FakeRuntimeService)
+        return execute_mandate(
+            manifest=manifest,
+            blueprint=blueprint,
+            directive="# original",
+            workdir=tmp_path,
+            operator_layer=operator_layer,
+            env={},
+        )
+
+    def test_check_sees_base_url_on_a_service_run(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        manifest = load_manifest(operator_layer).model_copy(
+            update={"service": ServiceSpec(start="python app.py")}
+        )
+        bp = Blueprint(
+            name="qa",
+            purpose="validate at runtime",
+            workflow="# do it",
+            needs_service=True,
+            checks=[Check(name="e2e-smoke", shell='test -n "$ALC_BASE_URL"')],
+        )
+        report = self._report(manifest, bp, operator_layer, tmp_path, monkeypatch)
+        assert report.success is True
+
+    def test_check_env_stays_clean_without_service(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        bp = Blueprint(
+            name="chore",
+            purpose="plain run",
+            workflow="# do it",
+            checks=[Check(name="no-url", shell='test -z "$ALC_BASE_URL"')],
+        )
+        manifest = load_manifest(operator_layer)
+        report = self._report(manifest, bp, operator_layer, tmp_path, monkeypatch)
+        assert report.success is True
