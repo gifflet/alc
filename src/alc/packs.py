@@ -174,6 +174,29 @@ def retarget_pack_content(
     return out, retargeted
 
 
+_BUILDER_SHIP_E2E = """\
+# The hardened ship, closed by a LIVE end-to-end gate: the final stage runs
+# the qa Blueprint, so ALC starts the Manifest's `service:`, hands the engine
+# $ALC_BASE_URL, and the e2e-smoke check verifies against the running app.
+# Requires `service:` in the Manifest — without it the qa stage's live check
+# has no app to hit and the flow will fail at the last stage by design.
+name: ship-e2e
+description: Plan, build and harden a change, gate it statically, then verify it end-to-end against the live service.
+stages:
+  - name: plan
+    blueprint: plan
+  - name: build
+    blueprint: feature
+  - name: harden
+    blueprint: test
+  - name: gate
+    blueprint: test
+    verify_only: true
+  - name: e2e
+    blueprint: qa
+"""
+
+
 def _builder_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
 ) -> dict[str, str]:
@@ -183,6 +206,7 @@ def _builder_files(
         ".alc/blueprints/test.md": _BUILDER_TEST.format(check_set_line=check_set_line),
         ".alc/blueprints/qa.md": _BUILDER_QA.format(check_set_line=check_set_line),
         ".alc/flows/ship-hardened.yaml": _BUILDER_SHIP_HARDENED,
+        ".alc/flows/ship-e2e.yaml": _BUILDER_SHIP_E2E,
     }
 
 
