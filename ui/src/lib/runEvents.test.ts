@@ -298,3 +298,50 @@ describe('spike marking', () => {
     expect(t.spike).toBeUndefined()
   })
 })
+
+describe('service phase (round 16)', () => {
+  it('folds the lifecycle into Timeline.service', () => {
+    const t = buildTimeline([
+      { event: 'service_started', start: 'python3 -m http.server "$PORT"', port: 55346 },
+      { event: 'service_ready', ok: true, base_url: 'http://127.0.0.1:55346', elapsed_s: 0.21 },
+      { event: 'mandate_started', blueprint: 'qa', engine: 'mock', model: 'm' },
+      { event: 'service_stopped' },
+    ] as never)
+    expect(t.service).toEqual({
+      start: 'python3 -m http.server "$PORT"',
+      port: 55346,
+      ready: true,
+      baseUrl: 'http://127.0.0.1:55346',
+      elapsedS: 0.21,
+      stopped: true,
+    })
+  })
+
+  it('marks a failed health poll and leaves stopped false', () => {
+    const t = buildTimeline([
+      { event: 'service_started', start: 'npm run dev', port: 4000 },
+      { event: 'service_ready', ok: false, elapsed_s: 15.0 },
+    ] as never)
+    expect(t.service?.ready).toBe(false)
+    expect(t.service?.stopped).toBe(false)
+  })
+
+  it('stays null on runs without a service', () => {
+    const t = buildTimeline([
+      { event: 'mandate_started', blueprint: 'chore', engine: 'mock', model: 'm' },
+    ] as never)
+    expect(t.service).toBeNull()
+  })
+
+  it('describes the service and evidence events for the raw feed', () => {
+    expect(
+      describeEvent({ event: 'service_ready', ok: true, base_url: 'http://127.0.0.1:1', elapsed_s: 0.2 } as never)
+    ).toContain('Service healthy at http://127.0.0.1:1')
+    expect(describeEvent({ event: 'service_ready', ok: false, elapsed_s: 15 } as never)).toContain(
+      'never became healthy'
+    )
+    expect(
+      describeEvent({ event: 'evidence_captured', artifacts: ['a', 'b'] } as never)
+    ).toBe('Evidence — 2 artifacts captured')
+  })
+})

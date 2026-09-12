@@ -161,6 +161,42 @@ export function RunDetail({ stem }: { stem: string }) {
             />
           </div>
 
+          {/* The needs_service phase, when this run had one: the app ALC
+              started around the loop. flex-wrap + anywhere-wrapping on the
+              URL keep the strip inside 411px without sideways scroll. */}
+          {timeline.service && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-panel border border-border bg-panel px-4 py-2.5">
+              <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+                Service
+              </span>
+              {timeline.service.ready === true ? (
+                <Pill tone="live">healthy</Pill>
+              ) : timeline.service.ready === false ? (
+                <Pill tone="error">failed</Pill>
+              ) : (
+                <Pill tone="running">starting…</Pill>
+              )}
+              <span className="min-w-0 font-mono text-[length:var(--ui-text-body)] text-primary [overflow-wrap:anywhere]">
+                {timeline.service.baseUrl ?? timeline.service.start ?? ''}
+              </span>
+              {timeline.service.ready === true && timeline.service.elapsedS !== undefined && (
+                <span className="text-[length:var(--ui-text-label)] text-muted">
+                  up in {timeline.service.elapsedS.toFixed(1)}s
+                </span>
+              )}
+              {timeline.service.ready === false && (
+                <span className="text-[length:var(--ui-text-label)] text-error">
+                  never became healthy
+                </span>
+              )}
+              {timeline.service.stopped && (
+                <span className="text-[length:var(--ui-text-label)] text-faint">
+                  stopped after the run
+                </span>
+              )}
+            </div>
+          )}
+
           {/* mt-4 like every sibling: the timeline was the ONE block in the
               column with no top margin, so the outcome banner sat glued to it
               while everything else breathed at 16px. */}

@@ -39,10 +39,24 @@ export interface TimelineGroup {
   success: boolean | null
 }
 
+/** The needs_service phase of a run: ALC started the Manifest's app around
+ * the Assurance Loop. `ready` is null while the health poll is still running
+ * (a live tail), true once healthy, false when the app never came up. */
+export interface ServicePhase {
+  start?: string
+  port?: number
+  ready: boolean | null
+  baseUrl?: string
+  elapsedS?: number
+  stopped: boolean
+}
+
 export interface Timeline {
   kind: 'run' | 'flow' | 'task'
   title: string
   task: string
+  /** Null on runs without a service — the strip simply does not render. */
+  service: ServicePhase | null
   engine?: string
   model?: string
   groups: TimelineGroup[]
@@ -117,6 +131,7 @@ export function buildTimeline(events: RunEvent[]): Timeline {
     kind: 'run',
     title: '',
     task: '',
+    service: null,
     groups: [],
     scorecard: null,
     success: null,
@@ -266,6 +281,28 @@ export function buildTimeline(events: RunEvent[]): Timeline {
         timeline.aborted = true
         break
 
+      case 'service_started':
+        timeline.service = {
+          start: str(event, 'start'),
+          port: typeof event.port === 'number' ? event.port : undefined,
+          ready: null,
+          stopped: false,
+        }
+        break
+
+      case 'service_ready': {
+        const svc = timeline.service ?? { ready: null, stopped: false }
+        svc.ready = event.ok === true
+        svc.baseUrl = str(event, 'base_url') ?? svc.baseUrl
+        svc.elapsedS = num(event, 'elapsed_s')
+        timeline.service = svc
+        break
+      }
+
+      case 'service_stopped':
+        if (timeline.service) timeline.service.stopped = true
+        break
+
       default:
         break
     }
@@ -296,6 +333,18 @@ export function describeEvent(event: RunEvent): string {
       // took two minutes read exactly like one that took two seconds.
       const verdict = event.timed_out ? 'timed out ⏱' : event.passed ? 'passed' : 'failed'
       return `Check ${str(event, 'name')} ${verdict} (${formatElapsed(num(event, 'duration_s'))})`
+    }
+    case 'service_started':
+      return `Service starting — ${str(event, 'start')} (port ${num(event, 'port')})`
+    case 'service_ready':
+      return event.ok
+        ? `Service healthy at ${str(event, 'base_url')} (${formatElapsed(num(event, 'elapsed_s'))})`
+        : `Service never became healthy (${formatElapsed(num(event, 'elapsed_s'))})`
+    case 'service_stopped':
+      return 'Service stopped'
+    case 'evidence_captured': {
+      const n = Array.isArray(event.artifacts) ? event.artifacts.length : 0
+      return `Evidence — ${n} artifact${n === 1 ? '' : 's'} captured`
     }
     case 'check_config_edited': {
       const files = Array.isArray(event.files) ? event.files.filter((f) => typeof f === 'string') : []
