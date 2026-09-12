@@ -186,6 +186,8 @@ export interface InboxItem {
   retry_pending?: boolean
   /** branch */
   branch?: string
+  /** The tip commit's subject — the work in its own words (finding 52). */
+  subject?: string
   committed_at?: number
   /** false when the run behind this branch never passed its checks. See Branch. */
   verified?: boolean | null

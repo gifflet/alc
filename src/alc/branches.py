@@ -31,6 +31,11 @@ class AlcBranch:
     label: str           # provenance segment, e.g. "run"/"flow"/"tick"/"conduct"
     committed_at: float  # epoch seconds of the branch tip's committer date
     merged: bool         # already contained in HEAD
+    # The tip commit's subject line — the work described in its own words.
+    # Two branches answering the same mandate become relatable at a glance
+    # (dogfood finding 52: the operator faced two competing UNVERIFIED
+    # branches whose cards said nothing about what either contained).
+    subject: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,7 +79,7 @@ def list_alc_branches(repo_root: Path) -> list[AlcBranch]:
         result = subprocess.run(
             [
                 "git", "-C", str(repo_root), "for-each-ref", "refs/heads/alc/",
-                "--format=%(refname:short)%09%(committerdate:unix)",
+                "--format=%(refname:short)%09%(committerdate:unix)%09%(subject)",
             ],
             capture_output=True,
             text=True,
@@ -89,13 +94,15 @@ def list_alc_branches(repo_root: Path) -> list[AlcBranch]:
     for line in result.stdout.splitlines():
         if not line.strip():
             continue
-        name, _, committed_at = line.partition("\t")
+        name, _, rest = line.partition("\t")
+        committed_at, _, subject = rest.partition("\t")
         branches.append(
             AlcBranch(
                 name=name,
                 label=_label_for(name),
                 committed_at=float(committed_at) if committed_at else 0.0,
                 merged=_contained_in_head(repo_root, name),
+                subject=subject.strip(),
             )
         )
     return branches

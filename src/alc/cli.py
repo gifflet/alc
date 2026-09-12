@@ -2801,7 +2801,8 @@ def cmd_land(args: argparse.Namespace) -> int:
             return 0
         for b in unmerged:
             mark = "  ← checks did not pass" if _verified(b) is False else ""
-            print(f"{b.name}   ({b.label}){mark}")
+            subject = f" — {b.subject}" if b.subject else ""
+            print(f"{b.name}   ({b.label}){subject}{mark}")
         print("Run: alc land --all")
         return 0
 

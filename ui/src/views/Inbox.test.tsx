@@ -256,4 +256,28 @@ describe('Inbox dismiss', () => {
     expect(mock.calls.some((c) => c.method === 'POST' && c.url.endsWith('/queue/retry'))).toBe(true)
     expect(mock.calls.some((c) => c.url.endsWith('/queue/dismiss'))).toBe(false)
   })
+
+  it("shows the branch's commit subject when the API provides one (finding 52)", async () => {
+    installFetch({
+      '/inbox': {
+        items: [
+          {
+            kind: 'branch',
+            id: 'branch:alc/run-x',
+            title: 'alc/run-x',
+            subject: 'feat(ui): add settings icon link to agent config page',
+            reason: 'work from a run — checks did not pass, review before landing',
+            branch: 'alc/run-x',
+            committed_at: 1783828900,
+            verified: false,
+          },
+        ],
+        count: 1,
+      },
+    })
+    renderWithProviders(<Inbox />)
+    expect(
+      await screen.findByText('feat(ui): add settings icon link to agent config page')
+    ).toBeInTheDocument()
+  })
 })

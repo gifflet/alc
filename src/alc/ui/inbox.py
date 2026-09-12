@@ -27,6 +27,22 @@ from alc.ui import service
 # a halted loop is an automation that stopped. Lower sorts first.
 KIND_URGENCY = {"failure": 0, "loop": 1, "branch": 2}
 
+# The branch's provenance segment is internal shorthand ("tick", "conduct") —
+# a user reading their own Inbox has no way to parse it (dogfood finding 54).
+# Map it to plain language for the card; the raw label still rides in the API
+# payload for anyone who wants it.
+LABEL_HUMAN = {
+    "run": "A run",
+    "tick": "An autonomous cycle",
+    "flow": "A flow",
+    "conduct": "A routed task",
+}
+
+
+def _human_label(label: str) -> str:
+    """Plain-language name for a branch's provenance label (finding 54)."""
+    return LABEL_HUMAN.get(label, f"{label} work".capitalize())
+
 
 def _read_task(path: Path) -> QueueTask | None:
     """Parse a queue task file, or None when it is missing/unreadable."""
@@ -104,20 +120,22 @@ def _branches(root: Path) -> list[dict]:
         # checks failed or it was interrupted, and it committed anyway. Saying
         # "ready to land" about that is the one thing this product must not do.
         verified = branch.get("verified")
+        who = _human_label(branch["label"])
         if verified is False:
-            reason = f"{branch['label']} work — checks did not pass, review before landing"
+            reason = f"{who} — checks did not pass, review before landing"
         elif verified is True and smoke_only_project:
             reason = (
-                f"{branch['label']} work — only the placeholder check ran "
+                f"{who} — only the placeholder check ran "
                 "(it cannot fail); read the diff before landing"
             )
         else:
-            reason = f"{branch['label']} work ready to land"
+            reason = f"{who} — ready to land"
         items.append(
             {
                 "kind": "branch",
                 "id": f"branch:{branch['name']}",
                 "title": branch["name"],
+                "subject": branch.get("subject") or "",
                 "reason": reason,
                 "order": -branch["committed_at"],  # newest first
                 "branch": branch["name"],

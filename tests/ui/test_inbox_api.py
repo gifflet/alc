@@ -99,6 +99,11 @@ class TestInbox:
         assert len(branches) == 1
         assert branches[0]["branch"] == "alc/run-a1b2c3d4"
         assert "land" in branches[0]["reason"]
+        # Round 18: the card carries the commit subject (finding 52) and speaks
+        # plain language, not the internal "run"/"tick" shorthand (finding 54).
+        assert branches[0]["subject"] == "work"
+        assert branches[0]["reason"].startswith("A run")
+        assert "run work" not in branches[0]["reason"]
 
     def test_lists_a_loop_stopped_by_a_backstop(
         self, client, registered: str, project: Path
