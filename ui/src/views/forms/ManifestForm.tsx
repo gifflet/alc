@@ -104,6 +104,19 @@ export function ManifestForm({
   }
   const removeCheckSet = (name: string) => update((d) => d.deleteIn(['check_sets', name]))
 
+  const serviceStart = String(doc.getIn(['service', 'start']) ?? '')
+  const serviceHealth = String(doc.getIn(['service', 'health']) ?? '')
+  const serviceTimeoutRaw = doc.getIn(['service', 'ready_timeout_s'])
+  const serviceTimeout = serviceTimeoutRaw == null ? '' : Number(serviceTimeoutRaw)
+  const setService = (key: string, v: string | number | '') =>
+    update((d) => {
+      // Clearing Start turns the service OFF (the whole block goes); an empty
+      // health/timeout just falls back to the model default (/health, 30s).
+      if (key === 'start' && v === '') safeDeleteIn(d, ['service'])
+      else if (v === '') safeDeleteIn(d, ['service', key])
+      else d.setIn(['service', key], v)
+    })
+
   const setNotify = (event: string, row: NotifyRow) =>
     update((d) => {
       if (row.mode === 'none') {
@@ -318,6 +331,43 @@ export function ManifestForm({
               mono
             />
           </Field>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Service</h3>
+        <p className="mb-2 text-[length:var(--ui-text-label)] text-faint">
+          The app ALC starts for a needs_service run: it owns the port, waits for health,
+          exposes $ALC_BASE_URL to the engine and the checks, and tears the app down after.
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Start">
+            <TextInput
+              value={serviceStart}
+              onChange={(v) => setService('start', v)}
+              placeholder={'python3 -m http.server "$PORT"'}
+              mono
+            />
+          </Field>
+          {serviceStart !== '' && (
+            <>
+              <Field label="Health path">
+                <TextInput
+                  value={serviceHealth}
+                  onChange={(v) => setService('health', v)}
+                  placeholder="/health"
+                  mono
+                />
+              </Field>
+              <Field label="Ready timeout (s)">
+                <NumberInput
+                  value={serviceTimeout}
+                  onChange={(v) => setService('ready_timeout_s', v)}
+                  placeholder="30"
+                />
+              </Field>
+            </>
+          )}
         </div>
       </section>
 

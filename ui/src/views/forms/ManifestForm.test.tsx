@@ -117,4 +117,35 @@ describe('ManifestForm', () => {
     expect(parsed.artifacts_dir).toBe('.alc/custom-artifacts')
     expect(parsed.signals_dir).toBe('.alc/custom-signals')
   })
+
+  it('authors the service block from Start, revealing health and timeout (finding 51)', () => {
+    const onDoc = vi.fn()
+    renderManifest(onDoc)
+    // Health/timeout hide until a start command exists — a service block
+    // without `start` would not validate.
+    expect(screen.queryByLabelText('Health path')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Start'), {
+      target: { value: 'python3 -m http.server "$PORT"' },
+    })
+    expect(lastParsed(onDoc).service).toEqual({ start: 'python3 -m http.server "$PORT"' })
+  })
+
+  it('clears the whole service block when Start is emptied', () => {
+    const onDoc = vi.fn()
+    const withService = MANIFEST + 'service:\n  start: npm run dev\n  health: /up\n  ready_timeout_s: 10\n'
+    renderControlledForm(withService, (value, onChange) => <ManifestForm value={value} onChange={onChange} />, onDoc)
+    expect((screen.getByLabelText('Health path') as HTMLInputElement).value).toBe('/up')
+    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '' } })
+    expect('service' in lastParsed(onDoc)).toBe(false)
+    // Everything else survives the deletion.
+    expect(lastParsed(onDoc).custom_field).toBe('keep-me')
+  })
+
+  it('drops an emptied health back to the model default instead of writing an empty string', () => {
+    const onDoc = vi.fn()
+    const withService = MANIFEST + 'service:\n  start: npm run dev\n  health: /up\n'
+    renderControlledForm(withService, (value, onChange) => <ManifestForm value={value} onChange={onChange} />, onDoc)
+    fireEvent.change(screen.getByLabelText('Health path'), { target: { value: '' } })
+    expect(lastParsed(onDoc).service).toEqual({ start: 'npm run dev' })
+  })
 })

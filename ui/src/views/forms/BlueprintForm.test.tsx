@@ -135,4 +135,27 @@ body
     expect(select.value).toBe('project')
     expect(Array.from(select.options).map((o) => o.label)).toEqual(['(none)', 'project', 'security'])
   })
+
+  it('toggles needs_service on as a boolean and off as an absent key (finding 51)', () => {
+    const onDoc = vi.fn()
+    renderBP(onDoc)
+    const box = screen.getByLabelText(/needs service/i)
+    fireEvent.click(box)
+    expect(lastFrontMatter(onDoc).needs_service).toBe(true)
+    fireEvent.click(screen.getByLabelText(/needs service/i))
+    // Absent, not false — absence IS the model default, and a literal
+    // `needs_service: false` would be noise in every scaffolded file.
+    expect('needs_service' in lastFrontMatter(onDoc)).toBe(false)
+  })
+
+  it('authors the capture command and clears it back to absent', () => {
+    const onDoc = vi.fn()
+    renderBP(onDoc)
+    fireEvent.change(screen.getByLabelText('Capture'), {
+      target: { value: 'curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/home.html"' },
+    })
+    expect(lastFrontMatter(onDoc).capture).toBe('curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/home.html"')
+    fireEvent.change(screen.getByLabelText('Capture'), { target: { value: '' } })
+    expect('capture' in lastFrontMatter(onDoc)).toBe(false)
+  })
 })

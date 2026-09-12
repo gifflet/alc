@@ -7,7 +7,7 @@ import type { Document } from 'yaml'
 import { Info } from 'lucide-react'
 import { getFrontMatter, replaceFrontMatter } from '../../lib/frontmatter'
 import { seqStrings } from '../../lib/yamlDoc'
-import { Field, NumberInput, Select, TextArea, TextInput } from '../../components/fields'
+import { Checkbox, Field, NumberInput, Select, TextArea, TextInput } from '../../components/fields'
 import { CheckListEditor } from './CheckListEditor'
 import { StringListEditor } from './StringListEditor'
 
@@ -171,14 +171,29 @@ export function BlueprintForm({
         </div>
       </section>
 
-      <Field label="Capture">
-        <TextInput
-          value={str('capture')}
-          onChange={(v) => setOrClear('capture', v)}
-          placeholder="scripts/capture.sh"
-          mono
-        />
-      </Field>
+      <section>
+        <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Runtime validation</h3>
+        <div className="flex flex-col gap-3">
+          <Checkbox
+            checked={doc.get('needs_service') === true}
+            onChange={(v) =>
+              update((d) => (v ? d.setIn(['needs_service'], true) : d.deleteIn(['needs_service'])))
+            }
+            label="Needs service — ALC starts the Manifest's app for this run, waits for health, and exposes $ALC_BASE_URL to the engine and the checks"
+          />
+          <Field
+            label="Capture"
+            hint="e2e evidence: runs once the health poll proves the app reachable, writes into $ALC_ARTIFACTS_DIR, read back via alc artifacts"
+          >
+            <TextInput
+              value={str('capture')}
+              onChange={(v) => setOrClear('capture', v)}
+              placeholder={'curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/home.html"'}
+              mono
+            />
+          </Field>
+        </div>
+      </section>
 
       <section>
         <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Protected paths</h3>
