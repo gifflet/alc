@@ -153,3 +153,40 @@ class TestVerifierCallbacks:
         )
         assert started == ["a", "b"]  # each surfaced BEFORE it runs
         assert [(r.name, r.passed) for r in done] == [("a", True), ("b", False)]
+
+
+class TestVerifierEnv:
+    """Finding 50: the run's env (ALC_BASE_URL on a needs_service run) must
+    reach check subprocesses — the engine and `capture:` always saw it, the
+    Verifier never did, so the builder's own e2e-smoke check could not pass."""
+
+    def test_env_reaches_check_subprocess(self, tmp_path: Path) -> None:
+        [result] = Verifier(env={"ALC_BASE_URL": "http://127.0.0.1:9999"}).run(
+            [Check(name="see", shell='test "$ALC_BASE_URL" = "http://127.0.0.1:9999"')],
+            tmp_path,
+        )
+        assert result.passed is True
+
+    def test_env_merges_over_environ_not_replaces(self, tmp_path: Path) -> None:
+        # PATH must survive the merge, or no check could even start.
+        [result] = Verifier(env={"ALC_X": "1"}).run(
+            [Check(name="both", shell='test -n "$PATH" && test "$ALC_X" = 1')],
+            tmp_path,
+        )
+        assert result.passed is True
+
+    def test_no_env_inherits_environ_unchanged(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("ALC_TEST_INHERIT", "yes")
+        [result] = Verifier().run(
+            [Check(name="inh", shell='test "$ALC_TEST_INHERIT" = yes')], tmp_path
+        )
+        assert result.passed is True
+
+    def test_metric_check_sees_env(self, tmp_path: Path) -> None:
+        # The metric path spawns its own subprocess — same env contract.
+        [result] = Verifier(env={"ALC_N": "42"}).run(
+            [Check(name="m", metric='echo "$ALC_N"', direction="lower_is_better")],
+            tmp_path,
+        )
+        assert result.passed is True
+        assert "42" in result.output

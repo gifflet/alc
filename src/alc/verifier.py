@@ -72,6 +72,7 @@ class Verifier:
         timeout_s: int | None = None,
         metrics_dir: Path | None = None,
         run_id: str = "",
+        env: dict[str, str] | None = None,
     ) -> None:
         # Cap on a check's combined stdout+stderr fed into the repair context.
         # Defaults to the former hardcoded value so an unset manifest is identical.
@@ -88,6 +89,13 @@ class Verifier:
         # Free-text label recorded alongside a metric measurement (the
         # Blueprint name, at every production call site) — see MetricRecord.run.
         self._run_id = run_id
+        # Extra environment for check subprocesses, merged over os.environ —
+        # the same contract as the engine turn. This is how a `needs_service`
+        # run's $ALC_BASE_URL reaches the checks: the engine and `capture:`
+        # always saw it, the Verifier never did (finding 50 — the builder's
+        # own e2e-smoke check could not pass). None/{} -> checks inherit
+        # os.environ untouched, byte-identical to before.
+        self._env = {**os.environ, **env} if env else None
         # Per-run baseline snapshot, keyed by check name. A Verifier is
         # constructed ONCE per mandate (runner.py) / per verify_only stage
         # (flow.py) — i.e. once per run — so caching here is exactly per-run
@@ -179,6 +187,7 @@ class Verifier:
             proc = subprocess.Popen(
                 argv,
                 cwd=workdir,
+                env=self._env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -264,6 +273,7 @@ class Verifier:
             proc = subprocess.Popen(
                 argv,
                 cwd=workdir,
+                env=self._env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

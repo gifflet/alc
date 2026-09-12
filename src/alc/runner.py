@@ -348,6 +348,9 @@ def execute_mandate(
         timeout_s=manifest.check_timeout_s,
         metrics_dir=metrics_dir,
         run_id=blueprint.name,
+        # The run's env (ALC_BASE_URL/PORT on a needs_service or F1 run) —
+        # checks verify against the same live service the engine talked to.
+        env=_env,
     )
     loop_kwargs: dict = {}
     if blueprint.max_repairs is not None:

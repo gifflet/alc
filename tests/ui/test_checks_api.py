@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 import pytest
 
 
@@ -81,8 +83,19 @@ class TestChecksHistory:
 
 class TestChecksAudit:
     def test_no_stack_detected_still_audits_the_security_set(
-        self, client, registered: str
+        self, client, registered: str, project: Path
     ) -> None:
+        # Hermetic since 2026-09-12: the scaffold declares `security` up front
+        # when its scanner is on PATH, so on a machine WITH gitleaks the audit
+        # had nothing to propose and the set was (correctly) omitted — this
+        # test only ever passed on machines without the tool. Drop the set
+        # from the manifest so the audit has something to propose everywhere:
+        # the scenario pinned here is "a project without the security set".
+        manifest_path = project / ".alc" / "manifest.yaml"
+        data = yaml.safe_load(manifest_path.read_text())
+        data.get("check_sets", {}).pop("security", None)
+        manifest_path.write_text(yaml.safe_dump(data))
+
         resp = client.get(f"/api/projects/{registered}/checks/audit")
         assert resp.status_code == 200
         body = resp.json()
