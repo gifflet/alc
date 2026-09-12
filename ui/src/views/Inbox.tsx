@@ -163,6 +163,13 @@ export function Inbox() {
                 {item.verified === false ? 'unverified' : KIND_LABEL[item.kind]}
               </span>
             </div>
+            {/* The branch's own words: two competing branches for the same
+                mandate become relatable at a glance (finding 52). */}
+            {item.subject && (
+              <p className="truncate font-mono text-[length:var(--ui-text-label)] text-primary">
+                {item.subject}
+              </p>
+            )}
             <p className="text-[length:var(--ui-text-body)] text-muted">
               {item.reason}
               {item.retry_pending && (

@@ -145,7 +145,8 @@ def test_a_verified_branch_with_real_checks_keeps_the_original_wording(
 
     item = next(i for i in inbox_mod._branches(root) if i["branch"].endswith("7777aaaa"))
     assert item["verified"] is True
-    assert item["reason"] == "run work ready to land"
+    # Humanized in round 18 (finding 54): "run work" was internal shorthand.
+    assert item["reason"] == "A run — ready to land"
 
 
 # ---------------------------------------------------------------------------
@@ -168,8 +169,13 @@ def test_land_listing_marks_the_branch_that_never_passed(tmp_path, monkeypatch, 
 
     _land()
     out = capsys.readouterr().out
-    assert "alc/run-1111aaaa   (run)\n" in out, "a verified branch keeps its plain line"
-    assert "alc/run-2222bbbb   (run)  ← checks did not pass" in out
+    # Round 18 (finding 52): the land listing now carries each branch's commit
+    # subject between the label and the verification mark. _branch commits with
+    # "feat(auto): <branch>".
+    assert "alc/run-1111aaaa   (run) — alc/run-1111aaaa\n" in out, (
+        "a verified branch keeps its plain line plus its subject"
+    )
+    assert "alc/run-2222bbbb   (run) — alc/run-2222bbbb  ← checks did not pass" in out
 
 
 def test_land_all_warns_before_merging_unverified_work(tmp_path, monkeypatch, capsys) -> None:

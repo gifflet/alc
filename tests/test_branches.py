@@ -379,3 +379,21 @@ class TestBranchDiff:
 
         monkeypatch.setattr("alc.branches.subprocess.run", _raise)
         assert branch_diff(repo, "alc/variant-1-aaaaaaaa") is None
+
+
+class TestBranchSubject:
+    """list_alc_branches carries the tip commit's subject (finding 52)."""
+
+    def test_subject_is_the_tip_commit_message_first_line(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _make_branch(repo, "alc/run-abc123", "work.txt", "x\n")
+        [branch] = list_alc_branches(repo)
+        # _make_branch commits with "feat(auto): <branch>".
+        assert branch.subject == "feat(auto): alc/run-abc123"
+
+    def test_subject_survives_tabs_in_nothing_and_defaults_empty(self, tmp_path: Path) -> None:
+        # A repo-less call keeps the dataclass default: no crash, empty subject.
+        from alc.branches import AlcBranch
+
+        b = AlcBranch(name="alc/run-x", label="run", committed_at=0.0, merged=False)
+        assert b.subject == ""
