@@ -190,3 +190,46 @@ class TestTheWriterKeepsTheKind:
 
         assert len(results) == 1
         assert results[0].success is True
+
+
+class TestFailedTaskCarriesItsBranch:
+    """Finding 53: a non-committing isolate task that fails its checks still
+    commits what it wrote, leaving an unverified branch. That branch must ride
+    on the failure record so the Inbox can point at the work instead of
+    stranding it."""
+
+    def test_failed_isolate_task_reports_and_surfaces_its_branch(
+        self, operator_layer: Path, monkeypatch
+    ) -> None:
+        from alc.models import FlowReport
+        from alc.queue import outstanding_failures
+
+        root = _git_repo_layer(operator_layer)
+        # Engine writes a file (so the worktree has a commit) but the check
+        # fails: point chore's smoke check at `false`.
+        bp = operator_layer / "blueprints" / "chore.md"
+        bp.write_text(bp.read_text().replace('command: ["true"]', 'command: ["false"]'))
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "failing check"], cwd=root, check=True, capture_output=True)
+
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: _WritingMock())
+        manifest = load_manifest(operator_layer)
+        queue_dir = operator_layer / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "t1.yaml").write_text(_RUN_TASK_YAML.replace("isolate: false", "isolate: true"))
+        monkeypatch.chdir(root)
+
+        results = process_queue(manifest, operator_layer)
+        assert results[0].success is False
+        branch = results[0].branch
+        assert branch is not None and branch.startswith("alc/tick-")
+
+        # The archived task report records the branch (even though it failed).
+        done = queue_dir / "done"
+        report = FlowReport.model_validate_json((done / "t1.report.json").read_text())
+        assert report.success is False
+        assert report.branch == branch
+
+        # And outstanding_failures surfaces it on the FailedTask.
+        [failure] = outstanding_failures(done)
+        assert failure.branch == branch

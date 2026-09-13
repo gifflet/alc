@@ -280,4 +280,49 @@ describe('Inbox dismiss', () => {
       await screen.findByText('feat(ui): add settings icon link to agent config page')
     ).toBeInTheDocument()
   })
+
+  it('a failed task that left a branch offers Review and names it (finding 53)', async () => {
+    installFetch({
+      '/inbox': {
+        items: [
+          {
+            kind: 'failure',
+            id: 'failure:v2-01',
+            title: 'wire the shortcut',
+            reason: 'failed at feature: check(s) test',
+            stem: 'v2-01',
+            retries: 0,
+            branch: 'alc/tick-1a2b3c4d',
+          },
+        ],
+        count: 1,
+      },
+    })
+    renderWithProviders(<Inbox />)
+    expect(await screen.findByText('Review left work')).toBeInTheDocument()
+    expect(
+      screen.getByText(/committed work on alc\/tick-1a2b3c4d/)
+    ).toBeInTheDocument()
+  })
+
+  it('a plain failure with no branch shows no Review action', async () => {
+    installFetch({
+      '/inbox': {
+        items: [
+          {
+            kind: 'failure',
+            id: 'failure:v3-01',
+            title: 'nothing committed',
+            reason: 'failed at feature: engine error',
+            stem: 'v3-01',
+            retries: 0,
+          },
+        ],
+        count: 1,
+      },
+    })
+    renderWithProviders(<Inbox />)
+    await screen.findByText('nothing committed')
+    expect(screen.queryByText('Review left work')).not.toBeInTheDocument()
+  })
 })

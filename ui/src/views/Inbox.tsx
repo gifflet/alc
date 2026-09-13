@@ -85,6 +85,18 @@ export function Inbox() {
             disabled={retry.isPending || item.retry_pending}
             onClick={() => retry.mutate({ stem: item.stem })}
           />
+          {/* A failed task that still committed a branch left reviewable work —
+              Review opens its diff so a FAILURE verdict never strands good
+              changes (finding 53). */}
+          {item.branch && (
+            <Action
+              icon={Eye}
+              label="Review left work"
+              onClick={() =>
+                uiStore.openTab({ target: { type: 'review', branch: item.branch! }, title: item.branch! })
+              }
+            />
+          )}
           {/* The exit Retry is not: a failure whose goal already happened can
               only be re-run or stared at (finding 32). Dismiss closes the
               lineage; the archives stay, nothing is deleted. */}
@@ -174,6 +186,9 @@ export function Inbox() {
               {item.reason}
               {item.retry_pending && (
                 <span className="text-faint"> · a retry is queued, not yet run</span>
+              )}
+              {item.kind === 'failure' && item.branch && (
+                <span className="text-faint"> · it committed work on {item.branch} — review before dismissing</span>
               )}
             </p>
             <div className="flex flex-wrap gap-2">{actionsFor(item)}</div>

@@ -95,6 +95,10 @@ def _failures(root: Path) -> list[dict]:
                 "stem": failed.stem,
                 "retries": failed.retries,
                 "retry_pending": retry_pending,
+                # The branch this failed task left committed, if any: a failure
+                # that still produced reviewable work must not read as a dead
+                # end (finding 53).
+                "branch": failed.branch,
             }
         )
     return items
