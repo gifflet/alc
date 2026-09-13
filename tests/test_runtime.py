@@ -166,6 +166,12 @@ class _FakeRuntimeService:
     def __exit__(self, *exc) -> None:
         type(self).exited += 1
 
+    def captured_output(self) -> str:
+        # The capture step now runs on EVERY service-owned run (to collect any
+        # evidence the agent wrote), so the stub must answer this like the real
+        # RuntimeService does. Subclasses override with real output.
+        return ""
+
 
 # ---------------------------------------------------------------------------
 # execute_mandate wiring — service vs runtime-conventions vs nothing
@@ -533,3 +539,49 @@ class TestBuildServiceEnv:
         spec = ServiceSpec(start="x", env_file=".env")
         env = build_service_env(spec, tmp_path, 8080, {})
         assert env["GOOD"] == "1" and env["ALSO"] == "2"
+
+
+class TestAgentGetsArtifactsDir:
+    """A service-owned run exposes $ALC_ARTIFACTS_DIR to the ENGINE too (not
+    only to the capture command), so the agent can write task-shaped evidence —
+    an API response for a backend change, a screenshot for a UI one."""
+
+    def test_engine_env_carries_artifacts_dir_on_a_service_run(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        manifest = load_manifest(operator_layer).model_copy(
+            update={"service": ServiceSpec(start="python app.py")}
+        )
+        engine = _RecordingEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        monkeypatch.setattr("alc.runner.RuntimeService", _FakeRuntimeService)
+        execute_mandate(
+            manifest=manifest,
+            blueprint=_bp(needs_service=True),
+            directive="# original",
+            workdir=tmp_path,
+            operator_layer=operator_layer,
+            env={},
+        )
+        request = engine.received[0]
+        assert "ALC_ARTIFACTS_DIR" in request.env
+        # Absolute, under the project's artifacts_dir — the agent can write there
+        # from an isolated worktree and the bytes still land at the root.
+        assert manifest.artifacts_dir in request.env["ALC_ARTIFACTS_DIR"]
+
+    def test_no_artifacts_dir_without_a_service(
+        self, monkeypatch, tmp_path: Path, operator_layer: Path
+    ) -> None:
+        engine = _RecordingEngine()
+        monkeypatch.setattr("alc.runner.resolve_engine", lambda name, cfg: engine)
+        bp = Blueprint(name="chore", purpose="p", workflow="w",
+                       checks=[Check(name="smoke", command=["true"])])
+        execute_mandate(
+            manifest=load_manifest(operator_layer),
+            blueprint=bp,
+            directive="# original",
+            workdir=tmp_path,
+            operator_layer=operator_layer,
+            env={},
+        )
+        assert "ALC_ARTIFACTS_DIR" not in engine.received[0].env

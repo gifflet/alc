@@ -345,6 +345,25 @@ def execute_mandate(
         manifest, blueprint, directive, _env, effective_workdir, operator_layer
     )
 
+    # When the CORE owns the service, resolve the run's artifacts dir NOW and
+    # expose it to the ENGINE, not only to the later `capture:` command. The
+    # agent is the one party that knows WHAT the change touched, so it is the
+    # one that can capture evidence appropriate to it — an API response for a
+    # backend change, a screenshot for a UI one (the `service-conventions`
+    # prompt tells it how). Resolved once and reused by the capture step so
+    # both write to the SAME directory.
+    service_artifacts_dir: Path | None = None
+    if isinstance(service_ctx, _ServiceRun) and operator_layer is not None:
+        import uuid
+
+        from alc.events import current_run_log_path
+
+        run_log_path = current_run_log_path()
+        run_stem = run_log_path.stem if run_log_path is not None else uuid.uuid4().hex
+        service_artifacts_dir = operator_layer.parent / manifest.artifacts_dir / run_stem
+        service_artifacts_dir.mkdir(parents=True, exist_ok=True)
+        _env["ALC_ARTIFACTS_DIR"] = str(service_artifacts_dir)
+
     # Per-turn kill timeout: a Blueprint override wins, else the manifest default.
     timeout_s = (
         blueprint.timeout_s
@@ -478,25 +497,21 @@ def execute_mandate(
         # requires to build a `_ServiceRun` at all). Gated on `blueprint.capture`
         # too — a `needs_service` run with no `capture:` never touches this at
         # all (no artifacts, byte-identical to a run without the feature).
-        if isinstance(service_ctx, _ServiceRun) and blueprint.capture:
+        # Collect evidence whenever the CORE owned the service — not only when a
+        # `capture:` command is declared: the agent may have written evidence to
+        # $ALC_ARTIFACTS_DIR during the run (an API response, a screenshot),
+        # appropriate to what it changed. `capture:` is now the optional floor
+        # (a fixed shot the operator wants every time), the agent's output the
+        # task-shaped rest; both land in the same directory and are collected here.
+        if isinstance(service_ctx, _ServiceRun) and service_artifacts_dir is not None:
             from alc.evidence import capture_evidence
-            from alc.events import current_run_log_path
 
-            run_log_path = current_run_log_path()
-            if run_log_path is not None:
-                # Reuses the SAME stem `alc runs show <stem>` reads by, so
-                # `alc artifacts <stem>` correlates directly with a run log.
-                run_stem = run_log_path.stem
-            else:
-                import uuid
-
-                run_stem = uuid.uuid4().hex
             project_root = operator_layer.parent  # type: ignore[union-attr]
             artifacts, capture_warnings = capture_evidence(
-                command=blueprint.capture,
+                command=blueprint.capture or "",
                 health_log=service_ctx.captured_output(),
                 workdir=effective_workdir,
-                artifacts_dir=project_root / manifest.artifacts_dir / run_stem,
+                artifacts_dir=service_artifacts_dir,
                 project_root=project_root,
                 env=_env,
                 timeout_s=manifest.check_timeout_s,
