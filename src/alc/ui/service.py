@@ -34,8 +34,10 @@ from alc.delivery import (
     build_pr_body,
     changed_files,
     current_branch,
+    landed_commits,
     load_delivery_env,
     open_pr,
+    pr_title,
     push_branch,
 )
 from alc.engines.registry import resolve_engine
@@ -1186,9 +1188,11 @@ def _land_delivery_warning(
         return None
 
     files = changed_files(repo_root, delivery.base, branch)
-    body = build_pr_body(report, files)
+    commits = landed_commits(repo_root, delivery.base, branch)
+    title = pr_title(repo_root, delivery.base, branch, report)
+    body = build_pr_body(report, files, commits)
     ok, message = open_pr(
-        repo_root, delivery.base, branch, f"alc land: {branch}", body,
+        repo_root, delivery.base, branch, title, body,
         provider=delivery.provider, remote=delivery.remote, env=deliver_env,
     )
     return None if ok else message

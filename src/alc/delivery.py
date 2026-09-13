@@ -126,7 +126,57 @@ def changed_files(repo_root: Path, base: str, head: str) -> list[str]:
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
-def build_pr_body(report: MergeReport, files: list[str]) -> str:
+def landed_commits(repo_root: Path, base: str, head: str) -> list[tuple[str, str]]:
+    """The (subject, body) of every commit in ``base..head`` — the work that
+    just landed, newest first. ``[]`` on any git failure, so a PR title/body
+    degrades gracefully rather than aborting. Used to describe WHAT was done,
+    instead of a bare branch name."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "log", "--format=%s%x1f%b%x1e", f"{base}..{head}"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return []
+    if result.returncode != 0:
+        return []
+    commits: list[tuple[str, str]] = []
+    for record in result.stdout.split("\x1e"):
+        record = record.strip("\n")
+        if not record.strip():
+            continue
+        subject, _, body = record.partition("\x1f")
+        commits.append((subject.strip(), body.strip()))
+    return commits
+
+
+def _title_from_subject(subject: str) -> str:
+    """A descriptive, capitalized PR title from a commit subject. Strips a
+    Conventional Commits ``type(scope):`` prefix so the title reads as a
+    sentence, and uppercases the first letter."""
+    import re
+
+    m = re.match(r"^[a-z]+(\([^)]*\))?!?:\s*(?P<desc>.+)$", subject)
+    text = m.group("desc") if m else subject
+    text = text.strip()
+    return text[:1].upper() + text[1:] if text else "Landed changes"
+
+
+def pr_title(repo_root: Path, base: str, head: str, report: MergeReport) -> str:
+    """A descriptive, capitalized title for the land's PR. One landed commit ->
+    its subject as a sentence; several -> the first plus a count; none readable
+    -> a clear fallback naming how many branches merged."""
+    commits = landed_commits(repo_root, base, head)
+    if len(commits) == 1:
+        return _title_from_subject(commits[0][0])
+    if len(commits) > 1:
+        return f"{_title_from_subject(commits[0][0])} (+{len(commits) - 1} more)"
+    n = len(report.merged)
+    return f"Land {n} branch{'es' if n != 1 else ''}"
+
+
+def build_pr_body(report: MergeReport, files: list[str], commits: list[tuple[str, str]] | None = None) -> str:
     """Compose a PR body from *report* (the land's own MergeReport) and *files*.
 
     "The report" a PR body is built from is `alc land`'s
@@ -138,7 +188,19 @@ def build_pr_body(report: MergeReport, files: list[str]) -> str:
     exactly what the roadmap asks for: which branches landed clean ("checks"),
     a merged/left tally ("scorecard"), and the files the landed change touches.
     """
-    lines = ["## Checks", ""]
+    # What was done, first — the landed commits' own words. The mechanical
+    # detail (checks / scorecard / changed files) follows, so a reviewer reads
+    # the intent before the accounting.
+    lines: list[str] = []
+    if commits:
+        lines += ["## What changed", ""]
+        for subject, body in commits:
+            lines.append(f"- {subject}")
+            if body:
+                lines += [f"  {line}" for line in body.splitlines() if line.strip()]
+        lines.append("")
+
+    lines += ["## Checks", ""]
     if report.merged:
         lines.append(f"{len(report.merged)} branch(es) merged cleanly:")
         lines += [f"- {b}" for b in report.merged]
