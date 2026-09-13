@@ -43,6 +43,18 @@ engines:
 # fanout_concurrency: 4     # parallel workers for `alc conduct --parallel`
 # plan_tier: standard       # compute tier for Conductor planning turns
 
+# Runtime validation (end-to-end): the app ALC starts around a `needs_service`
+# run (e.g. the qa Blueprint). ALC owns the port, waits for `health` to answer
+# 200, exposes $ALC_BASE_URL to the engine AND the checks, then tears it down.
+# Uncomment and adapt — `start` reads the port ALC allocates from $PORT:
+# service:
+#   start: <cmd that launches your app on $PORT>   # e.g. `npm run dev` / `uvicorn app:app --port $PORT`
+#   health: /health          # path polled until it returns HTTP 200
+#   ready_timeout_s: 30       # seconds to wait for health before giving up
+#   env:                      # NON-SECRET literals only (this file is versioned)
+#     APP_DB_NAME: myapp
+#   env_file: .env            # secrets (tokens, URIs with passwords) — keep it gitignored
+
 # Reusable named check sets a Blueprint may opt into via `check_set: <name>`.
 # `alc init` pre-filled one set per detected stack plus `security`. A command
 # left commented out means its binary was not found on PATH at init time —
