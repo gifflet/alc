@@ -316,6 +316,16 @@ class DeliverySpec(BaseModel):
     # to GitHub. Set it explicitly to skip detection. `push` mode ignores this
     # (a bare git push needs no forge CLI).
     provider: Literal["auto", "github", "azure"] = "auto"
+    # Path (project-root-relative) to a dotenv of CREDENTIALS the delivery
+    # commands need — the token for the forge's CLI/API: `GH_TOKEN` for GitHub
+    # (`gh`), `AZURE_DEVOPS_EXT_PAT` for Azure DevOps (`az`). ALC loads it and
+    # merges it into the environment of `git push` / `gh` / `az` in memory,
+    # never persisting or logging it — the same contract as `service.env_file`.
+    # Keep it gitignored (the manifest is versioned; a PAT never goes here).
+    # None = the commands just inherit ALC's own environ (today's behaviour:
+    # works when `gh`/`az` are already authenticated or the tokens are already
+    # exported).
+    env_file: str | None = None
 
 
 class Manifest(BaseModel):

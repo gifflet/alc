@@ -2700,14 +2700,23 @@ def _deliver(repo_root: Path, delivery, report) -> None:
     `alc land`'s exit code — a push/PR failure is warned about, not fatal,
     because the local land this runs after already succeeded.
     """
-    from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
+    from alc.delivery import (
+        build_pr_body,
+        changed_files,
+        current_branch,
+        load_delivery_env,
+        open_pr,
+        push_branch,
+    )
 
     branch = current_branch(repo_root)
     if branch is None:
         print("[land] could not resolve the current branch; skipping delivery.", file=sys.stderr)
         return
 
-    ok, message = push_branch(repo_root, delivery.remote, branch)
+    # The forge token, if the operator pointed delivery.env_file at a dotenv.
+    deliver_env = load_delivery_env(repo_root, delivery.env_file)
+    ok, message = push_branch(repo_root, delivery.remote, branch, env=deliver_env)
     print(f"[land] {message}", file=sys.stdout if ok else sys.stderr)
     if not ok or delivery.mode != "pr":
         return
@@ -2716,7 +2725,7 @@ def _deliver(repo_root: Path, delivery, report) -> None:
     body = build_pr_body(report, files)
     ok, message = open_pr(
         repo_root, delivery.base, branch, f"alc land: {branch}", body,
-        provider=delivery.provider, remote=delivery.remote,
+        provider=delivery.provider, remote=delivery.remote, env=deliver_env,
     )
     print(f"[land] {message}", file=sys.stdout if ok else sys.stderr)
 

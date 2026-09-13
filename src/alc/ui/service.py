@@ -30,7 +30,14 @@ from alc.branches import (
     prune_worktrees,
 )
 from alc.checks import audit_checks, check_history
-from alc.delivery import build_pr_body, changed_files, current_branch, open_pr, push_branch
+from alc.delivery import (
+    build_pr_body,
+    changed_files,
+    current_branch,
+    load_delivery_env,
+    open_pr,
+    push_branch,
+)
 from alc.engines.registry import resolve_engine
 from alc.harvest import harvest
 from alc.intake import load_all_blueprints, load_all_loops, load_manifest
@@ -1170,7 +1177,9 @@ def _land_delivery_warning(
     if branch is None:
         return "could not resolve the current branch; skipping delivery."
 
-    ok, message = push_branch(repo_root, delivery.remote, branch)
+    # The forge token, if the operator pointed delivery.env_file at a dotenv.
+    deliver_env = load_delivery_env(repo_root, delivery.env_file)
+    ok, message = push_branch(repo_root, delivery.remote, branch, env=deliver_env)
     if not ok:
         return message
     if delivery.mode != "pr":
@@ -1180,7 +1189,7 @@ def _land_delivery_warning(
     body = build_pr_body(report, files)
     ok, message = open_pr(
         repo_root, delivery.base, branch, f"alc land: {branch}", body,
-        provider=delivery.provider, remote=delivery.remote,
+        provider=delivery.provider, remote=delivery.remote, env=deliver_env,
     )
     return None if ok else message
 

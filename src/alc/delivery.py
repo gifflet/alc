@@ -9,6 +9,7 @@
 # the local landing already succeeded and the remote step is the last mile, not the work.
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,6 +20,25 @@ from alc.merge import MergeReport
 def has_gh() -> bool:
     """Return True when the `gh` CLI is on PATH."""
     return shutil.which("gh") is not None
+
+
+def load_delivery_env(repo_root: Path, env_file: str | None) -> dict[str, str] | None:
+    """The environment for the delivery commands: os.environ merged with the
+    dotenv at *env_file* (relative to *repo_root*), so a `GH_TOKEN` /
+    `AZURE_DEVOPS_EXT_PAT` written there reaches `git`/`gh`/`az`. None when no
+    env_file is set (the commands then inherit os.environ untouched, unchanged
+    from before). A missing/unreadable dotenv contributes nothing — never
+    raises, mirroring the never-raise contract of the whole module."""
+    if not env_file:
+        return None
+    from alc.runtime import parse_dotenv
+
+    merged = dict(os.environ)
+    try:
+        merged.update(parse_dotenv((repo_root / env_file).read_text(encoding="utf-8")))
+    except OSError:
+        pass
+    return merged
 
 
 def has_az() -> bool:
@@ -62,7 +82,9 @@ def current_branch(repo_root: Path) -> str | None:
     return name or None
 
 
-def push_branch(repo_root: Path, remote: str, branch: str) -> tuple[bool, str]:
+def push_branch(
+    repo_root: Path, remote: str, branch: str, env: dict[str, str] | None = None
+) -> tuple[bool, str]:
     """Push *branch* to *remote*.
 
     Never raises: a missing ``git`` binary, an unconfigured remote, or an auth
@@ -75,6 +97,7 @@ def push_branch(repo_root: Path, remote: str, branch: str) -> tuple[bool, str]:
             ["git", "-C", str(repo_root), "push", remote, branch],
             capture_output=True,
             text=True,
+            env=env,
         )
     except FileNotFoundError:
         return False, "git not found; skipping push."
@@ -139,7 +162,9 @@ def build_pr_body(report: MergeReport, files: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _open_pr_github(repo_root: Path, base: str, head: str, title: str, body: str) -> tuple[bool, str]:
+def _open_pr_github(
+    repo_root: Path, base: str, head: str, title: str, body: str, env: dict[str, str] | None = None
+) -> tuple[bool, str]:
     """Open a PR for *head* against *base* via ``gh pr create``.
 
     Never raises: a missing ``gh`` binary or any CLI failure is reported back
@@ -159,6 +184,7 @@ def _open_pr_github(repo_root: Path, base: str, head: str, title: str, body: str
             capture_output=True,
             text=True,
             cwd=str(repo_root),
+            env=env,
         )
     except FileNotFoundError:
         return False, "gh not installed; skipping PR."
@@ -168,7 +194,9 @@ def _open_pr_github(repo_root: Path, base: str, head: str, title: str, body: str
     return True, result.stdout.strip() or "PR opened."
 
 
-def _open_pr_azure(repo_root: Path, base: str, head: str, title: str, body: str) -> tuple[bool, str]:
+def _open_pr_azure(
+    repo_root: Path, base: str, head: str, title: str, body: str, env: dict[str, str] | None = None
+) -> tuple[bool, str]:
     """Open a PR for *head* against *base* via ``az repos pr create``.
 
     The `az` CLI infers organization/project/repository from the git remote when
@@ -192,6 +220,7 @@ def _open_pr_azure(repo_root: Path, base: str, head: str, title: str, body: str)
             capture_output=True,
             text=True,
             cwd=str(repo_root),
+            env=env,
         )
     except FileNotFoundError:
         return False, "az not installed; skipping PR."
@@ -210,11 +239,13 @@ def open_pr(
     *,
     provider: str = "auto",
     remote: str = "origin",
+    env: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
     """Open a PR against the right forge. *provider* is "github", "azure", or
-    "auto" (detect from *remote*'s URL). Never raises — dispatches to the
-    provider-specific opener, each of which reports failure as ``(False, …)``."""
+    "auto" (detect from *remote*'s URL). *env* (when given) is the environment
+    the forge CLI runs with — carrying its token. Never raises — dispatches to
+    the provider-specific opener, each of which reports failure as ``(False, …)``."""
     resolved = detect_provider(repo_root, remote) if provider == "auto" else provider
     if resolved == "azure":
-        return _open_pr_azure(repo_root, base, head, title, body)
-    return _open_pr_github(repo_root, base, head, title, body)
+        return _open_pr_azure(repo_root, base, head, title, body, env)
+    return _open_pr_github(repo_root, base, head, title, body, env)
