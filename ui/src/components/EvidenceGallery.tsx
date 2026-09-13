@@ -185,11 +185,37 @@ function ImageCarousel({ id, images }: { id: string; images: Artifact[] }) {
   )
 }
 
-export function EvidenceGallery({ id, artifacts }: { id: string; artifacts: Artifact[] }) {
+export function EvidenceGallery({
+  id,
+  artifacts,
+  serviceRun = false,
+}: {
+  id: string
+  artifacts: Artifact[]
+  /** True when this run started a service (a needs_service e2e). A service run
+   * with no screenshot means the visual check never happened — worth saying. */
+  serviceRun?: boolean
+}) {
   const images = artifacts.filter((a) => a.type === 'image')
   const docs = artifacts.filter((a) => a.type !== 'image')
   return (
     <div className="flex flex-col gap-3">
+      {serviceRun && images.length === 0 && (
+        <div className="rounded-panel border border-warn/40 bg-warn/10 px-3 py-2 text-warn">
+          <p className="text-[length:var(--ui-text-body)] font-medium">
+            No screenshot — the e2e did not visually verify a screen.
+          </p>
+          <p className="mt-1 text-[length:var(--ui-text-label)] text-muted">
+            The run exercised the service but captured no image, so nothing here proves how the
+            screen looks. To verify a UI change, set the blueprint&rsquo;s{' '}
+            <span className="font-mono">capture:</span> to a screenshot of the affected route — e.g.{' '}
+            <span className="font-mono [overflow-wrap:anywhere]">
+              playwright screenshot &quot;$ALC_BASE_URL/&lt;route&gt;&quot; &quot;$ALC_ARTIFACTS_DIR/screen.png&quot;
+            </span>{' '}
+            — or have the e2e capture the screen it changed.
+          </p>
+        </div>
+      )}
       {images.length > 0 && <ImageCarousel id={id} images={images} />}
       {docs.map((a) => (
         <TextEvidence key={a.path} id={id} artifact={a} />

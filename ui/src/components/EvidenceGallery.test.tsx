@@ -83,4 +83,34 @@ describe('EvidenceGallery', () => {
     expect(await screen.findByText('poll ok')).toBeInTheDocument()
     expect(screen.queryByText('1/1')).not.toBeInTheDocument()
   })
+
+  it('warns that no screen was verified on a service run with no image', async () => {
+    vi.spyOn(api, 'artifactText').mockResolvedValue('poll ok')
+    render(
+      <EvidenceGallery
+        id="p1"
+        artifacts={[{ path: 'a/health-poll.log', type: 'log' }]}
+        serviceRun
+      />
+    )
+    expect(await screen.findByText(/did not visually verify a screen/i)).toBeInTheDocument()
+    // And it says how to fix it.
+    expect(screen.getByText(/playwright screenshot/i)).toBeInTheDocument()
+  })
+
+  it('does not warn when the service run captured a screenshot', async () => {
+    vi.spyOn(api, 'artifactObjectUrl').mockResolvedValue('blob:img')
+    render(
+      <EvidenceGallery id="p1" artifacts={[{ path: 'a/home.png', type: 'image' }]} serviceRun />
+    )
+    await screen.findByText('home.png')
+    expect(screen.queryByText(/did not visually verify/i)).not.toBeInTheDocument()
+  })
+
+  it('does not warn on a non-service run without images', async () => {
+    vi.spyOn(api, 'artifactText').mockResolvedValue('data')
+    render(<EvidenceGallery id="p1" artifacts={[{ path: 'a/x.json', type: 'data' }]} />)
+    await screen.findByText('x.json')
+    expect(screen.queryByText(/did not visually verify/i)).not.toBeInTheDocument()
+  })
 })

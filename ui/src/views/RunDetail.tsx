@@ -225,7 +225,7 @@ export function RunDetail({ stem }: { stem: string }) {
               {/* Inline preview: screenshots in a carousel, backend
                   responses / HTML source / logs as text (finding: the old
                   list only linked out, and those links 401 under a token). */}
-              <EvidenceGallery id={id} artifacts={evidence} />
+              <EvidenceGallery id={id} artifacts={evidence} serviceRun={!!timeline.service} />
             </section>
           )}
 
