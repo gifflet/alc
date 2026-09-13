@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Radio, Square } from 'lucide-react'
-import { api, artifactFileUrl } from '../api/client'
+import { api } from '../api/client'
 import { runningExecForStem, useExecState } from '../app/execStore'
 import { ActionButton } from '../components/ActionButton'
 import { ConfirmDialog } from '../components/Dialog'
@@ -19,6 +19,7 @@ import type { RunEvent } from '../api/types'
 import { TimelineView } from '../components/Timeline'
 import { Metric, Pill } from '../components/primitives'
 import { RunOutcome } from '../components/RunOutcome'
+import { EvidenceGallery } from '../components/EvidenceGallery'
 import { uiStore } from '../app/uiStore'
 import { StatusDot } from '../components/StatusDot'
 import { EmptyState } from '../components/EmptyState'
@@ -221,26 +222,10 @@ export function RunDetail({ stem }: { stem: string }) {
           {evidence.length > 0 && (
             <section className="mt-4">
               <h2 className="mb-1 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Evidence</h2>
-              <ul className="rounded-panel border border-border bg-base text-[length:var(--ui-text-body)]">
-                {evidence.map((a) => (
-                  <li
-                    key={a.path}
-                    className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 last:border-b-0"
-                  >
-                    <span className="w-12 shrink-0 font-mono text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
-                      {a.type}
-                    </span>
-                    <a
-                      href={artifactFileUrl(id, a.path)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="min-w-0 flex-1 truncate font-mono text-[length:var(--ui-text-label)] text-accent hover:underline"
-                    >
-                      {a.path}
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              {/* Inline preview: screenshots in a carousel, backend
+                  responses / HTML source / logs as text (finding: the old
+                  list only linked out, and those links 401 under a token). */}
+              <EvidenceGallery id={id} artifacts={evidence} />
             </section>
           )}
 
