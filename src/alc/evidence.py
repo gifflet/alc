@@ -18,6 +18,7 @@
 # scanners: ALC orchestrates the operator's tool, it does not become it.
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -74,7 +75,15 @@ def capture_evidence(
     # run, so there is no operator shot to run — persist the health log, skip the
     # shell, and collect the directory as it stands.
     if command.strip():
-        proc_env = {**env, "ALC_ARTIFACTS_DIR": str(artifacts_dir)}
+        # Inherit the real environment (os.environ) so the capture command finds
+        # tools installed on the host — a `playwright` in /opt/homebrew/bin, an
+        # `npx`, a project venv on PATH. Without this the command ran with only
+        # ALC's assembled vars and a bare shell PATH, so anything outside
+        # /usr/bin was "command not found" (a UI screenshot via Playwright, most
+        # of all). Matches RuntimeService, which already merges os.environ for
+        # the service process. The run's own vars (ALC_BASE_URL/PORT) and
+        # ALC_ARTIFACTS_DIR still win over the inherited ones.
+        proc_env = {**os.environ, **env, "ALC_ARTIFACTS_DIR": str(artifacts_dir)}
         try:
             result = subprocess.run(
                 command,
