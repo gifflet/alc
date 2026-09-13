@@ -517,3 +517,29 @@ class TestBuilderShipE2EFlow:
             flows["ship-e2e"], {b.name for b in blueprints}, set()
         )
         assert violations == []
+
+
+class TestBuilderTestBlueprintGuardsCheckConfig:
+    """The test blueprint (harden stage) must tell the engine not to touch
+    check-defining config — the collision that failed a real ship-e2e run when
+    the engine edited pyproject's [tool] table while writing tests. Stack-
+    agnostic: the guidance names no single language's config file as the rule."""
+
+    def test_workflow_warns_against_editing_check_config(self) -> None:
+        files = pack_files("builder", stacks=[])
+        workflow = files[".alc/blueprints/test.md"]
+        assert "check-config-integrity" in workflow
+        assert "Do NOT edit" in workflow
+        # Names more than one ecosystem, so it reads as a universal rule rather
+        # than a Python-only caveat.
+        assert "pyproject.toml" in workflow
+        assert "package.json" in workflow
+        assert "whatever the language" in workflow
+
+    def test_guidance_is_identical_across_stacks(self) -> None:
+        # The rule is stack-agnostic: the same paragraph ships whether or not a
+        # stack was detected (only the check_set line differs).
+        marker = "a run that changes check-defining config fails"
+        assert marker in pack_files("builder", stacks=[])[".alc/blueprints/test.md"]
+        py = [("Python", "python", [("test", ["pytest", "-q"])])]
+        assert marker in pack_files("builder", py)[".alc/blueprints/test.md"]

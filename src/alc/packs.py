@@ -46,9 +46,21 @@ archetype: builder
 
 1. Read the task description and the recent diff to find the behavior that changed.
 2. Write or extend tests that exercise it: the happy path and at least one edge case.
-3. Run the checks — including the stack's full check_set, when declared — to
+   Add tests as NEW files, or by appending to existing test files. Reuse the
+   markers, fixtures, and helpers the suite already has.
+3. Do NOT edit files that define how the project's checks behave — the
+   linter / type-checker / test-runner config. That includes the tool tables in
+   a manifest (e.g. `[tool.*]` in pyproject.toml, the `scripts` in package.json)
+   and standalone config files (eslintrc, tsconfig, vitest/jest/pytest config,
+   ruff/mypy config, and the like), whatever the language. ALC guards these:
+   a run that changes check-defining config fails the `check-config-integrity`
+   check, because widening what a check ignores is how a run goes green without
+   proving anything. If a new test seems to REQUIRE new check config, that is a
+   signal to restructure the test to fit the existing setup — not to change the
+   law the tests must clear.
+4. Run the checks — including the stack's full check_set, when declared — to
    confirm the new tests pass alongside the existing suite.
-4. Output a JSON report matching the schema:
+5. Output a JSON report matching the schema:
    ```json
    {{"status": "ok", "summary": "<one sentence describing the tests added>"}}
    ```
