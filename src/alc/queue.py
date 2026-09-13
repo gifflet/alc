@@ -108,6 +108,7 @@ class FailedTask:
     title: str     # first line of the archived task body
     reason: str    # short single-line tail of the failing-stage output
     retries: int   # qt.retries of the latest failed attempt
+    branch: str | None = None  # the `alc/*` branch this failed task left committed, if any (finding 53)
 
 
 def _failure_reason(report: FlowReport) -> str:
@@ -185,6 +186,7 @@ def outstanding_failures(done_dir: Path) -> list[FailedTask]:
                 title=title,
                 reason=_failure_reason(report),
                 retries=qt.retries,
+                branch=report.branch,
             ),
         ))
 
@@ -519,6 +521,13 @@ def _process_task_body(
         for stage_report in report.stages:
             if stage_report.archetype is None:
                 stage_report.archetype = qt.archetype
+
+    # Record the committed branch on the report — even on failure — so a
+    # failure card can point at the work an isolate task left behind rather
+    # than stranding it as a disconnected branch (finding 53). Never overwrite
+    # a branch the report already carries.
+    if branch is not None and report.branch is None:
+        report.branch = branch
 
     (done_dir / f"{task_file.stem}.report.json").write_text(
         report.model_dump_json(indent=2)

@@ -650,6 +650,14 @@ class FlowReport(BaseModel):
     stages: list[RunReport]    # one RunReport per executed stage
     scorecard: Scorecard       # aggregate across all stages
     commit_sha: str | None = None  # set when a terminal commit was created on success
+    # The `alc/*` branch this task's isolated worktree committed, when it
+    # committed one — set even on FAILURE. A non-committing isolate task that
+    # failed its checks still commits whatever it wrote, leaving an unverified
+    # branch; recording it here lets the Inbox's failure card point at the work
+    # instead of stranding it as a disconnected branch (dogfood finding 53).
+    # None when nothing was committed. Default keeps every existing consumer
+    # identical.
+    branch: str | None = None
     # True when the flow's only non-success is an inconclusive gate (its work
     # stages ran, but absence could not be proven because there was legitimately
     # nothing to prove). INVARIANT: inconclusive=True implies success=False. Such a

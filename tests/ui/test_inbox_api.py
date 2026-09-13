@@ -29,14 +29,21 @@ def _report(success: bool, *, blueprint: str = "chore", failed: list[str] | None
     return FlowReport(flow="ship", engine="mock", success=success, stages=[stage], scorecard=card)
 
 
+def _report_with_branch(success: bool, branch: str, *, failed: list[str] | None = None) -> FlowReport:
+    r = _report(success, failed=failed)
+    r.branch = branch
+    return r
+
+
 def archive(project: Path, stem: str, *, success: bool, task: str, retry_of: str | None = None,
-            retries: int = 0, failed: list[str] | None = None) -> None:
+            retries: int = 0, failed: list[str] | None = None, branch: str | None = None) -> None:
     """Write a done/<stem>.yaml + .report.json pair, as the drain does."""
     done = project / ".alc" / "queue" / "done"
     done.mkdir(parents=True, exist_ok=True)
     qt = QueueTask(kind="flow", name="ship", task=task, retry_of=retry_of, retries=retries)
     (done / f"{stem}.yaml").write_text(yaml.safe_dump(qt.model_dump(mode="json")))
-    (done / f"{stem}.report.json").write_text(_report(success, failed=failed).model_dump_json())
+    report = _report_with_branch(success, branch, failed=failed) if branch else _report(success, failed=failed)
+    (done / f"{stem}.report.json").write_text(report.model_dump_json())
 
 
 def git(project: Path, *args: str) -> None:
@@ -77,6 +84,18 @@ class TestInbox:
         # The reason must name the gate, not be free text.
         assert "pytest" in item["reason"]
         assert item["stem"] == "v1-01-impl-aaa"
+
+    def test_a_failure_that_committed_a_branch_surfaces_it(
+        self, client, registered: str, project: Path
+    ) -> None:
+        # Finding 53: a failed isolate task that still committed work must point
+        # at the branch, not read as a dead end.
+        archive(project, "v2-01-impl-bbb", success=False, task="wire the shortcut",
+                failed=["test"], branch="alc/tick-1a2b3c4d")
+
+        item = client.get(f"/api/projects/{registered}/inbox").json()["items"][0]
+        assert item["kind"] == "failure"
+        assert item["branch"] == "alc/tick-1a2b3c4d"
 
     def test_hides_a_failure_already_resolved_by_a_later_retry(
         self, client, registered: str, project: Path

@@ -666,6 +666,9 @@ class TestRetryListAndAll:
             "title": "Add mineral shadows",
             "reason": "failed at qa: check(s) verdict-pass",
             "retries": 0,
+            # Round 19 (finding 53): FailedTask now carries the branch a failed
+            # isolate task committed; None here since this archive committed none.
+            "branch": None,
         }
 
     def test_json_output_empty_is_a_json_array(
