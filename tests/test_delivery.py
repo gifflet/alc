@@ -23,6 +23,8 @@ import pytest
 from alc.cli import cmd_land
 from alc.delivery import (
     build_pr_body,
+    landed_commits,
+    pr_title,
     changed_files,
     current_branch,
     has_gh,
@@ -291,6 +293,61 @@ class TestBuildPrBody:
         assert "(none detected)" in body
         assert "Merged: 0" in body
         assert "Left: 0" in body
+
+    def test_body_leads_with_what_changed_when_commits_given(self) -> None:
+        report = MergeReport(merged=["alc/flow-x"])
+        commits = [("feat(ui): move the header subtitle", "Longer rationale here.")]
+        body = build_pr_body(report, ["static/index.html"], commits)
+        # "What changed" comes BEFORE the mechanical detail.
+        assert body.index("## What changed") < body.index("## Checks")
+        assert "feat(ui): move the header subtitle" in body
+        assert "Longer rationale here." in body
+
+
+class TestPrTitle:
+    def test_single_commit_becomes_a_capitalized_sentence(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "checkout", "-b", "feat/x")
+        (repo / "f.txt").write_text("x")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "feat(ui): troca o subtitulo do cabecalho")
+        title = pr_title(repo, "main", "feat/x", MergeReport(merged=["feat/x"]))
+        # Conventional-Commits prefix stripped, first letter uppercased.
+        assert title == "Troca o subtitulo do cabecalho"
+
+    def test_no_prefix_subject_is_just_capitalized(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "checkout", "-b", "feat/y")
+        (repo / "f.txt").write_text("x")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "ajuste no rodape")
+        assert pr_title(repo, "main", "feat/y", MergeReport()) == "Ajuste no rodape"
+
+    def test_several_commits_name_the_first_and_a_count(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "checkout", "-b", "feat/z")
+        for i, msg in enumerate(["fix: a", "fix: b"]):
+            (repo / f"f{i}.txt").write_text("x")
+            _git(repo, "add", "-A")
+            _git(repo, "commit", "-m", msg)
+        title = pr_title(repo, "main", "feat/z", MergeReport())
+        assert "(+1 more)" in title
+
+    def test_no_readable_commits_falls_back_to_branch_count(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        # base == head -> no commits in the range.
+        title = pr_title(repo, "main", "main", MergeReport(merged=["alc/a", "alc/b"]))
+        assert title == "Land 2 branches"
+
+    def test_landed_commits_returns_subject_and_body(self, tmp_path: Path) -> None:
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "checkout", "-b", "feat/c")
+        (repo / "f.txt").write_text("x")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-m", "feat: do a thing", "-m", "why it matters")
+        commits = landed_commits(repo, "main", "feat/c")
+        assert commits[0][0] == "feat: do a thing"
+        assert "why it matters" in commits[0][1]
 
 
 # ---------------------------------------------------------------------------
