@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { artifactFileUrl } from '../api/client'
+import { api, artifactFileUrl } from '../api/client'
 import { installFetch, renderWithProviders } from '../test/utils'
 
 // RunDetail tails via useWs; a stub client is enough (no live socket in jsdom).
@@ -100,8 +100,11 @@ describe('RunDetail evidence panel', () => {
     expect(screen.queryByText('Evidence')).not.toBeInTheDocument()
   })
 
-  it('lists each artifact with its type and a link to the exact path it was given', async () => {
+  it('previews each artifact inline — filename, type, and an open link to the exact path', async () => {
     const path = '.alc/artifacts/20260712T0359-run-chore-x/golden.html'
+    // The gallery fetches the bytes with the bearer token (a bare href 401s
+    // under a token); stub that fetch so the panel has content to show.
+    vi.spyOn(api, 'artifactText').mockResolvedValue('<title>golden</title>')
     installFetch({
       [`/runs/${stem}/artifacts`]: { stem, artifacts: [{ path, type: 'data' }] },
       '/runs/': { events, next_offset: 6 },
@@ -109,9 +112,13 @@ describe('RunDetail evidence panel', () => {
     renderWithProviders(<RunDetail stem={stem} />)
 
     expect(await screen.findByText('Evidence')).toBeInTheDocument()
+    // The header shows the basename and the type chip, and the content is
+    // previewed inline (not just linked).
+    expect(await screen.findByText('golden.html')).toBeInTheDocument()
     expect(screen.getByText('data')).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: path })
-    // The href round-trips the exact `path` string from the list — never rewritten.
+    expect(await screen.findByText('<title>golden</title>')).toBeInTheDocument()
+    // The "open" link still round-trips the exact `path` string — never rewritten.
+    const link = screen.getByRole('link', { name: 'open' })
     expect(link).toHaveAttribute('href', artifactFileUrl('demo', path))
   })
 })

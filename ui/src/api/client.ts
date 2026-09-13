@@ -111,6 +111,22 @@ export function artifactFileUrl(id: string, path: string): string {
   return `${proj(id)}/artifacts/file?path=${encodeURIComponent(path)}`
 }
 
+/** Fetch an artifact's raw bytes WITH the bearer token. A bare <img src> or
+ * <a href> cannot carry the Authorization header, so on a token-protected
+ * server (e.g. `alc ui --lan --token`) those 401 — the inline preview fetches
+ * instead. Throws ApiError on a non-2xx, like `request`. */
+async function fetchArtifact(id: string, path: string): Promise<Response> {
+  const token = getToken()
+  const res = await fetch(artifactFileUrl(id, path), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    if (res.status === 401) clearToken()
+    throw new ApiError(`${res.status} ${res.statusText}`, res.status, null)
+  }
+  return res
+}
+
 export const api = {
   // Registry
   listProjects: () => request<ProjectSummary[]>('/api/projects'),
@@ -316,6 +332,14 @@ export const api = {
     request<MetricSeries>(`${proj(id)}/metrics${check ? `?check=${encodeURIComponent(check)}` : ''}`),
   getRunArtifacts: (id: string, stem: string) =>
     request<RunArtifacts>(`${proj(id)}/runs/${encodeURIComponent(stem)}/artifacts`),
+  // Inline evidence preview: text for logs/JSON/HTML source, an object URL for
+  // images. Both go through the authenticated fetch above.
+  artifactText: (id: string, path: string): Promise<string> =>
+    fetchArtifact(id, path).then((r) => r.text()),
+  artifactObjectUrl: (id: string, path: string): Promise<string> =>
+    fetchArtifact(id, path)
+      .then((r) => r.blob())
+      .then((b) => URL.createObjectURL(b)),
   getAudit: (id: string, since: string) =>
     request<AuditWindow>(`${proj(id)}/audit?since=${encodeURIComponent(since)}`),
 
