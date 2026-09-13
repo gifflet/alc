@@ -188,9 +188,13 @@ def _qa_blueprint(capture: str | None) -> Blueprint:
 
 
 class TestNeedsServiceCaptureWiring:
-    def test_without_capture_stays_byte_identical(
+    def test_without_capture_still_collects_evidence(
         self, tmp_path: Path, operator_layer: Path
     ) -> None:
+        # Changed intentionally: evidence is collected on EVERY service-owned
+        # run now, not only when a `capture:` command is declared — the agent
+        # can write task-shaped evidence to $ALC_ARTIFACTS_DIR, so the dir is
+        # created up front and the health-poll log is always persisted.
         script = _write_server(tmp_path)
         manifest = load_manifest(operator_layer).model_copy(
             update={"service": ServiceSpec(start=f"python {script}", ready_timeout_s=5)}
@@ -202,8 +206,8 @@ class TestNeedsServiceCaptureWiring:
             workdir=tmp_path,
             operator_layer=operator_layer,
         )
-        assert report.artifacts == []
-        assert not (operator_layer.parent / manifest.artifacts_dir).exists()
+        assert any(a.endswith("health-poll.log") for a in report.artifacts)
+        assert (operator_layer.parent / manifest.artifacts_dir).exists()
 
     def test_with_capture_populates_artifacts_and_persists_health_log(
         self, tmp_path: Path, operator_layer: Path

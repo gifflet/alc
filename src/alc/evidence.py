@@ -69,25 +69,30 @@ def capture_evidence(
     except OSError as exc:
         warnings.append(f"capture: could not persist the health-poll log: {exc}")
 
-    proc_env = {**env, "ALC_ARTIFACTS_DIR": str(artifacts_dir)}
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=str(workdir),
-            env=proc_env,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-        )
-        if result.returncode != 0:
-            warnings.append(
-                f"capture command exited {result.returncode}: {result.stderr.strip()[:500]}"
+    # An empty command is the "no fixed capture" case: the agent wrote whatever
+    # evidence the task called for straight into $ALC_ARTIFACTS_DIR during the
+    # run, so there is no operator shot to run — persist the health log, skip the
+    # shell, and collect the directory as it stands.
+    if command.strip():
+        proc_env = {**env, "ALC_ARTIFACTS_DIR": str(artifacts_dir)}
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=str(workdir),
+                env=proc_env,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
             )
-    except subprocess.TimeoutExpired:
-        warnings.append(f"capture command timed out after {timeout_s}s")
-    except OSError as exc:
-        warnings.append(f"capture command failed to start: {exc}")
+            if result.returncode != 0:
+                warnings.append(
+                    f"capture command exited {result.returncode}: {result.stderr.strip()[:500]}"
+                )
+        except subprocess.TimeoutExpired:
+            warnings.append(f"capture command timed out after {timeout_s}s")
+        except OSError as exc:
+            warnings.append(f"capture command failed to start: {exc}")
 
     artifact_paths = sorted(
         p.relative_to(project_root).as_posix() for p in artifacts_dir.rglob("*") if p.is_file()

@@ -59,6 +59,17 @@ class TestResolvePrompt:
         text = resolve_prompt("conductor", operator_layer, manifest)
         assert text == _DEFAULT_PROMPTS["conductor"][0]
 
+    def test_service_conventions_steers_task_shaped_evidence(self, operator_layer: Path) -> None:
+        # The prompt injected on every needs_service run tells the agent to
+        # capture evidence appropriate to what changed — API responses for a
+        # backend change, a screenshot for a UI one — into $ALC_ARTIFACTS_DIR.
+        manifest = load_manifest(operator_layer)
+        text = resolve_prompt("service-conventions", operator_layer, manifest)
+        assert "$ALC_ARTIFACTS_DIR" in text
+        low = text.lower()
+        assert "backend" in low and "api" in low
+        assert "ui" in low and "screenshot" in low
+
     def test_override_file_wins(self, operator_layer: Path) -> None:
         manifest = load_manifest(operator_layer)
         _write_prompt(operator_layer, "conductor", "MY OVERRIDE {goal} {catalog_text}")
