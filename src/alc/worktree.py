@@ -445,6 +445,16 @@ def runtime_provisions(manifest) -> list:
     covered = {spec.path for spec in provisions}
     if manifest.signals_dir not in covered:
         provisions.append(ProvisionSpec(copy=manifest.signals_dir))
+    # A service's env_file is gitignored secrets (dotenv) — same story as
+    # signals: an isolated run checks out only tracked files, so without this
+    # the file the service reads its Mongo URI / JWT secret from is absent and
+    # a fail-closed app never boots. Auto-copy it so declaring `service.env_file`
+    # is enough — the operator does not also have to remember a matching
+    # worktree_provision (and a forgotten one fails silently). An operator
+    # provision for the same path still wins.
+    service = getattr(manifest, "service", None)
+    if service is not None and service.env_file and service.env_file not in covered:
+        provisions.append(ProvisionSpec(copy=service.env_file))
     return provisions
 
 
