@@ -3597,6 +3597,19 @@ def cmd_artifacts(args: argparse.Namespace) -> int:
     print(f"Run: {result.stem}")
     for p in result.artifacts:
         print(f"  {p}   ({artifact_type(p)})")
+
+    # A service run (its health-poll log is always persisted) that captured no
+    # image never visually verified a screen — say so, and how to fix it.
+    was_service_run = any(p.endswith("health-poll.log") for p in result.artifacts)
+    has_image = any(artifact_type(p) == "image" for p in result.artifacts)
+    if was_service_run and not has_image:
+        print(
+            "\n[!] No screenshot — the e2e did not visually verify a screen. To verify a UI\n"
+            "    change, set the Blueprint's `capture:` to a screenshot of the affected route\n"
+            '    (e.g. `playwright screenshot "$ALC_BASE_URL/<route>" '
+            '"$ALC_ARTIFACTS_DIR/screen.png"`),\n'
+            "    or have the e2e capture the screen it changed."
+        )
     return 0
 
 
@@ -3822,8 +3835,9 @@ def cmd_ui(args: argparse.Namespace) -> int:
         from alc.ui.server import create_app
     except ModuleNotFoundError:
         print(
-            "[ERROR] `alc ui` requires the 'ui' extra (fastapi, uvicorn, watchfiles). "
-            'Install it with: uv tool install "alc-runtime[ui]"',
+            "[ERROR] `alc ui` requires the 'ui' extra (fastapi, uvicorn, watchfiles).\n"
+            '        From PyPI:       uv tool install "alc-runtime[ui]"\n'
+            '        From a checkout: uv tool install "/path/to/alc[ui]"   (the [ui] goes on the path)',
             file=sys.stderr,
         )
         return 1

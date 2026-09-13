@@ -243,6 +243,44 @@ class TestArtifactsCli:
         assert ".alc/artifacts/a/shot.png" in out
         assert "(image)" in out
 
+    def test_service_run_without_a_screenshot_warns_visual_check_missing(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        # A service run (health-poll.log present) with no image never verified a
+        # screen — the CLI must say so and how to fix it.
+        runs_dir = operator_layer.parent / ".alc" / "runs"
+        _write_log(
+            runs_dir,
+            "20260101T000000-flow-qa-aaaaaa",
+            [_mandate_finished([
+                ".alc/artifacts/q/health-poll.log",
+                ".alc/artifacts/q/health-check.txt",
+            ])],
+        )
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_artifacts(_ns()) == 0
+        out = capsys.readouterr().out
+        assert "did not visually verify a screen" in out
+        assert "playwright screenshot" in out
+
+    def test_service_run_with_a_screenshot_does_not_warn(
+        self, operator_layer: Path, monkeypatch, capsys
+    ) -> None:
+        runs_dir = operator_layer.parent / ".alc" / "runs"
+        _write_log(
+            runs_dir,
+            "20260101T000000-flow-qa-bbbbbb",
+            [_mandate_finished([
+                ".alc/artifacts/q/health-poll.log",
+                ".alc/artifacts/q/home.png",
+            ])],
+        )
+        monkeypatch.chdir(operator_layer.parent)
+
+        assert cmd_artifacts(_ns()) == 0
+        assert "did not visually verify" not in capsys.readouterr().out
+
     def test_unknown_stem_is_an_error(self, operator_layer: Path, monkeypatch, capsys) -> None:
         monkeypatch.chdir(operator_layer.parent)
         assert cmd_artifacts(_ns(stem="nope")) == 1

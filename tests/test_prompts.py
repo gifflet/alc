@@ -69,6 +69,11 @@ class TestResolvePrompt:
         low = text.lower()
         assert "backend" in low and "api" in low
         assert "ui" in low and "screenshot" in low
+        # Round: capture the SPECIFIC affected screen, not the home page, and
+        # never leave scratch files elsewhere in the repo.
+        assert "affected" in low
+        assert "home" in low  # the "do NOT settle for the home page" steer
+        assert "scratch" in low
 
     def test_override_file_wins(self, operator_layer: Path) -> None:
         manifest = load_manifest(operator_layer)

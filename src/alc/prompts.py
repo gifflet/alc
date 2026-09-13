@@ -207,12 +207,20 @@ in the run detail. Before you finish, save proof there, SHAPED BY WHAT THE CHANG
 - A backend / API change → save the actual responses you exercised. For each endpoint the change
   affects: `curl -s "$ALC_BASE_URL/<path>" -o "$ALC_ARTIFACTS_DIR/<name>.json"` (or `.txt`), so the
   real data — not a claim about it — is reviewable.
-- A UI / frontend change → capture the SCREEN, not the HTML. Take a screenshot of the affected
-  page(s) into `$ALC_ARTIFACTS_DIR/<name>.png`. Playwright is the default when it is available —
-  `playwright screenshot "$ALC_BASE_URL/<route>" "$ALC_ARTIFACTS_DIR/<name>.png"` (add
-  `--full-page` for the whole scroll); any equivalent headless-browser tool is fine. Only if no
-  browser-capture tool exists at all, fall back to saving the page's rendered HTML there.
-Name each file after what it shows. Only ADD files — never delete or move ones already there.
+- A UI / frontend change → capture the SCREEN, not the HTML. Take a screenshot of the page the
+  change actually affects — navigate to THAT route, and if it sits behind login or some state,
+  reach it (authenticate, click through) before capturing. Do NOT settle for the home/landing
+  page unless that is the page you changed: a screenshot of the wrong screen proves nothing.
+  Playwright is the default when available — `playwright screenshot "$ALC_BASE_URL/<the affected
+  route>" "$ALC_ARTIFACTS_DIR/<name>.png"` (add `--full-page` for the whole scroll); any
+  equivalent headless-browser tool is fine. Only if no browser-capture tool exists at all, fall
+  back to saving the affected page's rendered HTML there.
+Name each file after the screen it shows, so a reviewer can tell WHICH page was verified.
+
+Only ADD files under `$ALC_ARTIFACTS_DIR` — never delete or move ones already there, and never
+leave scratch files anywhere ELSE in the repo (a page dump, a debug script, a `.tmp`): they would
+be committed with your change and land as noise. If you need a scratch file, put it under
+`$ALC_ARTIFACTS_DIR` (collected as evidence) or delete it before you finish.
 """
 
 # The `commit-message` prompt — ALC uses this to ask the engine to generate a
