@@ -323,6 +323,42 @@ class TestSignalsProvision:
         assert len(signal_specs) == 1
         assert signal_specs[0].kind == "copy"
 
+    def test_runtime_provisions_appends_service_env_file_copy(self, tmp_path: Path) -> None:
+        # Round 21 follow-up: a service.env_file is gitignored secrets — auto-
+        # provision it so declaring `service.env_file` alone reaches the worktree,
+        # without a separate worktree_provision the operator must remember.
+        from alc.models import ServiceSpec
+
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        manifest.service = ServiceSpec(start="x", env_file=".env")
+        provisions = runtime_provisions(manifest)
+        env_specs = [p for p in provisions if p.path == ".env"]
+        assert len(env_specs) == 1
+        assert env_specs[0].kind == "copy"
+
+    def test_no_service_env_file_adds_no_extra_provision(self, tmp_path: Path) -> None:
+        from alc.models import ServiceSpec
+
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        manifest.service = ServiceSpec(start="x")  # no env_file
+        provisions = runtime_provisions(manifest)
+        # Only the signals copy, nothing for a service without a dotenv.
+        assert [p.path for p in provisions] == [manifest.signals_dir]
+
+    def test_declared_env_file_provision_wins(self, tmp_path: Path) -> None:
+        from alc.models import ServiceSpec
+
+        scaffold(tmp_path)
+        manifest = load_manifest(tmp_path / ".alc")
+        manifest.service = ServiceSpec(start="x", env_file=".env")
+        manifest.worktree_provision.append(ProvisionSpec(link=".env"))
+        provisions = runtime_provisions(manifest)
+        env_specs = [p for p in provisions if p.path == ".env"]
+        assert len(env_specs) == 1
+        assert env_specs[0].kind == "link", "the operator's declaration must win"
+
     def test_declared_signals_provision_wins(self, tmp_path: Path) -> None:
         scaffold(tmp_path)
         manifest = load_manifest(tmp_path / ".alc")
