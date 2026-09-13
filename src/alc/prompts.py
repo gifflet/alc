@@ -207,9 +207,11 @@ in the run detail. Before you finish, save proof there, SHAPED BY WHAT THE CHANG
 - A backend / API change → save the actual responses you exercised. For each endpoint the change
   affects: `curl -s "$ALC_BASE_URL/<path>" -o "$ALC_ARTIFACTS_DIR/<name>.json"` (or `.txt`), so the
   real data — not a claim about it — is reviewable.
-- A UI / frontend change → capture the screen. Take a screenshot of the affected page(s) into
-  `$ALC_ARTIFACTS_DIR/<name>.png` with whatever browser-capture tool you have available; if none
-  is, save the rendered HTML of the page there instead.
+- A UI / frontend change → capture the SCREEN, not the HTML. Take a screenshot of the affected
+  page(s) into `$ALC_ARTIFACTS_DIR/<name>.png`. Playwright is the default when it is available —
+  `playwright screenshot "$ALC_BASE_URL/<route>" "$ALC_ARTIFACTS_DIR/<name>.png"` (add
+  `--full-page` for the whole scroll); any equivalent headless-browser tool is fine. Only if no
+  browser-capture tool exists at all, fall back to saving the page's rendered HTML there.
 Name each file after what it shows. Only ADD files — never delete or move ones already there.
 """
 

@@ -55,6 +55,31 @@ class TestCaptureEvidence:
         assert (artifacts_dir / "base.txt").read_text() == "http://127.0.0.1:9999"
         assert "artifacts/base.txt" in paths[0] or any("base.txt" in p for p in paths)
 
+    def test_command_inherits_the_host_path_and_environ(self, tmp_path: Path) -> None:
+        # The capture command must find tools installed on the host — a
+        # `playwright` for a UI screenshot, most of all. Before the fix it ran
+        # with only ALC's assembled vars and a bare shell PATH, so anything
+        # outside /usr/bin was "command not found" (exit 127). It now inherits
+        # os.environ, so a binary on the host PATH resolves.
+        import os
+
+        os.environ["ALC_CAPTURE_PROBE"] = "from-host-environ"
+        try:
+            artifacts_dir = tmp_path / "artifacts"
+            paths, warnings = capture_evidence(
+                command='printf "%s" "$ALC_CAPTURE_PROBE" > "$ALC_ARTIFACTS_DIR/probe.txt"',
+                health_log="",
+                workdir=tmp_path,
+                artifacts_dir=artifacts_dir,
+                project_root=tmp_path,
+                env={},  # nothing injected — the value can only come from os.environ
+                timeout_s=10,
+            )
+            assert warnings == []
+            assert (artifacts_dir / "probe.txt").read_text() == "from-host-environ"
+        finally:
+            os.environ.pop("ALC_CAPTURE_PROBE", None)
+
     def test_failing_command_warns_but_keeps_the_health_log(self, tmp_path: Path) -> None:
         artifacts_dir = tmp_path / "artifacts"
         paths, warnings = capture_evidence(
