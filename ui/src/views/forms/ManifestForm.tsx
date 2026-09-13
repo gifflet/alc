@@ -108,6 +108,25 @@ export function ManifestForm({
   const serviceHealth = String(doc.getIn(['service', 'health']) ?? '')
   const serviceTimeoutRaw = doc.getIn(['service', 'ready_timeout_s'])
   const serviceTimeout = serviceTimeoutRaw == null ? '' : Number(serviceTimeoutRaw)
+  const serviceEnvKeys = mapKeys(doc.getIn(['service', 'env']))
+  const serviceEnvFile = String(doc.getIn(['service', 'env_file']) ?? '')
+  const setServiceEnv = (key: string, value: string) =>
+    update((d) => d.setIn(['service', 'env', key], value))
+  const renameServiceEnv = (oldKey: string, newKey: string) =>
+    update((d) => {
+      const v = String(d.getIn(['service', 'env', oldKey]) ?? '')
+      safeDeleteIn(d, ['service', 'env', oldKey])
+      if (newKey.trim()) d.setIn(['service', 'env', newKey.trim()], v)
+    })
+  const removeServiceEnv = (key: string) =>
+    update((d) => {
+      safeDeleteIn(d, ['service', 'env', key])
+      // Drop an emptied env map so the manifest never carries `env: {}`.
+      if (mapKeys(d.getIn(['service', 'env'])).length === 0) safeDeleteIn(d, ['service', 'env'])
+    })
+  const addServiceEnv = () => update((d) => d.setIn(['service', 'env', 'KEY'], ''))
+  const setServiceEnvFile = (v: string) =>
+    update((d) => (v.trim() ? d.setIn(['service', 'env_file'], v.trim()) : safeDeleteIn(d, ['service', 'env_file'])))
   const setService = (key: string, v: string | number | '') =>
     update((d) => {
       // Clearing Start turns the service OFF (the whole block goes); an empty
@@ -369,6 +388,63 @@ export function ManifestForm({
             </>
           )}
         </div>
+        {serviceStart !== '' && (
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">
+                Environment
+              </span>
+              <ActionButton onClick={addServiceEnv} tone="ghost" size="sm">
+                <Plus className="h-3 w-3" />
+                Add variable
+              </ActionButton>
+            </div>
+            <p className="text-[length:var(--ui-text-label)] text-faint">
+              Non-secret values only — the manifest is versioned. Put secrets (a
+              JWT secret, a URI with a password) in the dotenv below and keep it
+              gitignored.
+            </p>
+            {serviceEnvKeys.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {serviceEnvKeys.map((k) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <input
+                      value={k}
+                      onChange={(e) => renameServiceEnv(k, e.target.value)}
+                      aria-label={`Env var name ${k}`}
+                      spellCheck={false}
+                      className="w-40 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
+                    />
+                    <input
+                      value={String(doc.getIn(['service', 'env', k]) ?? '')}
+                      onChange={(e) => setServiceEnv(k, e.target.value)}
+                      aria-label={`Env var value ${k}`}
+                      placeholder="value"
+                      spellCheck={false}
+                      className="flex-1 rounded-panel border border-border bg-base px-2 py-1 font-mono text-[length:var(--ui-text-body)] text-primary outline-none focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove env var ${k}`}
+                      onClick={() => removeServiceEnv(k)}
+                      className="flex min-h-[var(--ui-control-h)] min-w-[var(--ui-control-h)] items-center justify-center text-faint hover:text-error"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Field label="Secrets file (dotenv, gitignored)">
+              <TextInput
+                value={serviceEnvFile}
+                onChange={setServiceEnvFile}
+                placeholder=".env"
+                mono
+              />
+            </Field>
+          </div>
+        )}
       </section>
 
       <section>

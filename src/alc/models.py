@@ -89,6 +89,19 @@ class ServiceSpec(BaseModel):
     start: str                    # shell command that launches the app
     health: str = "/health"       # health path polled until it returns HTTP 200
     ready_timeout_s: int = 30     # seconds to wait for health before giving up
+    # Literal environment for the service process, merged over os.environ before
+    # ALC adds PORT/ALC_PORT. For NON-SECRET values only — the manifest is
+    # versioned, so a database name or feature flag belongs here, a password or
+    # token never does (put those in `env_file`). Empty = today's behaviour
+    # (the service inherits ALC's own environ untouched).
+    env: dict[str, str] = {}
+    # Path (project-root-relative) to a dotenv file (KEY=VALUE per line) loaded
+    # into the service env — the home for SECRETS a fail-closed app needs at
+    # boot (a Mongo URI with credentials, a JWT secret). Keep it gitignored:
+    # ALC only reads it and passes the values to the process in memory, never
+    # persisting or logging them. None = no file loaded. Precedence, low to
+    # high: os.environ < env_file < env < PORT/ALC_PORT.
+    env_file: str | None = None
 
 
 class Blueprint(BaseModel):

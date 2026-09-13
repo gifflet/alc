@@ -25,6 +25,54 @@ _POLL_INTERVAL_S = 0.2
 _OUTPUT_TAIL_CHARS = 2000
 
 
+def _parse_dotenv(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE dotenv lines. Ignores blanks and ``#`` comments; strips a
+    single layer of matching quotes around the value; drops an optional ``export``
+    prefix. Deliberately minimal (stdlib only) — no interpolation, no multiline.
+    A line without ``=`` is skipped rather than raising: a malformed dotenv must
+    not crash the run, and the health poll still surfaces a genuinely broken boot.
+    """
+    out: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.removeprefix("export ").lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key:
+            out[key] = value
+    return out
+
+
+def build_service_env(
+    spec: ServiceSpec, workdir: Path, port: int, base: dict[str, str]
+) -> dict[str, str]:
+    """Compose the service process env, low precedence to high:
+    os.environ (via *base*) < spec.env_file < spec.env < PORT/ALC_PORT.
+
+    *base* is the caller's already-merged environment (os.environ + the run env).
+    A missing/unreadable env_file contributes nothing — the health poll, not a
+    crash here, is what reports a service that then fails to boot.
+    """
+    merged = dict(base)
+    if spec.env_file:
+        path = workdir / spec.env_file
+        try:
+            merged.update(_parse_dotenv(path.read_text(encoding="utf-8")))
+        except OSError:
+            pass  # absent/unreadable dotenv -> contribute nothing, never raise
+    merged.update(spec.env)
+    merged["PORT"] = str(port)
+    merged["ALC_PORT"] = str(port)
+    return merged
+
+
 class RuntimeService:
     """Start an app, wait for health, and tear it down — CORE-owned lifecycle.
 
@@ -54,12 +102,12 @@ class RuntimeService:
         # Capture the app's stdout+stderr to a temp file so a startup failure is
         # diagnosable (its tail is embedded in the timeout error).
         self._log = tempfile.TemporaryFile(mode="w+b")
-        proc_env = {
-            **os.environ,
-            **self._env,
-            "PORT": str(self._port),
-            "ALC_PORT": str(self._port),
-        }
+        proc_env = build_service_env(
+            self._spec,
+            self._workdir,
+            self._port,
+            {**os.environ, **self._env},
+        )
         # start_new_session=True gives the app its own process group so teardown
         # can signal the whole tree (the launcher AND any children it spawned).
         self._proc = subprocess.Popen(

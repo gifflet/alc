@@ -148,4 +148,37 @@ describe('ManifestForm', () => {
     fireEvent.change(screen.getByLabelText('Health path'), { target: { value: '' } })
     expect(lastParsed(onDoc).service).toEqual({ start: 'npm run dev' })
   })
+
+  it('authors non-secret service env vars and a gitignored secrets file (round 21)', () => {
+    const onDoc = vi.fn()
+    const withService = MANIFEST + 'service:\n  start: npm run dev\n'
+    renderControlledForm(withService, (value, onChange) => <ManifestForm value={value} onChange={onChange} />, onDoc)
+
+    // Env editor appears once a start command exists.
+    fireEvent.click(screen.getByRole('button', { name: /add variable/i }))
+    // The seeded KEY row: rename it and give it a value.
+    fireEvent.change(screen.getByLabelText('Env var name KEY'), { target: { value: 'MONGO_DB' } })
+    fireEvent.change(screen.getByLabelText('Env var value MONGO_DB'), { target: { value: 'hub' } })
+    fireEvent.change(screen.getByLabelText(/secrets file/i), { target: { value: '.env' } })
+
+    const parsed = lastParsed(onDoc)
+    expect(parsed.service.env).toEqual({ MONGO_DB: 'hub' })
+    expect(parsed.service.env_file).toBe('.env')
+  })
+
+  it('drops the env map and env_file when emptied', () => {
+    const onDoc = vi.fn()
+    const withService =
+      MANIFEST + 'service:\n  start: npm run dev\n  env:\n    MONGO_DB: hub\n  env_file: .env\n'
+    renderControlledForm(withService, (value, onChange) => <ManifestForm value={value} onChange={onChange} />, onDoc)
+
+    fireEvent.click(screen.getByRole('button', { name: /remove env var MONGO_DB/i }))
+    fireEvent.change(screen.getByLabelText(/secrets file/i), { target: { value: '' } })
+
+    const parsed = lastParsed(onDoc)
+    expect(parsed.service.env).toBeUndefined()
+    expect(parsed.service.env_file).toBeUndefined()
+    // The rest of the service block survives.
+    expect(parsed.service.start).toBe('npm run dev')
+  })
 })

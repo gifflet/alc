@@ -467,3 +467,69 @@ class TestServiceLifecycleEvents:
         names = {p.rsplit("/", 1)[-1] for p in captured["artifacts"]}
         assert names == {"hi.txt", "health-poll.log"}
         assert captured["warnings"] == 0
+
+
+class TestBuildServiceEnv:
+    """ServiceSpec.env / env_file compose the service process environment
+    (round 21): non-secret literals in the manifest, secrets in a gitignored
+    dotenv, PORT/ALC_PORT always last."""
+
+    def test_literal_env_merges_over_base(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        spec = ServiceSpec(start="x", env={"MONGO_DB": "hub", "FEATURE": "on"})
+        env = build_service_env(spec, tmp_path, 8080, {"PATH": "/usr/bin"})
+        assert env["MONGO_DB"] == "hub"
+        assert env["FEATURE"] == "on"
+        assert env["PATH"] == "/usr/bin"  # base survives
+        assert env["PORT"] == "8080" and env["ALC_PORT"] == "8080"
+
+    def test_env_file_loads_secrets_from_dotenv(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        (tmp_path / ".env").write_text(
+            "# secrets\nJWT_SECRET=s3cr3t\nexport MONGO_URI='mongodb://u:p@h:27017'\n\n"
+        )
+        spec = ServiceSpec(start="x", env_file=".env")
+        env = build_service_env(spec, tmp_path, 9000, {})
+        assert env["JWT_SECRET"] == "s3cr3t"
+        assert env["MONGO_URI"] == "mongodb://u:p@h:27017"
+
+    def test_literal_env_wins_over_env_file(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        (tmp_path / ".env").write_text("MONGO_DB=from_file\n")
+        spec = ServiceSpec(start="x", env_file=".env", env={"MONGO_DB": "from_manifest"})
+        env = build_service_env(spec, tmp_path, 9000, {})
+        assert env["MONGO_DB"] == "from_manifest"
+
+    def test_port_always_wins(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        (tmp_path / ".env").write_text("PORT=1\n")
+        spec = ServiceSpec(start="x", env_file=".env", env={"PORT": "2"})
+        env = build_service_env(spec, tmp_path, 8080, {})
+        assert env["PORT"] == "8080" and env["ALC_PORT"] == "8080"
+
+    def test_missing_env_file_is_silent(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        spec = ServiceSpec(start="x", env_file="nope.env")
+        env = build_service_env(spec, tmp_path, 8080, {"A": "1"})
+        assert env["A"] == "1" and env["PORT"] == "8080"
+
+    def test_defaults_are_byte_identical_to_before(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        spec = ServiceSpec(start="x")
+        env = build_service_env(spec, tmp_path, 8080, {"A": "1"})
+        # No env/env_file: base + PORT/ALC_PORT only, nothing else added.
+        assert env == {"A": "1", "PORT": "8080", "ALC_PORT": "8080"}
+
+    def test_malformed_dotenv_line_is_skipped(self, tmp_path: Path) -> None:
+        from alc.runtime import build_service_env
+
+        (tmp_path / ".env").write_text("GOOD=1\nthis-has-no-equals\nALSO=2\n")
+        spec = ServiceSpec(start="x", env_file=".env")
+        env = build_service_env(spec, tmp_path, 8080, {})
+        assert env["GOOD"] == "1" and env["ALSO"] == "2"

@@ -111,6 +111,22 @@ class TestScaffoldOutputIsConformant:
         errors = [v for v in violations if v.severity == "error"]
         assert not errors, f"Policy Gate errors on default layer: {errors}"
 
+    def test_scaffold_ships_a_commented_service_block(self, tmp_path: Path) -> None:
+        # Round 21: init prepares runtime validation as a commented example so
+        # the operator can uncomment start/health/env/env_file rather than
+        # discover the shape from docs. Commented -> service stays OFF by
+        # default (manifest.service is None), so it changes no run.
+        scaffold(tmp_path)
+        text = (tmp_path / ".alc" / "manifest.yaml").read_text()
+        assert "# service:" in text
+        assert "#   start:" in text
+        assert "#   health:" in text
+        assert "#   env:" in text
+        assert "#   env_file: .env" in text
+        # Still OFF: the parsed manifest declares no service.
+        manifest = load_manifest(tmp_path / ".alc")
+        assert manifest.service is None
+
 
 class TestScaffoldLoadsFlow:
     def test_scaffold_loads_flow(self, tmp_path: Path) -> None:
