@@ -664,3 +664,58 @@ class TestOpenPrDispatch:
         ok, message = open_pr(tmp_path, "main", "feature", "t", "b", provider="azure")
         assert ok is False
         assert "az not installed" in message
+
+
+class TestDeliveryEnvFile:
+    """delivery.env_file loads the forge token from a gitignored dotenv into the
+    environment of git/gh/az — ALC never stores it, only passes it through."""
+
+    def test_load_delivery_env_none_without_a_file(self, tmp_path: Path) -> None:
+        from alc.delivery import load_delivery_env
+
+        assert load_delivery_env(tmp_path, None) is None
+
+    def test_load_delivery_env_merges_dotenv_over_environ(self, tmp_path: Path) -> None:
+        from alc.delivery import load_delivery_env
+
+        (tmp_path / ".env").write_text("GH_TOKEN=ghp_fake\nAZURE_DEVOPS_EXT_PAT=az_fake\n")
+        env = load_delivery_env(tmp_path, ".env")
+        assert env is not None
+        assert env["GH_TOKEN"] == "ghp_fake"
+        assert env["AZURE_DEVOPS_EXT_PAT"] == "az_fake"
+        assert "PATH" in env  # os.environ survives, so the CLIs still resolve
+
+    def test_missing_dotenv_still_returns_environ(self, tmp_path: Path) -> None:
+        from alc.delivery import load_delivery_env
+
+        env = load_delivery_env(tmp_path, "nope.env")
+        assert env is not None and "PATH" in env
+
+    def test_open_pr_passes_the_token_env_to_gh(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The fake gh records os.environ.get('GH_TOKEN'); prove the value we
+        # loaded from the dotenv reaches the process.
+        state = tmp_path / "gh-env.state.json"
+        bin_dir = tmp_path / "fakebin-ghenv"
+        bin_dir.mkdir()
+        script = bin_dir / "gh"
+        script.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, pathlib\n"
+            f"pathlib.Path({str(state)!r}).write_text(json.dumps("
+            "{'token': os.environ.get('GH_TOKEN')}))\n"
+            "print('ok')\n"
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+        from alc.delivery import load_delivery_env
+
+        repo = _make_git_repo(tmp_path)
+        (repo / ".env").write_text("GH_TOKEN=ghp_from_dotenv\n")
+        env = load_delivery_env(repo, ".env")
+        ok, _ = open_pr(repo, "main", "feature", "t", "b", provider="github", env=env)
+        assert ok is True
+        import json
+        assert json.loads(state.read_text())["token"] == "ghp_from_dotenv"

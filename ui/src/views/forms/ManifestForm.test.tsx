@@ -200,4 +200,15 @@ describe('ManifestForm', () => {
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'auto' } })
     expect('provider' in (lastParsed(onDoc).delivery ?? {})).toBe(false)
   })
+
+  it('exposes the delivery secrets-file only in pr mode and writes it', async () => {
+    const onDoc = vi.fn()
+    renderManifest(onDoc)
+    fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'pr' } })
+    fireEvent.change(await screen.findByLabelText(/secrets file/i), { target: { value: '.env' } })
+    expect(lastParsed(onDoc).delivery.env_file).toBe('.env')
+    // Cleared -> the key is dropped.
+    fireEvent.change(screen.getByLabelText(/secrets file/i), { target: { value: '' } })
+    expect('env_file' in (lastParsed(onDoc).delivery ?? {})).toBe(false)
+  })
 })

@@ -91,6 +91,7 @@ export function ManifestForm({
   const deliveryRemote = String(doc.getIn(['delivery', 'remote']) ?? 'origin')
   const deliveryBase = String(doc.getIn(['delivery', 'base']) ?? 'main')
   const deliveryProvider = String(doc.getIn(['delivery', 'provider']) ?? 'auto')
+  const deliveryEnvFile = String(doc.getIn(['delivery', 'env_file']) ?? '')
 
   const cell = (tier: string, engine: string): string => {
     const v = doc.getIn(['compute_tiers', tier, engine])
@@ -371,6 +372,21 @@ export function ManifestForm({
             />
           </Field>
         </div>
+        {deliveryMode === 'pr' && (
+          <Field
+            label="Secrets file (dotenv, gitignored)"
+            hint="the forge token — GH_TOKEN for GitHub, AZURE_DEVOPS_EXT_PAT for Azure; ALC reads it, never stores it"
+          >
+            <TextInput
+              value={deliveryEnvFile}
+              onChange={(v) =>
+                update((d) => (v.trim() ? d.setIn(['delivery', 'env_file'], v.trim()) : safeDeleteIn(d, ['delivery', 'env_file'])))
+              }
+              placeholder=".env"
+              mono
+            />
+          </Field>
+        )}
       </section>
 
       <section>

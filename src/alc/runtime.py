@@ -25,7 +25,7 @@ _POLL_INTERVAL_S = 0.2
 _OUTPUT_TAIL_CHARS = 2000
 
 
-def _parse_dotenv(text: str) -> dict[str, str]:
+def parse_dotenv(text: str) -> dict[str, str]:
     """Parse KEY=VALUE dotenv lines. Ignores blanks and ``#`` comments; strips a
     single layer of matching quotes around the value; drops an optional ``export``
     prefix. Deliberately minimal (stdlib only) — no interpolation, no multiline.
@@ -64,7 +64,7 @@ def build_service_env(
     if spec.env_file:
         path = workdir / spec.env_file
         try:
-            merged.update(_parse_dotenv(path.read_text(encoding="utf-8")))
+            merged.update(parse_dotenv(path.read_text(encoding="utf-8")))
         except OSError:
             pass  # absent/unreadable dotenv -> contribute nothing, never raise
     merged.update(spec.env)
