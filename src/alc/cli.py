@@ -2714,7 +2714,10 @@ def _deliver(repo_root: Path, delivery, report) -> None:
 
     files = changed_files(repo_root, delivery.base, branch)
     body = build_pr_body(report, files)
-    ok, message = open_pr(repo_root, delivery.base, branch, f"alc land: {branch}", body)
+    ok, message = open_pr(
+        repo_root, delivery.base, branch, f"alc land: {branch}", body,
+        provider=delivery.provider, remote=delivery.remote,
+    )
     print(f"[land] {message}", file=sys.stdout if ok else sys.stderr)
 
 

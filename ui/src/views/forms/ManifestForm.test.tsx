@@ -181,4 +181,23 @@ describe('ManifestForm', () => {
     // The rest of the service block survives.
     expect(parsed.service.start).toBe('npm run dev')
   })
+
+  it('exposes the delivery provider only in pr mode and writes it (azure/github)', async () => {
+    const onDoc = vi.fn()
+    renderManifest(onDoc)
+    // Not shown until mode is pr.
+    expect(screen.queryByLabelText('Provider')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Mode'), { target: { value: 'pr' } })
+    // Now visible; choosing Azure writes delivery.provider.
+    fireEvent.change(await screen.findByLabelText('Provider'), { target: { value: 'azure' } })
+    expect(lastParsed(onDoc).delivery.provider).toBe('azure')
+  })
+
+  it('drops the provider key when set back to auto (auto is the default)', () => {
+    const onDoc = vi.fn()
+    const withPr = MANIFEST + 'delivery:\n  mode: pr\n  provider: azure\n'
+    renderControlledForm(withPr, (value, onChange) => <ManifestForm value={value} onChange={onChange} />, onDoc)
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'auto' } })
+    expect('provider' in (lastParsed(onDoc).delivery ?? {})).toBe(false)
+  })
 })

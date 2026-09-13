@@ -1178,7 +1178,10 @@ def _land_delivery_warning(
 
     files = changed_files(repo_root, delivery.base, branch)
     body = build_pr_body(report, files)
-    ok, message = open_pr(repo_root, delivery.base, branch, f"alc land: {branch}", body)
+    ok, message = open_pr(
+        repo_root, delivery.base, branch, f"alc land: {branch}", body,
+        provider=delivery.provider, remote=delivery.remote,
+    )
     return None if ok else message
 
 
