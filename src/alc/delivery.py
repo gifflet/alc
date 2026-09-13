@@ -21,6 +21,31 @@ def has_gh() -> bool:
     return shutil.which("gh") is not None
 
 
+def has_az() -> bool:
+    """Return True when the `az` CLI is on PATH (Azure DevOps needs its
+    `azure-devops` extension too, but its absence surfaces as a normal CLI
+    failure — never-raise, like a missing `gh`)."""
+    return shutil.which("az") is not None
+
+
+def detect_provider(repo_root: Path, remote: str) -> str:
+    """Classify the forge from *remote*'s URL: 'azure' for dev.azure.com /
+    visualstudio.com, else 'github'. Never raises — an unreadable remote falls
+    back to 'github', the historical default."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "remote", "get-url", remote],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return "github"
+    url = result.stdout.strip().lower() if result.returncode == 0 else ""
+    if "dev.azure.com" in url or "visualstudio.com" in url:
+        return "azure"
+    return "github"
+
+
 def current_branch(repo_root: Path) -> str | None:
     """Return the currently checked out branch name, or None on any failure."""
     try:
@@ -114,7 +139,7 @@ def build_pr_body(report: MergeReport, files: list[str]) -> str:
     return "\n".join(lines)
 
 
-def open_pr(repo_root: Path, base: str, head: str, title: str, body: str) -> tuple[bool, str]:
+def _open_pr_github(repo_root: Path, base: str, head: str, title: str, body: str) -> tuple[bool, str]:
     """Open a PR for *head* against *base* via ``gh pr create``.
 
     Never raises: a missing ``gh`` binary or any CLI failure is reported back
@@ -141,3 +166,55 @@ def open_pr(repo_root: Path, base: str, head: str, title: str, body: str) -> tup
         reason = result.stderr.strip() or result.stdout.strip()
         return False, f"gh pr create failed: {reason}"
     return True, result.stdout.strip() or "PR opened."
+
+
+def _open_pr_azure(repo_root: Path, base: str, head: str, title: str, body: str) -> tuple[bool, str]:
+    """Open a PR for *head* against *base* via ``az repos pr create``.
+
+    The `az` CLI infers organization/project/repository from the git remote when
+    run inside the repo (with the ``azure-devops`` extension). Never raises: a
+    missing `az`/extension or any CLI failure is reported as ``(False, reason)``,
+    the same contract as the GitHub path.
+    """
+    if not has_az():
+        return False, "az not installed; skipping PR."
+    try:
+        result = subprocess.run(
+            [
+                "az", "repos", "pr", "create",
+                "--source-branch", head,
+                "--target-branch", base,
+                "--title", title,
+                "--description", body,
+                "--output", "tsv",
+                "--query", "repository.webUrl",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+        )
+    except FileNotFoundError:
+        return False, "az not installed; skipping PR."
+    if result.returncode != 0:
+        reason = result.stderr.strip() or result.stdout.strip()
+        return False, f"az repos pr create failed: {reason}"
+    return True, result.stdout.strip() or "PR opened."
+
+
+def open_pr(
+    repo_root: Path,
+    base: str,
+    head: str,
+    title: str,
+    body: str,
+    *,
+    provider: str = "auto",
+    remote: str = "origin",
+) -> tuple[bool, str]:
+    """Open a PR against the right forge. *provider* is "github", "azure", or
+    "auto" (detect from *remote*'s URL). Never raises — dispatches to the
+    provider-specific opener, each of which reports failure as ``(False, …)``."""
+    resolved = detect_provider(repo_root, remote) if provider == "auto" else provider
+    if resolved == "azure":
+        return _open_pr_azure(repo_root, base, head, title, body)
+    return _open_pr_github(repo_root, base, head, title, body)

@@ -310,6 +310,12 @@ class DeliverySpec(BaseModel):
     mode: Literal["local", "push", "pr"] = "local"
     remote: str = "origin"
     base: str = "main"
+    # Which forge the `pr` mode opens against. "auto" (default) reads the
+    # remote's URL — github.com -> GitHub (`gh`), dev.azure.com /
+    # visualstudio.com -> Azure DevOps (`az repos`); anything else falls back
+    # to GitHub. Set it explicitly to skip detection. `push` mode ignores this
+    # (a bare git push needs no forge CLI).
+    provider: Literal["auto", "github", "azure"] = "auto"
 
 
 class Manifest(BaseModel):

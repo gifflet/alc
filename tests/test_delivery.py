@@ -558,3 +558,109 @@ class TestCmdLandManifestDeliveryDefault:
 
         out = capsys.readouterr().out
         assert "pushed main to upstream" in out
+
+
+def _install_fake_az(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Put a fake `az` binary first on PATH; return its backing state file.
+
+    `az repos pr create ...` records its --source-branch/--target-branch/
+    --title/--description into the state file and prints a fake URL. The real
+    `az` is never invoked. Layers over any fake `gh` already on PATH.
+    """
+    state = tmp_path / "az.state.json"
+    bin_dir = tmp_path / "fakebin-az"
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "az"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys, pathlib\n"
+        f"STATE = pathlib.Path({str(state)!r})\n"
+        "args = sys.argv[1:]\n"
+        "def opt(name):\n"
+        "    return args[args.index(name) + 1] if name in args else None\n"
+        "STATE.write_text(json.dumps({\n"
+        "    'source': opt('--source-branch'), 'target': opt('--target-branch'),\n"
+        "    'title': opt('--title'), 'description': opt('--description'),\n"
+        "    'argv': args,\n"
+        "}))\n"
+        "print('https://dev.azure.invalid/pr/1')\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return state
+
+
+class TestDetectProvider:
+    def test_github_remote_is_github(self, tmp_path: Path) -> None:
+        from alc.delivery import detect_provider
+
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "remote", "add", "origin", "git@github.com:acme/app.git")
+        assert detect_provider(repo, "origin") == "github"
+
+    def test_azure_https_remote_is_azure(self, tmp_path: Path) -> None:
+        from alc.delivery import detect_provider
+
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "remote", "add", "origin",
+             "https://dev.azure.com/org/Project/_git/app")
+        assert detect_provider(repo, "origin") == "azure"
+
+    def test_legacy_visualstudio_remote_is_azure(self, tmp_path: Path) -> None:
+        from alc.delivery import detect_provider
+
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "remote", "add", "origin", "https://org.visualstudio.com/_git/app")
+        assert detect_provider(repo, "origin") == "azure"
+
+    def test_unknown_or_missing_remote_falls_back_to_github(self, tmp_path: Path) -> None:
+        from alc.delivery import detect_provider
+
+        repo = _make_git_repo(tmp_path)
+        assert detect_provider(repo, "origin") == "github"  # no remote at all
+
+
+class TestOpenPrDispatch:
+    def test_azure_provider_uses_az_repos(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = _install_fake_az(tmp_path, monkeypatch)
+        repo = _make_git_repo(tmp_path)
+        ok, message = open_pr(repo, "main", "feature", "my title", "my body",
+                              provider="azure")
+        assert ok is True
+        import json
+        recorded = json.loads(state.read_text())
+        assert recorded["source"] == "feature"
+        assert recorded["target"] == "main"
+        assert recorded["title"] == "my title"
+
+    def test_auto_provider_detects_azure_from_remote(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = _install_fake_az(tmp_path, monkeypatch)
+        repo = _make_git_repo(tmp_path)
+        _git(repo, "remote", "add", "origin",
+             "https://dev.azure.com/org/Project/_git/app")
+        ok, _ = open_pr(repo, "main", "feature", "t", "b", provider="auto", remote="origin")
+        assert ok is True
+        assert state.exists()  # the az path ran, not gh
+
+    def test_github_provider_uses_gh(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = _install_fake_gh(tmp_path, monkeypatch)
+        repo = _make_git_repo(tmp_path)
+        ok, _ = open_pr(repo, "main", "feature", "t", "b", provider="github")
+        assert ok is True
+        assert state.exists()
+
+    def test_azure_reports_gracefully_when_az_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        empty = tmp_path / "empty-bin"
+        empty.mkdir()
+        monkeypatch.setenv("PATH", str(empty))
+        ok, message = open_pr(tmp_path, "main", "feature", "t", "b", provider="azure")
+        assert ok is False
+        assert "az not installed" in message

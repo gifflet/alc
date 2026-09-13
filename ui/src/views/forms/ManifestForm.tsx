@@ -90,6 +90,7 @@ export function ManifestForm({
   const deliveryMode = String(doc.getIn(['delivery', 'mode']) ?? 'local')
   const deliveryRemote = String(doc.getIn(['delivery', 'remote']) ?? 'origin')
   const deliveryBase = String(doc.getIn(['delivery', 'base']) ?? 'main')
+  const deliveryProvider = String(doc.getIn(['delivery', 'provider']) ?? 'auto')
 
   const cell = (tier: string, engine: string): string => {
     const v = doc.getIn(['compute_tiers', tier, engine])
@@ -324,18 +325,37 @@ export function ManifestForm({
 
       <section>
         <h3 className="mb-2 text-[length:var(--ui-text-label)] uppercase tracking-wide text-faint">Delivery</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <p className="mb-2 text-[length:var(--ui-text-label)] text-faint">
+          What `alc land` does after the local merge: nothing (local), push the branch (push),
+          or push and open a pull request (pr).
+        </p>
+        <div className="grid grid-cols-2 gap-3">
           <Field label="Mode">
             <Select
               value={deliveryMode}
               onChange={(v) => update((d) => d.setIn(['delivery', 'mode'], v))}
               options={[
-                { value: 'local', label: 'local' },
-                { value: 'push', label: 'push' },
-                { value: 'pr', label: 'pr' },
+                { value: 'local', label: 'local — merge only' },
+                { value: 'push', label: 'push — merge + push branch' },
+                { value: 'pr', label: 'pr — push + open PR' },
               ]}
             />
           </Field>
+          {deliveryMode === 'pr' && (
+            <Field label="Provider" hint="which forge opens the PR — auto reads the remote URL">
+              <Select
+                value={deliveryProvider}
+                onChange={(v) =>
+                  update((d) => (v === 'auto' ? safeDeleteIn(d, ['delivery', 'provider']) : d.setIn(['delivery', 'provider'], v)))
+                }
+                options={[
+                  { value: 'auto', label: 'auto (detect from remote)' },
+                  { value: 'github', label: 'GitHub (gh)' },
+                  { value: 'azure', label: 'Azure DevOps (az repos)' },
+                ]}
+              />
+            </Field>
+          )}
           <Field label="Remote">
             <TextInput
               value={deliveryRemote}
