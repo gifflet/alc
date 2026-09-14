@@ -380,9 +380,10 @@ def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
     """
     from alc.intake import load_manifest
     from alc.packs import PACKS, pack_files, retarget_pack_content, split_pack_files
-    from alc.scaffold import detect_stacks
+    from alc.scaffold import detect_stacks, detect_ui_surface
 
     stacks = detect_stacks(project_root)
+    ui = detect_ui_surface(project_root)
     # The scaffold this runs right after always writes a manifest, but this
     # helper "never hard-fails" — a missing/unreadable one just skips the
     # check_set retargeting (None -> no-op), it never blocks the hire.
@@ -399,7 +400,7 @@ def _install_stage_packs(project_root: Path, stage: str, force: bool) -> None:
 
         if force:
             # The one destructive path: overwrite every pack file.
-            files, _ = retarget_pack_content(pack_files(archetype, stacks), check_sets)
+            files, _ = retarget_pack_content(pack_files(archetype, stacks, ui=ui), check_sets)
             for rel_path, content in sorted(files.items()):
                 target = project_root / rel_path
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -1635,7 +1636,7 @@ def _team_hire(args: argparse.Namespace) -> int:
         validate_prompts,
         validate_provisions,
     )
-    from alc.scaffold import detect_stacks
+    from alc.scaffold import detect_stacks, detect_ui_surface
     from alc.stagepolicy import lint_stage
 
     if args.archetype not in PACKS:
@@ -1650,11 +1651,12 @@ def _team_hire(args: argparse.Namespace) -> int:
     project_root = operator_layer.parent
     manifest = load_manifest(operator_layer)
     stacks = detect_stacks(project_root)
+    ui = detect_ui_surface(project_root)
 
     if args.force:
         # The one destructive path: overwrite every pack file.
         files, retargeted = retarget_pack_content(
-            pack_files(args.archetype, stacks), manifest.check_sets
+            pack_files(args.archetype, stacks, ui=ui), manifest.check_sets
         )
         for rel_path, content in sorted(files.items()):
             target = project_root / rel_path

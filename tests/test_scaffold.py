@@ -6,7 +6,7 @@ import subprocess
 import pytest
 from pathlib import Path
 
-from alc.scaffold import detect_stack, scaffold
+from alc.scaffold import detect_stack, detect_ui_surface, scaffold
 from alc.intake import load_all_blueprints, load_flow, load_manifest
 from alc.policy import lint
 
@@ -1196,3 +1196,45 @@ class TestInitNextStep:
         assert "Next: install an engine CLI" in out
         assert "chore -d" not in out
         assert out.rstrip().splitlines()[-1].startswith("Next:")
+
+
+class TestDetectUiSurface:
+    """detect_ui_surface() tells a UI project (a screen to screenshot) from a
+    backend-only one (an API to curl) — the signal the Builder pack's qa
+    Blueprint reads to pick its `capture:`."""
+
+    def test_pure_backend_is_not_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "go.mod").write_text("module x\n")
+        (tmp_path / "main.go").write_text("package main\n")
+        assert detect_ui_surface(tmp_path) is False
+
+    def test_node_backend_without_a_frontend_framework_is_not_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text('{"dependencies": {"express": "^4"}}')
+        assert detect_ui_surface(tmp_path) is False
+
+    def test_frontend_framework_in_package_json_is_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text(
+            '{"dependencies": {"react": "^18", "react-dom": "^18"}}'
+        )
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_frontend_framework_in_dev_dependencies_is_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text('{"devDependencies": {"vite": "^5"}}')
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_static_index_html_at_the_root_is_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "index.html").write_text("<!doctype html><title>x</title>")
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_static_index_html_in_a_web_directory_is_ui(self, tmp_path: Path) -> None:
+        # The tizen-cert-cli shape: a Go CLI whose only servable surface is a
+        # static docs-site/.
+        (tmp_path / "go.mod").write_text("module x\n")
+        docs = tmp_path / "docs-site"
+        docs.mkdir()
+        (docs / "index.html").write_text("<!doctype html><title>x</title>")
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_unreadable_package_json_is_not_a_framework_signal(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text("{ this is not json")
+        assert detect_ui_surface(tmp_path) is False

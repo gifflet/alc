@@ -79,7 +79,7 @@ from alc.queue import (
     outstanding_failures,
     write_retry_task,
 )
-from alc.scaffold import detect_stacks
+from alc.scaffold import detect_stacks, detect_ui_surface
 from alc.schedule import has_crontab, list_entries, read_crontab
 from alc.stagepolicy import MIX_HEALTH_WINDOW_S, lint_stage, mix_health
 from alc.textutil import slugify
@@ -1005,9 +1005,10 @@ def team_hire(root: Path, archetype: str, force: bool = False) -> dict:
 
     manifest = load_manifest(operator_layer(root))
     stacks = detect_stacks(root)
+    ui = detect_ui_surface(root)
     if force:
         files, retargeted = retarget_pack_content(
-            pack_files(archetype, stacks), manifest.check_sets
+            pack_files(archetype, stacks, ui=ui), manifest.check_sets
         )
         written = sorted(files)
         kept: list[str] = []

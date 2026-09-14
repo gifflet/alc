@@ -66,18 +66,39 @@ archetype: builder
    ```
 """
 
+# The qa Blueprint's `capture:` — the e2e evidence step. Both run once the
+# health poll has proven the service reachable and write into $ALC_ARTIFACTS_DIR,
+# which ALC collects (with the health-poll log) into the RunReport. The curl
+# health-check is the stack-agnostic default; a project that serves a UI
+# (detect_ui_surface) gets a Playwright screenshot of the affected screen instead,
+# so its first e2e produces a real image rather than tripping the "No screenshot"
+# signal. Non-UI projects keep the curl block byte-for-byte.
+_QA_CAPTURE_CURL = (
+    "# e2e evidence: runs once the health poll has already\n"
+    "# proven the service reachable, and writes into $ALC_ARTIFACTS_DIR — ALC\n"
+    "# collects whatever lands there (plus the health-poll log) into the\n"
+    "# RunReport, readable back via `alc artifacts`. Swap for a real screenshot\n"
+    "# tool; this curl is the smallest example that proves the pattern.\n"
+    'capture: curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/health-check.txt"'
+)
+_QA_CAPTURE_SCREENSHOT = (
+    "# e2e evidence: runs once the health poll has already\n"
+    "# proven the service reachable, and writes into $ALC_ARTIFACTS_DIR — ALC\n"
+    "# collects whatever lands there (plus the health-poll log) into the\n"
+    "# RunReport, readable back via `alc artifacts`. This project serves a UI,\n"
+    "# so the capture screenshots the affected screen (needs Playwright on\n"
+    '# PATH; without it the run still passes and the "No screenshot" signal\n'
+    "# explains why).\n"
+    'capture: playwright screenshot --full-page "$ALC_BASE_URL/" "$ALC_ARTIFACTS_DIR/screen.png"'
+)
+
 _BUILDER_QA = """\
 ---
 name: qa
 purpose: Verify the change end-to-end against a live instance of the service.
 compute_tier: standard
 needs_service: true
-# e2e evidence: runs once the health poll has already
-# proven the service reachable, and writes into $ALC_ARTIFACTS_DIR — ALC
-# collects whatever lands there (plus the health-poll log) into the
-# RunReport, readable back via `alc artifacts`. Swap for a real screenshot
-# tool; this curl is the smallest example that proves the pattern.
-capture: curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/health-check.txt"
+{capture_block}
 {check_set_line}checks:
   # Hits the live service ALC started for this run ($ALC_BASE_URL) — the inline
   # check that keeps this Blueprint lint-clean even when check_set resolves empty.
@@ -211,12 +232,22 @@ stages:
 
 def _builder_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    ui: bool = False,
 ) -> dict[str, str]:
-    """Build the Builder pack: test authoring, live e2e QA, and a hardened ship flow."""
+    """Build the Builder pack: test authoring, live e2e QA, and a hardened ship flow.
+
+    *ui* is the caller's `detect_ui_surface(project_root)` verdict: True makes the
+    qa Blueprint scaffold a Playwright screenshot capture instead of the curl
+    health-check, so a project that serves a screen verifies it visually from the
+    first e2e. Defaults to False, keeping non-UI output byte-identical.
+    """
     check_set_line = _check_set_line(stacks)
+    capture_block = _QA_CAPTURE_SCREENSHOT if ui else _QA_CAPTURE_CURL
     return {
         ".alc/blueprints/test.md": _BUILDER_TEST.format(check_set_line=check_set_line),
-        ".alc/blueprints/qa.md": _BUILDER_QA.format(check_set_line=check_set_line),
+        ".alc/blueprints/qa.md": _BUILDER_QA.format(
+            check_set_line=check_set_line, capture_block=capture_block
+        ),
         ".alc/flows/ship-hardened.yaml": _BUILDER_SHIP_HARDENED,
         ".alc/flows/ship-e2e.yaml": _BUILDER_SHIP_E2E,
     }
@@ -379,6 +410,7 @@ stages:
 
 def _sweeper_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    ui: bool = False,  # uniform pack signature; only the Builder pack varies by UI
 ) -> dict[str, str]:
     """Build the Sweeper pack: a refactor Blueprint, the janitor Specialist, its
     sweep Loop, and the unship Flow — remove -> a require_real_checks gate that
@@ -566,6 +598,7 @@ archetype: grower
 
 def _grower_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    ui: bool = False,  # uniform pack signature; only the Builder pack varies by UI
 ) -> dict[str, str]:
     """Build the Grower pack: a DIY issue/error-sweep Specialist and a `grow` Blueprint.
 
@@ -591,6 +624,7 @@ def _grower_files(
 
 def _maintainer_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    ui: bool = False,  # uniform pack signature; only the Builder pack varies by UI
 ) -> dict[str, str]:
     """Build the Maintainer pack: a security patrol Flow, a bare chore Flow, the
     deps Specialist, and the Loop that refreshes one package at a time.
@@ -650,6 +684,7 @@ and never commits or auto-merges what it wrote — a spike is disposable by cons
 
 def _prototyper_files(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    ui: bool = False,  # uniform pack signature; only the Builder pack varies by UI
 ) -> dict[str, str]:
     """Build the Prototyper pack: a single throwaway `spike` Blueprint.
 
@@ -686,7 +721,8 @@ PACK_NEXT_STEP: dict[str, str] = {
 }
 
 PACKS: dict[
-    str, Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]]], dict[str, str]]
+    str,
+    Callable[[list[tuple[str, str, list[tuple[str, list[str]]]]], bool], dict[str, str]],
 ] = {
     "builder": _builder_files,
     "sweeper": _sweeper_files,
@@ -699,6 +735,7 @@ PACKS: dict[
 def pack_files(
     archetype: str,
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
+    ui: bool = False,
 ) -> dict[str, str]:
     """Return {relative path: content} for *archetype*, parameterised by *stacks*.
 
@@ -706,6 +743,12 @@ def pack_files(
         archetype: Pack name — must be a key of PACKS.
         stacks: detect_stacks() output (label, check_set name, checks per stack) —
             used to pick the primary check_set a pack Blueprint opts into.
+        ui: `detect_ui_surface(project_root)` verdict — True makes the Builder
+            pack scaffold the qa Blueprint's screenshot capture. Only the Builder
+            pack reads it; defaults to False, so every other pack (and every
+            presence-only caller) is byte-identical to before. Any caller that
+            WRITES the result must pass the real verdict so a re-hire or an `alc
+            team remove` compares against the same default it wrote.
 
     Returns:
         {path relative to the project root: file content}, e.g.
@@ -718,7 +761,7 @@ def pack_files(
         build = PACKS[archetype]
     except KeyError:
         raise KeyError(f"no pack named '{archetype}' (available: {sorted(PACKS)})") from None
-    return build(stacks)
+    return build(stacks, ui)
 
 
 def split_pack_files(
@@ -744,7 +787,10 @@ def split_pack_files(
     Raises:
         KeyError: If *archetype* is not (yet) a registered pack.
     """
-    files, _ = retarget_pack_content(pack_files(archetype, stacks), check_sets)
+    from alc.scaffold import detect_ui_surface
+
+    ui = detect_ui_surface(project_root)
+    files, _ = retarget_pack_content(pack_files(archetype, stacks, ui=ui), check_sets)
     missing: dict[str, str] = {}
     present: dict[str, str] = {}
     for rel, content in files.items():
@@ -899,7 +945,13 @@ def remove_pack(
     Raises:
         KeyError: If *archetype* is not (yet) a registered pack.
     """
-    files, _ = retarget_pack_content(pack_files(archetype, stacks), check_sets)
+    from alc.scaffold import detect_ui_surface
+
+    # Compare against the SAME default a hire on this project would have written,
+    # so a UI project's screenshot qa.md is recognised as pack-default and removed
+    # rather than mistaken for an operator edit and kept.
+    ui = detect_ui_surface(project_root)
+    files, _ = retarget_pack_content(pack_files(archetype, stacks, ui=ui), check_sets)
     removed: list[str] = []
     kept: list[str] = []
     for rel, content in files.items():
