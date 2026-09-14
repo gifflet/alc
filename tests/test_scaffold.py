@@ -1238,3 +1238,37 @@ class TestDetectUiSurface:
     def test_unreadable_package_json_is_not_a_framework_signal(self, tmp_path: Path) -> None:
         (tmp_path / "package.json").write_text("{ this is not json")
         assert detect_ui_surface(tmp_path) is False
+
+    def test_pnpm_monorepo_with_a_frontend_package_is_ui(self, tmp_path: Path) -> None:
+        # The landlink shape: a framework-free root, the UI in packages/admin.
+        (tmp_path / "package.json").write_text('{"devDependencies": {"@biomejs/biome": "^1"}}')
+        (tmp_path / "pnpm-workspace.yaml").write_text('packages:\n  - "packages/*"\n')
+        admin = tmp_path / "packages" / "admin"
+        admin.mkdir(parents=True)
+        (admin / "package.json").write_text('{"dependencies": {"react": "^18"}}')
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_npm_yarn_workspaces_with_a_frontend_package_is_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "package.json").write_text('{"workspaces": ["packages/*"]}')
+        web = tmp_path / "packages" / "web"
+        web.mkdir(parents=True)
+        (web / "package.json").write_text('{"dependencies": {"vue": "^3"}}')
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_conventional_packages_dir_without_a_workspace_config_is_scanned(self, tmp_path: Path) -> None:
+        # No workspaces declared anywhere — the packages/* fallback still finds it.
+        (tmp_path / "go.mod").write_text("module x\n")
+        web = tmp_path / "packages" / "web"
+        web.mkdir(parents=True)
+        (web / "package.json").write_text('{"dependencies": {"svelte": "^4"}}')
+        assert detect_ui_surface(tmp_path) is True
+
+    def test_monorepo_of_backend_only_packages_is_not_ui(self, tmp_path: Path) -> None:
+        (tmp_path / "pnpm-workspace.yaml").write_text('packages:\n  - "packages/*"\n')
+        api = tmp_path / "packages" / "api"
+        api.mkdir(parents=True)
+        (api / "package.json").write_text('{"dependencies": {"express": "^4"}}')
+        lib = tmp_path / "packages" / "lib"
+        lib.mkdir(parents=True)
+        (lib / "package.json").write_text('{"dependencies": {"zod": "^3"}}')
+        assert detect_ui_surface(tmp_path) is False
