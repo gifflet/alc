@@ -606,20 +606,12 @@ _WEB_DIRS = (
 )
 
 
-def detect_ui_surface(project_root: Path) -> bool:
-    """True when the project serves a web/UI surface an e2e should screenshot.
-
-    Either signal is enough:
-      - a frontend framework in package.json dependencies/devDependencies, or
-      - a static HTML entry point (index.html at the root or in a conventional
-        web directory like public/, docs/, docs-site/).
-
-    The Builder pack reads this to scaffold the qa Blueprint's `capture:` as a
-    Playwright screenshot for UI projects (a curl health-check otherwise). Pure
-    read of *project_root*; never raises (an unreadable package.json is simply
-    not a framework signal).
-    """
-    pkg = project_root / "package.json"
+def _dir_is_ui(d: Path) -> bool:
+    """True when directory *d* is itself a web/UI surface — a frontend framework
+    in its package.json, or a static index.html at its root or in a conventional
+    web subdir. The per-directory core of detect_ui_surface: applied to the
+    project root AND to each workspace package. Never raises."""
+    pkg = d / "package.json"
     if pkg.exists():
         try:
             data = json.loads(pkg.read_text(encoding="utf-8"))
@@ -628,9 +620,85 @@ def detect_ui_surface(project_root: Path) -> bool:
                 return True
         except (OSError, ValueError):
             pass
-    if (project_root / "index.html").exists():
+    if (d / "index.html").exists():
         return True
-    return any((project_root / d / "index.html").exists() for d in _WEB_DIRS)
+    return any((d / w / "index.html").exists() for w in _WEB_DIRS)
+
+
+def _workspace_globs(project_root: Path) -> list[str]:
+    """The workspace package globs a monorepo declares — npm/yarn `workspaces`
+    in package.json and pnpm's `pnpm-workspace.yaml` — falling back to the
+    conventional `packages/*`, `apps/*` when nothing is declared. Best-effort;
+    never raises (an unreadable/blank config just contributes no globs)."""
+    globs: list[str] = []
+    pkg = project_root / "package.json"
+    if pkg.exists():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            ws = data.get("workspaces")
+            if isinstance(ws, dict):  # yarn's {"packages": [...]} shape
+                ws = ws.get("packages")
+            if isinstance(ws, list):
+                globs += [g for g in ws if isinstance(g, str)]
+        except (OSError, ValueError):
+            pass
+    pnpm = project_root / "pnpm-workspace.yaml"
+    if pnpm.exists():
+        try:
+            import yaml
+
+            data = yaml.safe_load(pnpm.read_text(encoding="utf-8"))
+            pkgs = data.get("packages") if isinstance(data, dict) else None
+            if isinstance(pkgs, list):
+                globs += [g for g in pkgs if isinstance(g, str)]
+        except Exception:
+            pass
+    return globs or ["packages/*", "apps/*"]
+
+
+def _workspace_package_dirs(project_root: Path) -> list[Path]:
+    """Resolve the workspace globs to existing package directories the immediate
+    children a glob like `packages/*` names. Bounded (at most 200) and
+    best-effort: a negation glob (`!…`) or an unreadable pattern is skipped."""
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+    for glob in _workspace_globs(project_root):
+        pattern = glob.strip().lstrip("./")
+        if not pattern or pattern.startswith("!"):
+            continue
+        try:
+            for match in project_root.glob(pattern):
+                if match.is_dir() and match not in seen:
+                    seen.add(match)
+                    dirs.append(match)
+                    if len(dirs) >= 200:
+                        return dirs
+        except (ValueError, OSError):
+            continue
+    return dirs
+
+
+def detect_ui_surface(project_root: Path) -> bool:
+    """True when the project serves a web/UI surface an e2e should screenshot.
+
+    Either signal, at the project root OR in a monorepo workspace package, is
+    enough:
+      - a frontend framework in package.json dependencies/devDependencies, or
+      - a static HTML entry point (index.html at the root or in a conventional
+        web directory like public/, docs/, docs-site/).
+
+    Workspace awareness matters because a monorepo (pnpm/yarn/npm workspaces)
+    keeps its root package.json framework-free while the UI lives in a package
+    like `packages/admin` — a root-only check would miss it and scaffold the
+    curl capture for a project that plainly serves screens.
+
+    The Builder pack reads this to scaffold the qa Blueprint's `capture:` as a
+    Playwright screenshot for UI projects (a curl health-check otherwise). Pure
+    read of *project_root*; never raises.
+    """
+    if _dir_is_ui(project_root):
+        return True
+    return any(_dir_is_ui(d) for d in _workspace_package_dirs(project_root))
 
 
 def _build_check_sets(
