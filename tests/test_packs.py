@@ -543,3 +543,53 @@ class TestBuilderTestBlueprintGuardsCheckConfig:
         assert marker in pack_files("builder", stacks=[])[".alc/blueprints/test.md"]
         py = [("Python", "python", [("test", ["pytest", "-q"])])]
         assert marker in pack_files("builder", py)[".alc/blueprints/test.md"]
+
+
+class TestBuilderQaCapture:
+    """The qa Blueprint's `capture:` varies by UI surface: a Playwright
+    screenshot for a UI project, the curl health-check otherwise. Non-UI output
+    stays byte-identical, and a UI project's screenshot qa.md is still
+    recognised as the pack default by remove_pack."""
+
+    LOOPS_DIR = ".alc/loops"
+
+    def test_curl_capture_by_default(self) -> None:
+        qa = pack_files("builder", stacks=[])[".alc/blueprints/qa.md"]
+        assert 'capture: curl -sf "$ALC_BASE_URL" -o "$ALC_ARTIFACTS_DIR/health-check.txt"' in qa
+        assert "playwright screenshot" not in qa
+
+    def test_screenshot_capture_when_ui(self) -> None:
+        qa = pack_files("builder", stacks=[], ui=True)[".alc/blueprints/qa.md"]
+        assert (
+            'capture: playwright screenshot --full-page "$ALC_BASE_URL/" '
+            '"$ALC_ARTIFACTS_DIR/screen.png"'
+        ) in qa
+        # the curl capture line is gone (the e2e-smoke check below still curls)
+        assert "health-check.txt" not in qa
+
+    def test_ui_flag_only_changes_the_capture_block(self) -> None:
+        curl = pack_files("builder", stacks=[])[".alc/blueprints/qa.md"]
+        shot = pack_files("builder", stacks=[], ui=True)[".alc/blueprints/qa.md"]
+        # everything from `checks:` onward (the live check, report, archetype)
+        # is identical — only the capture block above it differs.
+        assert curl.split("checks:", 1)[1] == shot.split("checks:", 1)[1]
+
+    def test_ui_project_screenshot_qa_is_removable_as_pack_default(self, tmp_path: Path) -> None:
+        # A UI project (static index.html) is hired with the screenshot capture;
+        # remove_pack must recognise THAT as the pack default and delete it,
+        # not mistake alc's own screenshot qa.md for an operator edit and keep it.
+        scaffold(tmp_path)
+        (tmp_path / "index.html").write_text("<!doctype html><title>x</title>")
+        stacks = detect_stacks(tmp_path)
+        files = pack_files("builder", stacks, ui=True)
+        assert "playwright screenshot" in files[".alc/blueprints/qa.md"]
+        for rel, content in files.items():
+            target = tmp_path / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+
+        removed, kept = remove_pack("builder", stacks, tmp_path, self.LOOPS_DIR)
+
+        assert ".alc/blueprints/qa.md" in removed
+        assert kept == []
+        assert not (tmp_path / ".alc/blueprints/qa.md").exists()

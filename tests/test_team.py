@@ -224,7 +224,7 @@ class TestTeamListStatus:
         from alc import packs
 
         monkeypatch.setitem(
-            packs.PACKS, "sweeper", lambda _stacks: {".alc/loops/sweep.yaml": "name: sweep\n"}
+            packs.PACKS, "sweeper", lambda _stacks, _ui=False: {".alc/loops/sweep.yaml": "name: sweep\n"}
         )
 
         manifest = load_manifest(project / ".alc")
@@ -267,7 +267,7 @@ class TestTeamRetire:
         from alc import packs
 
         monkeypatch.setitem(
-            packs.PACKS, "sweeper", lambda _stacks: {".alc/loops/sweep.yaml": "name: sweep\n"}
+            packs.PACKS, "sweeper", lambda _stacks, _ui=False: {".alc/loops/sweep.yaml": "name: sweep\n"}
         )
 
         manifest = load_manifest(project / ".alc")
@@ -288,7 +288,7 @@ class TestTeamRetire:
         from alc import packs
 
         monkeypatch.setitem(
-            packs.PACKS, "sweeper", lambda _stacks: {".alc/loops/sweep.yaml": "name: sweep\n"}
+            packs.PACKS, "sweeper", lambda _stacks, _ui=False: {".alc/loops/sweep.yaml": "name: sweep\n"}
         )
 
         manifest = load_manifest(project / ".alc")
@@ -309,7 +309,7 @@ class TestTeamRetire:
         from alc import packs
 
         monkeypatch.setitem(
-            packs.PACKS, "sweeper", lambda _stacks: {".alc/loops/sweep.yaml": "name: sweep\n"}
+            packs.PACKS, "sweeper", lambda _stacks, _ui=False: {".alc/loops/sweep.yaml": "name: sweep\n"}
         )
 
         assert cmd_team(_ns(team_action="retire", member="sweeper")) == 0

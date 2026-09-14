@@ -588,6 +588,51 @@ def detect_stacks(project_root: Path) -> list[tuple[str, str, list[tuple[str, li
     ]
 
 
+# A frontend framework in package.json, or a static HTML entry point, is the
+# signal that a project serves a screen an e2e should look at — not just an API
+# to curl. Kept small and conventional on purpose: a miss only means the qa
+# Blueprint scaffolds the curl capture (the operator swaps it), and a false hit
+# is just as cheap (the capture screenshots whatever the service serves, or —
+# with no Playwright on PATH — leaves the same "No screenshot" signal a curl
+# capture would).
+_FRONTEND_DEPS = frozenset({
+    "react", "react-dom", "vue", "svelte", "@sveltejs/kit", "next", "nuxt",
+    "vite", "@angular/core", "solid-js", "preact", "astro", "gatsby",
+    "@remix-run/react", "ember-source", "lit",
+})
+_WEB_DIRS = (
+    "public", "docs", "docs-site", "site", "www", "web", "frontend",
+    "client", "static", "app", "ui",
+)
+
+
+def detect_ui_surface(project_root: Path) -> bool:
+    """True when the project serves a web/UI surface an e2e should screenshot.
+
+    Either signal is enough:
+      - a frontend framework in package.json dependencies/devDependencies, or
+      - a static HTML entry point (index.html at the root or in a conventional
+        web directory like public/, docs/, docs-site/).
+
+    The Builder pack reads this to scaffold the qa Blueprint's `capture:` as a
+    Playwright screenshot for UI projects (a curl health-check otherwise). Pure
+    read of *project_root*; never raises (an unreadable package.json is simply
+    not a framework signal).
+    """
+    pkg = project_root / "package.json"
+    if pkg.exists():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            deps = {*(data.get("dependencies") or {}), *(data.get("devDependencies") or {})}
+            if deps & _FRONTEND_DEPS:
+                return True
+        except (OSError, ValueError):
+            pass
+    if (project_root / "index.html").exists():
+        return True
+    return any((project_root / d / "index.html").exists() for d in _WEB_DIRS)
+
+
 def _build_check_sets(
     stacks: list[tuple[str, str, list[tuple[str, list[str]]]]],
     project_root: Path,
